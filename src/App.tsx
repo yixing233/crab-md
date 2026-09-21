@@ -6,6 +6,7 @@ import { OutlineTree } from "./components/editor/OutlineTree";
 import { AppToolbar } from "./components/workspace/AppToolbar";
 import { Sidebar } from "./components/workspace/Sidebar";
 import { Breadcrumb } from "./components/workspace/Breadcrumb";
+import { Splitter } from "./components/workspace/Splitter";
 import { EmptyState } from "./components/ui/EmptyState";
 import { Button } from "./components/ui/Button";
 import { Dialog } from "./components/ui/Dialog";
@@ -22,6 +23,19 @@ import {
   type ThemePreference,
 } from "./lib/theme";
 import "./App.css";
+
+/** 面板宽度持久化的存储键。 */
+const SIDEBAR_WIDTH_KEY = "crab-md.sidebar-width";
+const PREVIEW_WIDTH_KEY = "crab-md.preview-width";
+
+/** 读取已保存的面板宽度；无存储或值非法时回退到默认值。 */
+function readStoredWidth(key: string, fallback: number): number {
+  if (typeof localStorage === "undefined") return fallback;
+  const raw = localStorage.getItem(key);
+  if (!raw) return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 export default function App() {
   const documents = useWorkspaceStore((s) => s.documents);
@@ -42,6 +56,9 @@ export default function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [previewVisible, setPreviewVisible] = useState(true);
   const [outlineVisible, setOutlineVisible] = useState(false);
+  // 面板宽度（UI §11 pane resizing）。侧栏宽度持久化，符合「记住我的布局」预期。
+  const [sidebarWidth, setSidebarWidth] = useState(() => readStoredWidth(SIDEBAR_WIDTH_KEY, 260));
+  const [previewWidth, setPreviewWidth] = useState(() => readStoredWidth(PREVIEW_WIDTH_KEY, 420));
   // 编辑器光标位置，供状态栏显示（UI §28）。
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   // 大纲跳转目标；nonce 保证重复点同一标题也能再次跳转。
@@ -77,6 +94,18 @@ export default function App() {
       localStorage.setItem(THEME_STORAGE_KEY, themePreference);
     }
   }, [themePreference]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    }
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(PREVIEW_WIDTH_KEY, String(previewWidth));
+    }
+  }, [previewWidth]);
 
   const cycleTheme = useCallback(() => {
     setThemePreference((p) => (p === "system" ? "light" : p === "light" ? "dark" : "system"));
@@ -185,14 +214,26 @@ export default function App() {
 
       <div className="app-body">
         {sidebarVisible && (
-          <Sidebar
-            documents={documents}
-            activeId={activeId}
-            onSelect={(id) => void openDocument(id)}
-            onCreate={handleNewDocument}
-            onRename={(id, title) => void renameDocument(id, title)}
-            onRequestDelete={(id, title) => setPendingDelete({ id, title })}
-          />
+          <>
+            <Sidebar
+              documents={documents}
+              activeId={activeId}
+              onSelect={(id) => void openDocument(id)}
+              onCreate={handleNewDocument}
+              onRename={(id, title) => void renameDocument(id, title)}
+              onRequestDelete={(id, title) => setPendingDelete({ id, title })}
+              width={sidebarWidth}
+            />
+            {/* 侧栏在左，向右拖变宽（UI §11）。 */}
+            <Splitter
+              value={sidebarWidth}
+              onChange={setSidebarWidth}
+              min={180}
+              max={480}
+              ariaLabel={zh.splitter.sidebar}
+              side="left"
+            />
+          </>
         )}
 
         <main className="app-main" role="main">
@@ -238,9 +279,20 @@ export default function App() {
                   </div>
                 )}
                 {previewVisible && (
-                  <div className="app-pane app-pane--preview">
-                    <MarkdownPreview source={activeContent} />
-                  </div>
+                  <>
+                    {/* 预览在右，向左拖变宽（UI §11）。 */}
+                    <Splitter
+                      value={previewWidth}
+                      onChange={setPreviewWidth}
+                      min={260}
+                      max={760}
+                      ariaLabel={zh.splitter.preview}
+                      side="right"
+                    />
+                    <div className="app-pane app-pane--preview" style={{ flexBasis: previewWidth }}>
+                      <MarkdownPreview source={activeContent} />
+                    </div>
+                  </>
                 )}
               </div>
               <EditorStatusBar

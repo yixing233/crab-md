@@ -135,6 +135,39 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Splitter（UI §11 pane resizing）
+   --------------------------------------------------------------------------- */
+
+.splitter {
+  flex: 0 0 auto;
+  width: 5px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: col-resize;
+  /* 命中区域比视觉宽度大，不必精确瞄准 1px 线。 */
+  margin: 0 -2px;
+  z-index: 5;
+}
+
+.splitter:hover,
+.splitter:focus-visible,
+.splitter[data-dragging] {
+  background: var(--border-focus);
+}
+
+.splitter:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+/* 拖拽期间：全局保持 col-resize 光标，且禁止选中文本。 */
+body[data-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* ---------------------------------------------------------------------------
    AppToolbar / Sidebar（T1.13）。AppToolbar.tsx 与 Sidebar.tsx 各自 import 本文件，
    故这两组外壳样式在此就近声明，保证组件自包含。
    --------------------------------------------------------------------------- */
@@ -159,8 +192,9 @@
 .app-sidebar {
   display: flex;
   flex-direction: column;
-  width: 260px;
-  flex-shrink: 0;
+  /* 用 flex-basis 而非 width：分隔条拖拽时由内联 flex-basis 覆盖（UI §11），
+     窄屏规则也能在同一属性上替换，避免两个属性互相打架。 */
+  flex: 0 0 260px;
   background: var(--bg-surface);
   border-right: 1px solid var(--border-subtle);
 }

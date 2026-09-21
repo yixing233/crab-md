@@ -10,6 +10,8 @@ export interface SidebarProps {
   onCreate: () => void;
   onRename: (id: string, title: string) => void;
   onRequestDelete: (id: string, title: string) => void;
+  /** 面板宽度（px），由外层分隔条调整（UI §11）。 */
+  width?: number;
 }
 
 export function Sidebar({
@@ -19,9 +21,15 @@ export function Sidebar({
   onCreate,
   onRename,
   onRequestDelete,
+  width,
 }: SidebarProps) {
   return (
-    <aside className="app-sidebar" role="complementary" aria-label={zh.sidebar.title}>
+    <aside
+      className="app-sidebar"
+      role="complementary"
+      aria-label={zh.sidebar.title}
+      style={width ? { flexBasis: width } : undefined}
+    >
       <div className="app-sidebar__header">{zh.sidebar.title}</div>
       <FileTree
         documents={documents}

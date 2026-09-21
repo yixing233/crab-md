@@ -105,6 +105,11 @@ export const zh = {
     ariaLabel: "文档位置",
   },
 
+  splitter: {
+    sidebar: "调整侧边栏宽度",
+    preview: "调整预览宽度",
+  },
+
   toast: {
     saved: "已保存",
     saveFailed: "保存失败，内容仍保留在编辑器中",

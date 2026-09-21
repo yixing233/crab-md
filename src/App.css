@@ -16,22 +16,20 @@
 
 .app-panes { display: flex; flex: 1; min-height: 0; }
 .app-pane { display: flex; flex-direction: column; min-width: 0; }
-.app-pane--editor { flex: 1 1 55%; }
+/* 编辑区始终是主体（UI §11：editor MUST remain the dominant pane）。
+   侧栏与预览的宽度由内联 flex-basis 覆盖（分隔条拖拽，UI §11）。 */
+.app-pane--editor { flex: 1 1 auto; }
 .app-pane--preview {
-  flex: 1 1 45%;
+  flex: 0 0 auto;
   border-left: 1px solid var(--border-subtle);
   background: var(--bg-surface);
 }
 
-/* 大纲是辅助导航，宽度固定、不参与剩余空间分配（UI §23）。
-   显示大纲时编辑区让出空间，但预览仍保留可读宽度。 */
+/* 大纲是辅助导航，宽度固定、不参与剩余空间分配（UI §23）。 */
 .app-pane--outline {
   flex: 0 0 200px;
   order: 2;
 }
-/* 有预览时大纲插在编辑与预览之间，预览需要让出空间。 */
-.app-panes[data-outline][data-preview] .app-pane--editor { flex: 1 1 45%; }
-.app-panes[data-outline][data-preview] .app-pane--preview { flex: 1 1 35%; }
 
 .app-error {
   display: flex;
