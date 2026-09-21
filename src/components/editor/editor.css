@@ -1,3 +1,30 @@
+.markdown-editor-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+/* 格式工具栏（UI_DESIGN_SYSTEM.md §21.1）：紧凑、克制，不与正文争主体。 */
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.editor-toolbar__button {
+  padding: 0 var(--space-2);
+  color: var(--text-secondary);
+}
+
+.editor-toolbar__button:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
 .markdown-editor { flex: 1; min-height: 0; overflow: hidden; }
 .markdown-editor .cm-editor { height: 100%; }
 
