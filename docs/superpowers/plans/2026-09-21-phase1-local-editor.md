@@ -560,18 +560,51 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 );
 ```
 
-- [ ] **Step 4: 移除模板遗留文件**
+- [ ] **Step 4: 移除模板遗留资源，并把 App.tsx 降为占位组件**
 
-模板自带 `src/App.css` 与 `src/assets/react.svg`，且 `App.tsx` 引用了它们。T1.13 会整体替换 `App.tsx`，故此处**只删资源文件、保留 `App.css` 备后续覆盖**：
+模板的 `src/App.tsx` 引用了 `./assets/react.svg` 与 `./App.css`。若只删文件不改引用，`npm test` / `npm run build` 会立刻报模块找不到。按顺序做：
+
+先删资源与模板样式文件：
 
 ```powershell
-Remove-Item src/assets/react.svg -Force -ErrorAction SilentlyContinue
 Remove-Item src/assets -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item src/App.css -Force -ErrorAction SilentlyContinue
 ```
 
-注意：此刻 `src/App.tsx` 仍在 `import reactLogo from "./assets/react.svg"`，删除后 `npm test` / `npm run build` 会报模块找不到。**这是预期的** —— T1.13 会用最终版本覆盖 `App.tsx`。如果希望中途保持绿色，可在本步顺带把该 import 与相关 `<img>` 一并删除。
+再把 `src/App.tsx` 整个替换为最小占位组件（T1.13 会用真实布局覆盖它）：
 
-- [ ] **Step 5: 提交**
+```tsx
+export default function App() {
+  return (
+    <div className="app-shell">
+      <p>crab-md</p>
+    </div>
+  );
+}
+```
+
+新建 `src/App.css` 作为占位（T1.13 会覆盖为完整布局样式）：
+
+```css
+.app-shell {
+  height: 100%;
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+```
+
+- [ ] **Step 5: 验证仓库仍为绿色**
+
+```powershell
+npm test
+npm run build
+```
+
+预期：`vitest` 通过；`tsc --noEmit && vite build` 成功产出 `dist/`。
+
+这一步不能省 —— 后续每个任务结束时仓库都应保持可构建，而不是把破损状态一路拖到 T1.13。
+
+- [ ] **Step 6: 提交**
 
 ```powershell
 git add -A
@@ -1189,9 +1222,10 @@ cargo test --manifest-path src-tauri/Cargo.toml open_applies_migrations
 
 整个替换 `src-tauri/src/db/mod.rs`：
 
+> **注意模块声明顺序：** 此处只能声明 `pub mod documents;`。`search` 模块在 T1.6 才创建，提前声明会导致本任务编译失败。
+
 ```rust
 pub mod documents;
-pub mod search;
 
 use rusqlite::Connection;
 use std::path::Path;
