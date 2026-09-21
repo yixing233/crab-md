@@ -8,13 +8,29 @@ export interface SidebarProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onRename: (id: string, title: string) => void;
+  onRequestDelete: (id: string, title: string) => void;
 }
 
-export function Sidebar({ documents, activeId, onSelect, onCreate }: SidebarProps) {
+export function Sidebar({
+  documents,
+  activeId,
+  onSelect,
+  onCreate,
+  onRename,
+  onRequestDelete,
+}: SidebarProps) {
   return (
     <aside className="app-sidebar" role="complementary" aria-label={zh.sidebar.title}>
       <div className="app-sidebar__header">{zh.sidebar.title}</div>
-      <FileTree documents={documents} activeId={activeId} onSelect={onSelect} onCreate={onCreate} />
+      <FileTree
+        documents={documents}
+        activeId={activeId}
+        onSelect={onSelect}
+        onCreate={onCreate}
+        onRename={onRename}
+        onRequestDelete={onRequestDelete}
+      />
     </aside>
   );
 }

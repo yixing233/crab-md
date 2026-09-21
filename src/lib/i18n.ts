@@ -35,6 +35,20 @@ export const zh = {
     newNote: "新建笔记",
     /** 无障碍标签：文件树本身。 */
     ariaLabel: "笔记列表",
+    rename: "重命名",
+    delete: "删除",
+    /** 行内重命名输入框的无障碍标签。 */
+    renameLabel: "笔记名称",
+    /** 顶部「更多操作」按钮，用于触屏等无右键场景。 */
+    moreActions: "更多操作",
+  },
+
+  dialog: {
+    deleteTitle: "删除笔记",
+    /** 删除是不可逆的数据丢失，文案要明确点出对象（UI §16）。 */
+    deleteBody: (title: string) => `确定要删除「${title}」吗？此操作无法撤销。`,
+    deleteConfirm: "删除",
+    cancel: "取消",
   },
 
   editor: {

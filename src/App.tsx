@@ -6,6 +6,7 @@ import { AppToolbar } from "./components/workspace/AppToolbar";
 import { Sidebar } from "./components/workspace/Sidebar";
 import { EmptyState } from "./components/ui/EmptyState";
 import { Button } from "./components/ui/Button";
+import { Dialog } from "./components/ui/Dialog";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { zh } from "./lib/i18n";
 import {
@@ -27,12 +28,16 @@ export default function App() {
   const loadDocuments = useWorkspaceStore((s) => s.loadDocuments);
   const openDocument = useWorkspaceStore((s) => s.openDocument);
   const createDocument = useWorkspaceStore((s) => s.createDocument);
+  const renameDocument = useWorkspaceStore((s) => s.renameDocument);
+  const deleteDocument = useWorkspaceStore((s) => s.deleteDocument);
   const saveActive = useWorkspaceStore((s) => s.saveActive);
   const setContent = useWorkspaceStore((s) => s.setContent);
   const clearError = useWorkspaceStore((s) => s.clearError);
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [previewVisible, setPreviewVisible] = useState(true);
+  // 待删除的文档；非空时显示确认对话框（UI §14.4 要求破坏性操作先确认）。
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
     readStoredPreference(typeof localStorage === "undefined" ? null : localStorage.getItem(THEME_STORAGE_KEY)),
   );
@@ -114,6 +119,8 @@ export default function App() {
             activeId={activeId}
             onSelect={(id) => void openDocument(id)}
             onCreate={handleNewDocument}
+            onRename={(id, title) => void renameDocument(id, title)}
+            onRequestDelete={(id, title) => setPendingDelete({ id, title })}
           />
         )}
 
@@ -161,6 +168,23 @@ export default function App() {
           )}
         </main>
       </div>
+
+      <Dialog
+        open={pendingDelete !== null}
+        title={zh.dialog.deleteTitle}
+        confirmLabel={zh.dialog.deleteConfirm}
+        cancelLabel={zh.dialog.cancel}
+        destructive
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void deleteDocument(target.id);
+        }}
+      >
+        {/* 文案点名具体对象，避免用户误删（UI §16）。 */}
+        {pendingDelete ? zh.dialog.deleteBody(pendingDelete.title) : null}
+      </Dialog>
     </div>
   );
 }
