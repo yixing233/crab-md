@@ -72,6 +72,43 @@ export default function App() {
     void loadDocuments();
   }, [loadDocuments]);
 
+  // 关窗前强制落盘。
+  //
+  // Rust 侧 `WindowEvent::CloseRequested` 会 prevent_close 并 emit
+  // `flush-before-close`，这里落盘完成后再调 close_window 真正关闭。
+  // 这样异步写盘一定能跑完，而不是像 beforeunload 那样随时被终止。
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const { invoke } = await import("@tauri-apps/api/core");
+
+        const off = await listen("flush-before-close", () => {
+          void (async () => {
+            await useWorkspaceStore.getState().flushActive();
+            await invoke("close_window");
+          })();
+        });
+
+        // 组件在 await 期间被卸载的话，立刻退订避免泄漏。
+        if (disposed) off();
+        else unlisten = off;
+      } catch {
+        // 没有 Tauri IPC 的环境（单测的 jsdom、纯浏览器预览）里 listen 会抛。
+        // 这不是错误路径：那种环境下也不会有关窗事件，忽略即可，
+        // 但不能让异常逃逸成 unhandled rejection。
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   const handleNewDocument = useCallback(() => {
     void createDocument(zh.app.untitled);
   }, [createDocument]);
