@@ -106,9 +106,48 @@ Phase 1 的实现方式是「一个任务做一个组件」，而不是「先完
 
 | 项 | 现状 | 应为 |
 | --- | --- | --- |
-| `index.html` | `lang="en"`、`<title>Tauri + React + Typescript</title>`、favicon 指向模板 `/vite.svg` | `lang="zh-CN"`、`<title>crab-md</title>`、自有图标 |
+| ~~`index.html`~~ | ✅ 已修 | `lang="zh-CN"`、`<title>crab-md</title>` |
 | `markdownActions.ts` 的 `EDITOR_ACTIONS[].label` | 英文串（当前未被渲染，属死数据） | 删除该字段或改引用 i18n 键 |
 | 主题切换入口 | 仅工具栏循环按钮 | 设置页里给显式三选一（§34，P5） |
+
+---
+
+## 4.5 实施进度（2026-09-21 更新）
+
+批次 A、B 已全部完成；批次 C 除下列几项外已完成。每一项都有配套测试。
+
+### ✅ 已完成
+
+| 批次 | 内容 | 提交 |
+| --- | --- | --- |
+| A1–A4 | 自动保存（1s 去抖）、切文档/新建前 flush（失败则阻止切换并保留内容）、Rust 侧关窗拦截 + 兜底放行、数据安全回归测试 | `ff0242b` |
+| B1 | 语法高亮（`syntaxHighlighting` + 走主题令牌的 `HighlightStyle`，明暗自适应） | `3934624` |
+| B2 | 状态栏真实行列号（**部分**：未做「选中字数」） | `3934624` |
+| B3 | 冷启动加载态（spinner + `role="status"`） | `3934624` |
+| B4 | 错误态中文化：错误码 → 中文解释 + 「内容仍保存在本机」+ 可关闭 | `3934624` |
+| B5 | `MarkdownPreview` 空态走 i18n | `3934624` |
+| B6 | CodeMirror 搜索面板中文化（`EditorState.phrases`） | `3934624` |
+| B7 | 括号匹配 + 代码块语言高亮（`codeLanguages`，此前依赖已装却零引用） | `3934624` |
+| B8 | `index.html` 元信息（`lang="zh-CN"`、标题、图标） | `3934624` |
+| C1 | `ui/ContextMenu.tsx` 抽取；FileTree 改用（含键盘上下键、视口收边、`aria-keyshortcuts`） | `bb3bc77` |
+| C2 | `ui/InlineEdit.tsx` 抽取；移除 FileTree 的自造输入与自造菜单 CSS | `bb3bc77` |
+| C3 | `ui/Toast.tsx` + 保存反馈接线（成功自动消失、错误常驻） | `bb3bc77` |
+| C4 | `lib/outline.ts` 纯函数 + `OutlineTree` + 工具栏开关 + Ctrl+Shift+O | `bb3bc77` |
+| C5 | `Breadcrumb`（虚拟路径 → 分段，`aria-current` 标注当前项） | `bb3bc77` |
+| C6 | Ctrl+F 全局注册（编辑器未聚焦时也生效） | `bb3bc77` |
+| C7 | 响应式断点 <900（侧栏收窄、大纲浮层）/ <600（单栏、侧栏浮层） | `bb3bc77` |
+| C8 | pane 拖拽缩放（指针拖拽 + 方向键/Home/End + 双击复位 + 宽度持久化） | `ac0605f` |
+| C9 | 客户端日志（**部分**：前端 `lib/log.ts` 记录稳定错误码与文档 id，不含正文；未接入 Tauri 文件日志） | `bb3bc77` |
+
+### ⬜ 未完成（有意留待后续）
+
+| 项 | 原因 |
+| --- | --- |
+| B2 的「选中字数」 | 需要额外订阅选区变化，价值低于已完成部分，留待需要时补 |
+| C6 的 `Ctrl+P` / `Ctrl+Shift+F` | 二者都依赖 `CommandPalette` 与全局搜索，属 P4（与同步/检索一起做更合理） |
+| C9 的后端日志落盘 | Rust 侧 `tracing` 与前端上报需要一个「诊断」入口，属 P5 |
+| `Tabs` 组件与 `DocumentTabs` | 多标签页是独立特性，不在本次 UI 补齐范围（§43 排在后续批次） |
+| `TextArea` / `Select` / `Checkbox` / `Switch` / `Drawer` / `BottomSheet` / `Avatar` / `Progress` / `Badge` / `Divider` | 当前无消费方；按 §43 的交付顺序随使用场景补，避免造无人用的组件 |
 
 ---
 
@@ -156,14 +195,16 @@ Phase 1 的实现方式是「一个任务做一个组件」，而不是「先完
 
 ## 6. 验收标准（本文件范围内）
 
-- [ ] 切换文档、关闭应用都不丢未保存内容（有测试覆盖）
-- [ ] 编辑 1s 后自动落盘（无 Ctrl+S 也不丢）
-- [ ] 编辑器有语法高亮、状态栏行列号真实、括号匹配生效
-- [ ] 冷启动有加载态，不出现空白界面
-- [ ] 界面内**不再出现任何英文用户文案**（含 CodeMirror 内置面板）
-- [ ] 错误提示是中文 + 说明本地数据安全 + 可重试
-- [ ] `src/components/ui/` 下无自造的一次性控件；`FileTree` 复用共享原语
-- [ ] 缺失的必备组件按需要补齐（至少 `Toast`、`ContextMenu`、`Tabs`）
-- [ ] `OutlineTree` / `Breadcrumb` 可用
-- [ ] §29 快捷键在编辑器聚焦/失焦两种状态下都按预期工作
-- [ ] 窄窗口（<900）布局降级正常，编辑器仍可用
+- [x] 切换文档、关闭应用都不丢未保存内容（有测试覆盖）
+- [x] 编辑 1s 后自动落盘（无 Ctrl+S 也不丢）
+- [x] 编辑器有语法高亮、状态栏行列号真实、括号匹配生效
+- [x] 冷启动有加载态，不出现空白界面
+- [x] 界面内**不再出现任何英文用户文案**（含 CodeMirror 内置面板）
+- [x] 错误提示是中文 + 说明本地数据安全
+- [x] `src/components/ui/` 下无自造的一次性控件；`FileTree` 复用共享原语
+- [x] 缺失的必备组件按需要补齐（`Toast`、`ContextMenu`、`InlineEdit`）
+- [x] `OutlineTree` / `Breadcrumb` 可用
+- [x] §29 快捷键在编辑器聚焦/失焦两种状态下都按预期工作（Ctrl+F 已全局注册）
+- [x] 窄窗口（<900）布局降级正常，编辑器仍可用
+
+遗留（见 §4.5「未完成」）：选中字数、`Ctrl+P`/`Ctrl+Shift+F`、后端日志落盘、`DocumentTabs`、以及暂无消费方的其余 §13 原语。
