@@ -7,6 +7,14 @@ import { Sidebar } from "./components/workspace/Sidebar";
 import { EmptyState } from "./components/ui/EmptyState";
 import { Button } from "./components/ui/Button";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
+import {
+  applyTheme,
+  readStoredPreference,
+  resolveTheme,
+  systemPrefersDark,
+  THEME_STORAGE_KEY,
+  type ThemePreference,
+} from "./lib/theme";
 import "./App.css";
 
 export default function App() {
@@ -24,6 +32,35 @@ export default function App() {
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [previewVisible, setPreviewVisible] = useState(true);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
+    readStoredPreference(typeof localStorage === "undefined" ? null : localStorage.getItem(THEME_STORAGE_KEY)),
+  );
+
+  // 主题：写入 <html data-theme>，CSS 变量随之切换（UI_DESIGN_SYSTEM.md §4.1）。
+  // 偏好为 system 时还要监听系统变化，用户切换系统主题应当即时跟随。
+  useEffect(() => {
+    const mq = typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-color-scheme: dark)")
+      : null;
+
+    const sync = () => applyTheme(resolveTheme(themePreference, systemPrefersDark()));
+
+    sync();
+    if (themePreference !== "system" || !mq) return;
+
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [themePreference]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+    }
+  }, [themePreference]);
+
+  const cycleTheme = useCallback(() => {
+    setThemePreference((p) => (p === "system" ? "light" : p === "light" ? "dark" : "system"));
+  }, []);
 
   useEffect(() => {
     void loadDocuments();
@@ -48,11 +85,14 @@ export default function App() {
       } else if (e.key === "\\") {
         e.preventDefault();
         setPreviewVisible((v) => !v);
+      } else if (e.shiftKey && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        cycleTheme();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleNewDocument, saveActive]);
+  }, [handleNewDocument, saveActive, cycleTheme]);
 
   const activeTitle = documents.find((d) => d.id === activeId)?.title ?? "";
 
@@ -62,6 +102,8 @@ export default function App() {
         onNewDocument={handleNewDocument}
         onToggleSidebar={() => setSidebarVisible((v) => !v)}
         sidebarVisible={sidebarVisible}
+        themePreference={themePreference}
+        onCycleTheme={cycleTheme}
       />
 
       <div className="app-body">
