@@ -1,4 +1,5 @@
 pub mod documents;
+pub mod search;
 
 use rusqlite::Connection;
 use std::path::Path;
