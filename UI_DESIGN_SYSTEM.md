@@ -668,6 +668,10 @@ Rules:
 - images SHOULD fit within content bounds
 - links MUST have recognizable styling
 - rendered raw HTML MUST be sanitized
+- a single line break in the source SHOULD render as a line break, so the preview
+  matches what the editor shows. This deliberately departs from strict CommonMark
+  soft-break handling. It affects rendering only — the stored file keeps its
+  original newlines, so standard Markdown fidelity is preserved.
 
 ---
 

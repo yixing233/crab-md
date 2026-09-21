@@ -70,3 +70,39 @@ describe("renderMarkdown", () => {
     expect(renderMarkdown("")).toBe("");
   });
 });
+
+/**
+ * 单个换行的处理（UI_DESIGN_SYSTEM.md §22）。
+ *
+ * 这是**有意偏离严格 CommonMark**：标准把单个换行当 soft break（渲染为空格），
+ * 但那样编辑器显示三行、预览只有一行，两者自相矛盾。此组用例把选择固定下来。
+ */
+describe("renderMarkdown soft line breaks", () => {
+  it("turns a single newline into a line break", () => {
+    expect(renderMarkdown("第一行\n第二行")).toContain("<br");
+  });
+
+  it("matches what the editor shows for the reported case", () => {
+    // 用户报告的原例：编辑器里三行，预览此前挤成一行。
+    const html = renderMarkdown("呵是大神大神\nasdasd\nasdasd");
+    expect((html.match(/<br/g) ?? []).length).toBe(2);
+  });
+
+  it("still separates paragraphs on a blank line", () => {
+    // 空行分段是 Markdown 的核心语义，不能被 breaks 影响。
+    const html = renderMarkdown("第一段\n\n第二段");
+    expect((html.match(/<p>/g) ?? []).length).toBe(2);
+  });
+
+  it("does not alter code block contents", () => {
+    // 代码块内的换行本来就是换行，不该插入 <br>。
+    const html = renderMarkdown("```\nconst a = 1;\n```");
+    expect(html).not.toContain("<br");
+  });
+
+  it("does not alter tables", () => {
+    const html = renderMarkdown("| a | b |\n| - | - |\n| 1 | 2 |");
+    expect(html).toContain("<table>");
+    expect(html).not.toContain("<br");
+  });
+});

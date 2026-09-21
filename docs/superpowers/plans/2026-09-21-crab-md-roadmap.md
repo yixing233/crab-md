@@ -145,6 +145,7 @@ crab-md/
 | D8 | TLS 交给**现成 nginx + certbot**，不引入 Caddy | 服务器已跑 nginx 且证书体系成熟；避免第二个 web server 抢 80/443 |
 | D9 | 内存上限：新服务 `MemoryMax=192M`，`Restart=on-failure` | 目标机 2C2G、可用内存约 600 MB |
 | D10 | 主题经 **CSS 变量**注入 CodeMirror（`EditorView.theme` 读 `var(--text-primary)` 等），不硬编码颜色 | UI §3、§20 |
+| D11 | 预览把**单个换行**渲染为换行（markdown-it `breaks: true`），即"严格换行"关闭 | UI §22；理由见下表偏差登记 |
 
 ### 4.1 与规范的显式偏差（已在计划中登记）
 
@@ -153,6 +154,7 @@ crab-md/
 | Shiki 代码高亮延后 | §4.1 原文是 "Shiki for code highlighting **where practical**"。Shiki 体积大且异步，会干扰 P1 的 TDD 步骤粒度 | P1 先做 markdown-it + DOMPurify；Shiki 单列为 **T5.4** |
 | 本地工作区文件名是 UUID | §10 明确要求 `notes/<document-uuid>.md`，但用户无法在资源管理器里认出笔记 | P1 把工作区根做成**可在设置中改路径**；"人类可读文件名"模式列为 **T5.2** 一并评估（需先确认不与 §11 身份规则冲突） |
 | Caddy 未采用 | §4.2 列了 Caddy 作为 TLS 终止 | 见 D8。若 T5.7 判定需要再切换，届时按 §4.3 补迁移理由 |
+| **偏离严格 CommonMark 的 soft break** | CommonMark 规定单个换行是 "soft break"（渲染为空格）。但编辑器按 `\n` 分行显示，用户看到三行、预览却只有一行，**编辑器与预览自相矛盾**；Obsidian 的"严格换行"默认也是关闭的。 | 采用 `breaks: true`（D11）。**只影响渲染，不改磁盘内容**，文件里仍是 `\n`，故不违反 §24 第 5 条"保留标准 Markdown 文件"。已由 `markdown.test.ts` 的 "soft line breaks" 一组用例固定，防止被"修回"标准行为 |
 
 ---
 

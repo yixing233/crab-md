@@ -4,7 +4,15 @@ import MarkdownIt from "markdown-it";
 const md = new MarkdownIt({
   html: true,       // 允许 Markdown 中内嵌 HTML……
   linkify: true,
-  breaks: false,
+  // 有意偏离严格 CommonMark（UI_DESIGN_SYSTEM.md §22）。
+  //
+  // CommonMark 规定单个换行是 "soft break"，渲染为空格。但那样编辑器与预览
+  // 会自相矛盾：编辑器中三行文字，预览里挤成一行。同类产品（Obsidian）的
+  // 「严格换行」默认也是关闭的。
+  //
+  // 重要：这个选项**只影响渲染**，不改磁盘内容 —— 文件里仍是 \n，
+  // 因此不违反 ARCHITECTURE.md §24「保留标准 Markdown 文件」。
+  breaks: true,
   typographer: false,
 });
 
