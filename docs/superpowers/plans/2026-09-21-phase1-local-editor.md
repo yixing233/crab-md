@@ -4420,7 +4420,38 @@ git commit -m "feat(app): wire three-pane desktop layout with shortcuts"
 ### Task T1.14: 端到端验证与验收
 
 **Files:**
-- Modify: `README.md`
+- Modify: `src-tauri/tauri.conf.json`, `README.md`
+
+- [ ] **Step 0: 调整默认窗口尺寸**
+
+`create-tauri-app` 模板给的默认窗口是 **800×600**。而 `UI_DESIGN_SYSTEM.md` §10 的断点里
+Desktop 是 **≥900px**，§11 的桌面布局要求同时容纳 Sidebar(260px) + Editor + Preview。
+800px 宽只够 Compact 档（§10.2 允许双栏），三栏会明显拥挤。
+
+改 `src-tauri/tauri.conf.json` 的 `app.windows[0]`：
+
+```json
+{
+  "title": "crab-md",
+  "width": 1280,
+  "height": 800,
+  "minWidth": 900,
+  "minHeight": 600,
+  "resizable": true,
+  "center": true
+}
+```
+
+`minWidth: 900` 与 Desktop 断点对齐，避免用户把窗口缩到三栏不可用的尺寸。
+
+确认 JSON 仍合法：
+
+```powershell
+Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json | Out-Null; "JSON OK"
+Select-String -Path src-tauri/tauri.conf.json -Pattern 'width|minWidth'
+```
+
+预期：打印 `JSON OK`，并看到 `"width": 1280` 与 `"minWidth": 900`。
 
 - [ ] **Step 1: 全量回归**
 
@@ -4442,7 +4473,7 @@ npm run tauri dev
 在应用内：
 
 1. 点击 **New** → 出现 `Untitled`
-2. 在编辑器中输入 `# 标题\n\n并发编程与信道`,
+2. 在编辑器中输入 `# 标题` 与 `并发编程与信道`
 3. 左侧应即时出现预览渲染
 
 - [ ] **Step 3: 手动验收 —— 重启后持久化**
