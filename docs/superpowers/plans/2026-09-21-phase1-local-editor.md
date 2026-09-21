@@ -3282,6 +3282,15 @@ vi.mock("../lib/api", () => ({
     renameDocument: (...a: unknown[]) => renameDocument(...a),
     deleteDocument: (...a: unknown[]) => deleteDocument(...a),
   },
+  // 必须导出 toAppError：被 mock 的模块会被**整体替换**，
+  // useWorkspaceStore 从同一模块 import 了 toAppError，漏掉它会得到 undefined，
+  // 报 `No "toAppError" export is defined on the "../lib/api" mock`。
+  // 这里刻意内联等价实现而不用 importOriginal —— 后者会加载真实 ../lib/api
+  // 及其 Tauri invoke，破坏本测试"不触碰真实 Tauri"的前提。
+  toAppError: (raw: unknown) =>
+    raw && typeof raw === "object" && "code" in raw
+      ? (raw as { code: string; message: string })
+      : { code: "UNKNOWN", message: String(raw) },
 }));
 
 import { useWorkspaceStore } from "./useWorkspaceStore";
