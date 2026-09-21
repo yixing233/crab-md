@@ -301,6 +301,22 @@ export default defineConfig({
 import "@testing-library/jest-dom/vitest";
 ```
 
+再创建 `src/vitest.d.ts`，把 jest-dom 的**类型增强**也纳入编译：
+
+```ts
+/// <reference types="@testing-library/jest-dom/vitest" />
+```
+
+**为什么必须有这个文件：** `vitest.setup.ts` 只是运行时注册匹配器，不提供类型。
+`tsconfig.json` 的 `include` 是 `["src"]`，根目录的 `vitest.setup.ts` 不在编译范围内，
+因此 jest-dom 对 `Assertion` 接口的增强进不了程序 —— 后果是
+`expect(x).toHaveAttribute(...)` 在 `vitest` 下能跑绿，但 `tsc --noEmit` 报
+`TS2339: Property 'toHaveAttribute' does not exist`，进而让 `npm run build` 失败。
+
+必须引用 `@testing-library/jest-dom/vitest` 这个**子路径**（它 `declare module 'vitest'`）。
+引用包根 `@testing-library/jest-dom` 无效 —— 它的入口是 `/// <reference path="jest.d.ts" />`，
+增强的是 Jest 的全局命名空间。两种写法都已实测：前者 `tsc` 退出码 0，后者仍报 6 个 TS2339。
+
 - [ ] **Step 8: 写第一个测试，确认测试运行器可用**
 
 创建 `src/lib/smoke.test.ts`：
@@ -1625,7 +1641,7 @@ mod tests {
 cargo test --manifest-path src-tauri/Cargo.toml db::documents
 ```
 
-预期：`9 passed`。
+预期：`10 passed`。
 
 - [ ] **Step 9: 在 lib.rs 注册模块**
 
@@ -1993,7 +2009,8 @@ impl DocumentService {
     }
 
     pub fn list(&self) -> AppResult<Vec<DocumentSummary>> {
-        docs::list(&self.conn()?)
+        let conn = self.conn()?;
+        docs::list(&conn)
     }
 
     /// 新建文档：先在库里登记元数据，再落一个空文件。
@@ -2022,7 +2039,9 @@ impl DocumentService {
         let summary = docs::get(&conn, &id)?.ok_or_else(|| AppError::NotFound(id.clone()))?;
         drop(conn);
 
-        search::reindex(&self.conn()?, &id, title, "")?;
+        let conn = self.conn()?;
+        search::reindex(&conn, &id, title, "")?;
+        drop(conn);
         Ok(summary)
     }
 
@@ -2054,7 +2073,9 @@ impl DocumentService {
         let updated = docs::get(&conn, id)?.ok_or_else(|| AppError::NotFound(id.to_string()))?;
         drop(conn);
 
-        search::reindex(&self.conn()?, id, &summary.title, content)?;
+        let conn = self.conn()?;
+        search::reindex(&conn, id, &summary.title, content)?;
+        drop(conn);
         Ok(updated)
     }
 
@@ -2074,7 +2095,9 @@ impl DocumentService {
         drop(conn);
 
         let content = workspace::read_note(&self.root, id)?;
-        search::reindex(&self.conn()?, id, title, &content)?;
+        let conn = self.conn()?;
+        search::reindex(&conn, id, title, &content)?;
+        drop(conn);
         Ok(updated)
     }
 
@@ -2090,12 +2113,17 @@ impl DocumentService {
         }
         drop(conn);
 
-        search::unindex(&self.conn()?, id)?;
+        let conn = self.conn()?;
+        search::unindex(&conn, id)?;
+        drop(conn);
         Ok(())
     }
 
     pub fn search(&self, query: &str, limit: i64) -> AppResult<Vec<search::SearchHit>> {
-        search::search(&self.conn()?, query, limit).map_err(AppError::from)
+        let conn = self.conn()?;
+        let hits = search::search(&conn, query, limit)?;
+        drop(conn);
+        Ok(hits)
     }
 }
 
@@ -2320,7 +2348,7 @@ mod tests {
 cargo test --manifest-path src-tauri/Cargo.toml commands::documents
 ```
 
-预期：`15 passed`。
+预期：`14 passed`。
 
 - [ ] **Step 5: 写模块声明**
 
@@ -2391,7 +2419,7 @@ pub fn run() {
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-预期：全部通过（约 54 个测试）。
+预期：全部通过（**57** 个测试：error 2 + model 3 + workspace 11 + db 5 + documents 10 + search 12 + commands 14）。
 
 - [ ] **Step 9: 提交**
 
@@ -2448,7 +2476,7 @@ export interface AppErrorShape {
 创建 `src/lib/api.test.ts`：
 
 ```ts
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { toAppError } from "./api";
 
 describe("toAppError", () => {
