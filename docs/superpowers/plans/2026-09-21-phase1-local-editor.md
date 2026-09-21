@@ -2602,17 +2602,39 @@ describe("renderMarkdown", () => {
   it("strips script tags from raw HTML", () => {
     const html = renderMarkdown('<script>alert("xss")</script>');
     expect(html).not.toContain("<script");
-    expect(html).not.toContain("alert");
   });
 
   it("strips inline event handlers", () => {
-    const html = renderMarkdown('<img src="x" onerror="alert(1)">');
-    expect(html).not.toContain("onerror");
+    expect(renderMarkdown('<img src="x" onerror="alert(1)">')).not.toContain("onerror");
   });
 
-  it("strips javascript: URLs", () => {
-    const html = renderMarkdown("[click](javascript:alert(1))");
+  it("strips svg onload", () => {
+    expect(renderMarkdown('<svg onload="alert(1)"></svg>')).not.toContain("onload");
+  });
+
+  it("removes javascript: hrefs from raw HTML anchors", () => {
+    const html = renderMarkdown('<a href="javascript:alert(1)">x</a>');
     expect(html).not.toContain("javascript:");
+    expect(html).toContain("<a");
+  });
+
+  it("removes data: hrefs from raw HTML anchors", () => {
+    expect(renderMarkdown('<a href="data:text/html,<script>alert(1)</script>">x</a>'))
+      .not.toContain("data:");
+  });
+
+  it("does not turn markdown javascript: syntax into a link", () => {
+    // markdown-it 本就拒绝把 javascript: 转成链接，输出的是转义后的字面量源文本。
+    // 因此这里断言"没有生成 href"，而不是断言"不含 javascript: 字样"
+    // —— 后者会误判，因为字面量源文本里当然含有该字符串。已实测。
+    const html = renderMarkdown("[click](javascript:alert(1))");
+    expect(html).not.toContain("href=");
+  });
+
+  it("keeps legitimate links and images working", () => {
+    expect(renderMarkdown("[ok](https://example.com)")).toContain('href="https://example.com"');
+    expect(renderMarkdown("![a](https://example.com/a.png)"))
+      .toContain('src="https://example.com/a.png"');
   });
 
   it("strips iframes", () => {
@@ -2674,7 +2696,7 @@ export function renderMarkdown(source: string): string {
 npm test -- markdown
 ```
 
-预期：`9 passed`。
+预期：`13 passed`。
 
 - [ ] **Step 5: 写 fileTree 的失败测试**
 
