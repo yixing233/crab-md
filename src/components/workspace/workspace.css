@@ -1,0 +1,49 @@
+.file-tree {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) 0;
+  overflow-y: auto;
+}
+
+.file-tree__folder {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 26px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.file-tree__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 28px;
+  padding-right: var(--space-2);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.file-tree__item:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+
+/* 选中态用背景 + 左侧强调条，不只靠颜色（UI §39）。 */
+.file-tree__item[data-selected] {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.file-tree__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
