@@ -1,10 +1,14 @@
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { languages } from "@codemirror/language-data";
+import { bracketMatching, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorSelection as CmSelection, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { searchKeymap } from "@codemirror/search";
+import { tags as t } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
 import { applyMarkdownAction, type MarkdownActionId } from "../../lib/markdownActions";
+import { cmPhrases } from "../../lib/i18n";
 import { EditorToolbar } from "./EditorToolbar";
 import "./editor.css";
 
@@ -15,6 +19,8 @@ export interface MarkdownEditorProps {
   onChange: (value: string) => void;
   /** Ctrl+S 回调，用于立即落盘。 */
   onSave?: () => void;
+  /** 光标位置变化（1 基行/列），供状态栏显示（UI §28）。 */
+  onCursor?: (line: number, column: number) => void;
   /** 是否显示格式工具栏（UI_DESIGN_SYSTEM.md §21.1）。 */
   showToolbar?: boolean;
 }
@@ -41,7 +47,43 @@ const appTheme = EditorView.theme({
   },
   ".cm-activeLine": { backgroundColor: "var(--bg-surface)" },
   ".cm-selectionBackground, ::selection": { backgroundColor: "var(--selection-bg)" },
+  // 括号配对高亮（UI §20 "bracket matching where useful"）。
+  ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": {
+    backgroundColor: "var(--accent-soft)",
+    outline: "1px solid var(--border-focus)",
+  },
 });
+
+/**
+ * Markdown 语法高亮样式（UI §20）。
+ *
+ * 色值全部走主题令牌，因此明暗主题自动跟随，无需两套高亮定义。
+ * 这是原先缺失的部分：只装了 markdown() 解析器而没有 HighlightStyle，
+ * 所以编辑器完全没有可见着色。
+ */
+const markdownHighlight = HighlightStyle.define([
+  { tag: t.heading1, fontSize: "1.5em", fontWeight: "600", color: "var(--text-primary)" },
+  { tag: t.heading2, fontSize: "1.3em", fontWeight: "600", color: "var(--text-primary)" },
+  { tag: t.heading3, fontSize: "1.15em", fontWeight: "600", color: "var(--text-primary)" },
+  { tag: [t.heading4, t.heading5, t.heading6], fontWeight: "600", color: "var(--text-primary)" },
+  { tag: t.strong, fontWeight: "700", color: "var(--text-primary)" },
+  { tag: t.emphasis, fontStyle: "italic", color: "var(--text-primary)" },
+  { tag: t.strikethrough, textDecoration: "line-through", color: "var(--text-muted)" },
+  { tag: t.link, color: "var(--accent)", textDecoration: "underline" },
+  { tag: t.url, color: "var(--accent)" },
+  { tag: t.monospace, color: "var(--info)" },
+  { tag: t.quote, color: "var(--text-secondary)", fontStyle: "italic" },
+  { tag: t.list, color: "var(--text-secondary)" },
+  { tag: [t.meta, t.processingInstruction], color: "var(--text-muted)" },
+  // 代码块内的语言 token：用 info / success / warning 三个语义色区分，
+  // 不引入额外调色板（UI §41 要求低饱和）。
+  { tag: [t.keyword, t.modifier], color: "var(--accent)" },
+  { tag: [t.string, t.special(t.string)], color: "var(--success)" },
+  { tag: [t.number, t.bool, t.null], color: "var(--warning)" },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "var(--text-muted)", fontStyle: "italic" },
+  { tag: [t.function(t.variableName), t.labelName], color: "var(--info)" },
+  { tag: [t.typeName, t.className], color: "var(--text-primary)", fontWeight: "600" },
+]);
 
 /**
  * 把纯函数的 EditorChange 结果写回 CodeMirror。
@@ -71,11 +113,19 @@ function dispatchAction(view: EditorView, action: MarkdownActionId): void {
   view.focus();
 }
 
+/** 取 1 基的行列号（状态栏用，UI §28）。 */
+function cursorPosition(state: EditorState): { line: number; column: number } {
+  const head = state.selection.main.head;
+  const line = state.doc.lineAt(head);
+  return { line: line.number, column: head - line.from + 1 };
+}
+
 export function MarkdownEditor({
   documentId,
   value,
   onChange,
   onSave,
+  onCursor,
   showToolbar = true,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -83,8 +133,10 @@ export function MarkdownEditor({
   // 用 ref 持有最新回调，避免每次渲染都重建编辑器。
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onCursorRef = useRef(onCursor);
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  onCursorRef.current = onCursor;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -95,9 +147,15 @@ export function MarkdownEditor({
         doc: value,
         extensions: [
           history(),
-          markdown(),
+          // codeLanguages 让围栏代码块按语言高亮；此前该依赖已在
+          // package.json 里却从未被引用（UI §20）。
+          markdown({ base: markdownLanguage, codeLanguages: languages }),
+          syntaxHighlighting(markdownHighlight),
+          bracketMatching(),
           EditorView.lineWrapping,
           appTheme,
+          // CodeMirror 内置面板（查找/替换）默认英文，注入中文词表（UI §2.5）。
+          EditorState.phrases.of(cmPhrases),
           keymap.of([
             {
               key: "Mod-s",
@@ -119,12 +177,21 @@ export function MarkdownEditor({
             if (update.docChanged) {
               onChangeRef.current(update.state.doc.toString());
             }
+            // 光标移动也要更新状态栏行列号。
+            if (update.selectionSet || update.docChanged) {
+              const { line, column } = cursorPosition(update.state);
+              onCursorRef.current?.(line, column);
+            }
           }),
         ],
       }),
     });
 
     viewRef.current = view;
+    // 初始光标位置也要上报，否则状态栏在打开文档前是空的。
+    const { line, column } = cursorPosition(view.state);
+    onCursorRef.current?.(line, column);
+
     return () => {
       view.destroy();
       viewRef.current = null;

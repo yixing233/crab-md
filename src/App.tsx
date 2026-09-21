@@ -7,6 +7,7 @@ import { Sidebar } from "./components/workspace/Sidebar";
 import { EmptyState } from "./components/ui/EmptyState";
 import { Button } from "./components/ui/Button";
 import { Dialog } from "./components/ui/Dialog";
+import { Spinner } from "./components/ui/Spinner";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { zh } from "./lib/i18n";
 import {
@@ -24,6 +25,7 @@ export default function App() {
   const activeId = useWorkspaceStore((s) => s.activeId);
   const activeContent = useWorkspaceStore((s) => s.activeContent);
   const dirty = useWorkspaceStore((s) => s.dirty);
+  const loading = useWorkspaceStore((s) => s.loading);
   const error = useWorkspaceStore((s) => s.error);
   const loadDocuments = useWorkspaceStore((s) => s.loadDocuments);
   const openDocument = useWorkspaceStore((s) => s.openDocument);
@@ -36,6 +38,8 @@ export default function App() {
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [previewVisible, setPreviewVisible] = useState(true);
+  // 编辑器光标位置，供状态栏显示（UI §28）。
+  const [cursor, setCursor] = useState({ line: 1, column: 1 });
   // 待删除的文档；非空时显示确认对话框（UI §14.4 要求破坏性操作先确认）。
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
@@ -164,9 +168,8 @@ export default function App() {
         <main className="app-main" role="main">
           {error && (
             <div className="app-error" role="alert">
-              <span>
-                {zh.error.prefix}：{error}
-              </span>
+              {/* 给用户中文解释，并说明本地数据是否安全（UI §32）。 */}
+              <span>{zh.error.messages[error] ?? zh.error.messages.UNKNOWN}</span>
               <Button variant="ghost" size="sm" onClick={clearError}>
                 {zh.error.dismiss}
               </Button>
@@ -182,6 +185,7 @@ export default function App() {
                     value={activeContent}
                     onChange={setContent}
                     onSave={() => void saveActive()}
+                    onCursor={(line, column) => setCursor({ line, column })}
                   />
                 </div>
                 {previewVisible && (
@@ -190,8 +194,19 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <EditorStatusBar dirty={dirty} line={1} column={1} path={activeTitle} />
+              <EditorStatusBar
+                dirty={dirty}
+                line={cursor.line}
+                column={cursor.column}
+                path={activeTitle}
+              />
             </>
+          ) : loading ? (
+            // 冷启动期间给出加载态，而不是一片空白（UI §32）。
+            <div className="app-loading" role="status" aria-live="polite">
+              <Spinner size={20} label={zh.loading.workspace} />
+              <p>{zh.loading.workspace}</p>
+            </div>
           ) : (
             <EmptyState
               title={zh.empty.noDocumentTitle}

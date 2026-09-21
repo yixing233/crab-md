@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { renderMarkdown } from "../../lib/markdown";
+import { zh } from "../../lib/i18n";
 import "./editor.css";
 
 export interface MarkdownPreviewProps {
@@ -11,7 +12,9 @@ export function MarkdownPreview({ source }: MarkdownPreviewProps) {
   const html = useMemo(() => renderMarkdown(source), [source]);
 
   if (!html) {
-    return <div className="markdown-preview markdown-preview--empty">Nothing to preview yet.</div>;
+    return (
+      <div className="markdown-preview markdown-preview--empty">{zh.preview.empty}</div>
+    );
   }
 
   return (

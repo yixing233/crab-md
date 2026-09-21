@@ -59,3 +59,43 @@ describe("MarkdownEditor toolbar", () => {
     expect(screen.getByTestId("markdown-editor").querySelector(".cm-editor")).toBeTruthy();
   });
 });
+
+/**
+ * UI §20 / §28：语法高亮与光标上报此前完全缺失，
+ * 这里把「确实装载了」这一点固定下来。
+ */
+describe("MarkdownEditor highlighting and cursor", () => {
+  it("reports the initial cursor position on mount", () => {
+    const onCursor = vi.fn();
+    render(<MarkdownEditor documentId="d1" value={"a\nb"} onChange={() => {}} onCursor={onCursor} />);
+    // 光标默认在文档开头 → 第 1 行第 1 列。
+    expect(onCursor).toHaveBeenCalledWith(1, 1);
+  });
+
+  it("renders syntax highlight spans for markdown tokens", () => {
+    render(<MarkdownEditor documentId="d1" value={"# 标题\n\n**粗体**"} onChange={() => {}} />);
+    const host = screen.getByTestId("markdown-editor");
+    // 有 HighlightStyle 时 CodeMirror 会给 token 打上带样式的 span；
+    // 没有任何着色时这里会是 0。
+    const styledSpans = host.querySelectorAll(".cm-line span[style], .cm-line span[class]");
+    expect(styledSpans.length).toBeGreaterThan(0);
+  });
+
+  it("updates the cursor callback when the document changes externally", () => {
+    const onCursor = vi.fn();
+    const { rerender } = render(
+      <MarkdownEditor documentId="d1" value={"one"} onChange={() => {}} onCursor={onCursor} />,
+    );
+    onCursor.mockClear();
+    rerender(
+      <MarkdownEditor documentId="d1" value={"one\ntwo"} onChange={() => {}} onCursor={onCursor} />,
+    );
+    expect(onCursor).toHaveBeenCalled();
+  });
+
+  it("mounts bracket matching without throwing", () => {
+    // bracketMatching 在无配对括号时只是不渲染装饰，不该报错。
+    render(<MarkdownEditor documentId="d1" value={"(unclosed"} onChange={() => {}} />);
+    expect(screen.getByTestId("markdown-editor").querySelector(".cm-editor")).toBeTruthy();
+  });
+});

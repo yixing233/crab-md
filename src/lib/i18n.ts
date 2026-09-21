@@ -84,9 +84,57 @@ export const zh = {
     newNote: "新建笔记",
   },
 
+  loading: {
+    workspace: "正在载入工作区…",
+  },
+
+  preview: {
+    empty: "暂无可预览的内容。",
+  },
+
   error: {
-    /** 前缀 + 错误码，例如「出错了：DB_ERROR」。 */
+    /** 前缀 + 中文说明。 */
     prefix: "出错了",
     dismiss: "关闭",
+    retry: "重试",
+    /** 错误码 → 中文说明。未知码回退到通用文案。 */
+    // ARCHITECTURE.md §16.1 的错误码保持英文（可编程判断），
+    // 但给用户的解释必须是中文（UI §2.5、§32）。
+    messages: {
+      NOT_FOUND: "找不到这篇笔记，它可能已被删除。",
+      INVALID_ID: "文档标识无效，请求已被拒绝。",
+      INVALID_INPUT: "输入不合法，请检查后重试。",
+      WORKSPACE_MISSING: "工作区不存在或无法访问。",
+      IO_ERROR: "读写本地文件失败。你的内容仍保存在本机。",
+      DB_ERROR: "本地数据库访问失败。你的内容仍保存在本机。",
+      SERDE_ERROR: "数据格式异常，无法解析。",
+      UNKNOWN: "发生了未预期的错误。你的内容仍保存在本机。",
+    } as Record<string, string>,
   },
 } as const;
+
+/**
+ * CodeMirror 内置面板（查找 / 替换 / 跳转行）的中文词表。
+ *
+ * `@codemirror/search` 等扩展通过 `EditorState.phrases` 取这些字符串；
+ * 不注入的话，中文产品里会冒出一整块英文 UI（UI §2.5）。
+ */
+export const cmPhrases: Record<string, string> = {
+  // 查找
+  Find: "查找",
+  Replace: "替换",
+  next: "下一个",
+  previous: "上一个",
+  all: "全部",
+  "match case": "区分大小写",
+  "by word": "全词匹配",
+  regexp: "正则表达式",
+  replace: "替换",
+  "replace all": "全部替换",
+  "go to line": "跳转到行",
+  close: "关闭",
+  "current match": "当前匹配",
+  "replaced $ matches": "已替换 $ 处",
+  "replaced match on line $": "已替换第 $ 行的匹配",
+  "on line": "所在行",
+};

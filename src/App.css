@@ -34,3 +34,18 @@
   background: var(--danger-soft);
   border-bottom: 1px solid var(--border-subtle);
 }
+
+/* 加载态（UI §32）：冷启动期间不要留一片空白。 */
+.app-loading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.app-loading p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
