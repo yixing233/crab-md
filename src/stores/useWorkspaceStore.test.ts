@@ -37,6 +37,9 @@ function summary(id: string, title = "T") {
 describe("useWorkspaceStore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // 失败路径会经 lib/log 写 console.error；那是预期行为，
+    // 但会把测试输出淹掉，故在断言层面之外静音。
+    vi.spyOn(console, "error").mockImplementation(() => {});
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
       loading: false, error: null, dirty: false,
@@ -125,6 +128,7 @@ describe("useWorkspaceStore", () => {
 describe("unsaved content is never silently discarded", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => {});
     // 去抖调长，确保用例不会因为自动保存提前触发而失真。
     __setAutosaveDelay(60_000);
     useWorkspaceStore.setState({
@@ -221,6 +225,7 @@ describe("unsaved content is never silently discarded", () => {
 describe("autosave debounce", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => {});
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
       loading: false, error: null, dirty: false,

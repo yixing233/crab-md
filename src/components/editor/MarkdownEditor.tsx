@@ -21,6 +21,16 @@ export interface MarkdownEditorProps {
   onSave?: () => void;
   /** 光标位置变化（1 基行/列），供状态栏显示（UI §28）。 */
   onCursor?: (line: number, column: number) => void;
+  /**
+   * 请求把光标跳到某个 0 基行号（大纲点击时用）。
+   * 用 `nonce` 区分「同一个行号被再次点击」，否则重复点击同一个标题不会触发。
+   */
+  jumpTarget?: { line: number; nonce: number } | null;
+  /**
+   * 请求打开查找面板（UI §29 的 Ctrl+F）。
+   * 同样用 nonce：编辑器未聚焦时全局快捷键也要能把面板叫出来。
+   */
+  findNonce?: number;
   /** 是否显示格式工具栏（UI_DESIGN_SYSTEM.md §21.1）。 */
   showToolbar?: boolean;
 }
@@ -126,6 +136,8 @@ export function MarkdownEditor({
   onChange,
   onSave,
   onCursor,
+  jumpTarget,
+  findNonce,
   showToolbar = true,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -211,6 +223,38 @@ export function MarkdownEditor({
       });
     }
   }, [value]);
+
+  // 大纲跳转：把光标移到目标行并滚动到可见位置。
+  // 依赖 nonce 而不是 line，这样反复点击同一个标题也会重新跳转。
+  const jumpNonce = jumpTarget?.nonce;
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !jumpTarget) return;
+
+    // 行号可能因为编辑而越界，先夹到合法范围再取。
+    const total = view.state.doc.lines;
+    const lineNo = Math.min(Math.max(1, jumpTarget.line + 1), total);
+    const line = view.state.doc.line(lineNo);
+
+    view.dispatch({
+      selection: CmSelection.cursor(line.from),
+      scrollIntoView: true,
+    });
+    view.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpNonce]);
+
+  // 全局 Ctrl+F：编辑器未聚焦时也要能打开查找面板。
+  // searchKeymap 只在编辑器有焦点时生效，所以这里显式补一条。
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !findNonce) return;
+    view.focus();
+    // openSearchPanel 由 @codemirror/search 提供。
+    void import("@codemirror/search").then(({ openSearchPanel }) => {
+      openSearchPanel(view);
+    });
+  }, [findNonce]);
 
   const handleAction = (action: MarkdownActionId) => {
     const view = viewRef.current;

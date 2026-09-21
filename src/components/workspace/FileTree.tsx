@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FileText, Folder, MoreHorizontal, Plus } from "lucide-react";
 import { buildFileTree, type TreeNode } from "../../lib/fileTree";
 import type { DocumentSummary } from "../../types/document";
@@ -6,6 +6,8 @@ import { zh } from "../../lib/i18n";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { Tooltip } from "../ui/Tooltip";
+import { ContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
+import { InlineEdit } from "../ui/InlineEdit";
 import "./workspace.css";
 
 export interface FileTreeProps {
@@ -31,41 +33,37 @@ export function FileTree({
 
   // 行内重命名状态：一次只能重命名一项（§18.2）。
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  // 打开上下文菜单的文档 id + 屏幕坐标。
+  // 菜单锚点与坐标；用共享 ContextMenu 渲染。
   const [menu, setMenu] = useState<{ id: string; title: string; x: number; y: number } | null>(null);
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
-  // 点击别处 / Escape 关闭菜单。
-  useEffect(() => {
-    if (!menu) return;
-    const onDown = () => closeMenu();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeMenu();
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [menu, closeMenu]);
+  // 菜单里的「删除」只上报请求，确认由上层负责（破坏性操作须确认，§14.4）。
+  const menuItems = useCallback(
+    (id: string, title: string): ContextMenuItem[] => [
+      {
+        id: "rename",
+        label: zh.fileTree.rename,
+        shortcut: "F2",
+        onSelect: () => {
+          setRenamingId(id);
+          closeMenu();
+        },
+      },
+      {
+        id: "delete",
+        label: zh.fileTree.delete,
+        danger: true,
+        onSelect: () => onRequestDelete(id, title),
+      },
+    ],
+    [closeMenu, onRequestDelete],
+  );
 
   const startRename = useCallback((id: string) => {
     setRenamingId(id);
     setMenu(null);
   }, []);
-
-  const commitRename = useCallback(
-    (id: string, next: string, original: string) => {
-      setRenamingId(null);
-      const trimmed = next.trim();
-      // 空名或未改动就不调用后端，避免无意义的写与报错。
-      if (!trimmed || trimmed === original) return;
-      onRename(id, trimmed);
-    },
-    [onRename],
-  );
 
   if (documents.length === 0) {
     return (
@@ -94,42 +92,24 @@ export function FileTree({
             depth={0}
             renamingId={renamingId}
             onStartRename={startRename}
-            onCommitRename={commitRename}
+            onCommitRename={(id, next) => {
+              setRenamingId(null);
+              onRename(id, next);
+            }}
             onCancelRename={() => setRenamingId(null)}
             onOpenMenu={(id, title, x, y) => setMenu({ id, title, x, y })}
           />
         ))}
       </div>
 
-      {menu && (
-        <div
-          className="context-menu"
-          role="menu"
-          style={{ position: "fixed", left: menu.x, top: menu.y }}
-          // 菜单自身被点击时不要触发外层的关闭逻辑。
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            className="context-menu__item"
-            onClick={() => startRename(menu.id)}
-          >
-            {zh.fileTree.rename}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="context-menu__item context-menu__item--danger"
-            onClick={() => {
-              onRequestDelete(menu.id, menu.title);
-              closeMenu();
-            }}
-          >
-            {zh.fileTree.delete}
-          </button>
-        </div>
-      )}
+      <ContextMenu
+        open={menu !== null}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        items={menu ? menuItems(menu.id, menu.title) : []}
+        onClose={closeMenu}
+        ariaLabel={menu?.title}
+      />
     </>
   );
 }
@@ -141,7 +121,7 @@ interface TreeItemProps {
   depth: number;
   renamingId: string | null;
   onStartRename: (id: string) => void;
-  onCommitRename: (id: string, next: string, original: string) => void;
+  onCommitRename: (id: string, next: string) => void;
   onCancelRename: () => void;
   onOpenMenu: (id: string, title: string, x: number, y: number) => void;
 }
@@ -184,16 +164,17 @@ function TreeItem({
 
   const id = node.documentId!;
   const selected = id === activeId;
-  const renaming = id === renamingId;
 
-  if (renaming) {
+  if (id === renamingId) {
     return (
-      <RenameField
-        initial={node.name}
-        depth={depth}
-        onCommit={(next) => onCommitRename(id, next, node.name)}
-        onCancel={onCancelRename}
-      />
+      <div className="file-tree__row" style={{ paddingLeft: depth * 14 + 10 }}>
+        <InlineEdit
+          initialValue={node.name}
+          ariaLabel={zh.fileTree.renameLabel}
+          onCommit={(next) => onCommitRename(id, next)}
+          onCancel={onCancelRename}
+        />
+      </div>
     );
   }
 
@@ -218,7 +199,8 @@ function TreeItem({
             onStartRename(id);
           } else if (e.key === "Delete") {
             e.preventDefault();
-            onOpenMenu(id, node.name, e.currentTarget.getBoundingClientRect().right, e.currentTarget.getBoundingClientRect().top);
+            const r = e.currentTarget.getBoundingClientRect();
+            onOpenMenu(id, node.name, r.right, r.top);
           }
         }}
       >
@@ -241,63 +223,6 @@ function TreeItem({
           <MoreHorizontal size={14} aria-hidden />
         </Button>
       </Tooltip>
-    </div>
-  );
-}
-
-interface RenameFieldProps {
-  initial: string;
-  depth: number;
-  onCommit: (next: string) => void;
-  onCancel: () => void;
-}
-
-/** 行内重命名输入（UI_DESIGN_SYSTEM.md §18.2）。 */
-function RenameField({ initial, depth, onCommit, onCancel }: RenameFieldProps) {
-  const ref = useRef<HTMLInputElement | null>(null);
-  const [value, setValue] = useState(initial);
-  // 用 ref 记住是否已结束，避免 onBlur 在 Escape 之后又提交一次。
-  const settled = useRef(false);
-
-  // 自动聚焦并全选，用户可直接输入新名字（§18.2 第一条）。
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.focus();
-    el.select();
-  }, []);
-
-  const commit = () => {
-    if (settled.current) return;
-    settled.current = true;
-    onCommit(value);
-  };
-  const cancel = () => {
-    if (settled.current) return;
-    settled.current = true;
-    onCancel();
-  };
-
-  return (
-    <div className="file-tree__row" style={{ paddingLeft: depth * 14 + 10 }}>
-      <input
-        ref={ref}
-        className="file-tree__rename"
-        aria-label={zh.fileTree.renameLabel}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            cancel();
-          }
-        }}
-        // 失焦即提交，符合文件管理器的普遍预期。
-        onBlur={commit}
-      />
     </div>
   );
 }

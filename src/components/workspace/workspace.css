@@ -80,59 +80,58 @@
   opacity: 1;
 }
 
-/* 行内重命名输入（UI §18.2）。 */
-.file-tree__rename {
-  width: 100%;
-  height: 28px;
-  padding: 0 var(--space-2);
-  font-family: inherit;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  background: var(--bg-app);
-  border: 1px solid var(--border-focus);
-  border-radius: var(--radius-sm);
-  outline: none;
+/* 侧栏空态：与文件树列表同样的内边距，避免贴边。 */
+.app-sidebar .ui-empty {
+  padding: var(--space-10) var(--space-4);
+  gap: var(--space-3);
 }
 
-/* 右键 / 「更多」菜单。 */
-.context-menu {
-  z-index: 1200;
-  min-width: 132px;
-  padding: var(--space-1);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+/* ---------------------------------------------------------------------------
+   Breadcrumb（UI §17）
+   --------------------------------------------------------------------------- */
+
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.context-menu__item {
-  display: block;
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
+.breadcrumb__segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.breadcrumb__link {
+  padding: 1px 4px;
   font-family: inherit;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  text-align: left;
+  font-size: inherit;
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
-.context-menu__item:hover { background: var(--bg-surface-hover); }
+.breadcrumb__link:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
 
-.context-menu__item:focus-visible {
+.breadcrumb__link:focus-visible {
   outline: 2px solid var(--border-focus);
-  outline-offset: -2px;
+  outline-offset: -1px;
 }
 
-.context-menu__item--danger { color: var(--danger); }
-.context-menu__item--danger:hover { background: var(--danger-soft); }
+.breadcrumb__sep { color: var(--text-muted); flex: 0 0 auto; }
 
-/* 侧栏空态：与文件树列表同样的内边距，避免贴边。 */
-.app-sidebar .ui-empty {
-  padding: var(--space-10) var(--space-4);
-  gap: var(--space-3);
+.breadcrumb__current {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------------------

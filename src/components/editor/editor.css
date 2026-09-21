@@ -49,6 +49,69 @@
 .markdown-editor { flex: 1; min-height: 0; overflow: hidden; }
 .markdown-editor .cm-editor { height: 100%; }
 
+/* ---------------------------------------------------------------------------
+   OutlineTree（UI §19 / §23）
+   --------------------------------------------------------------------------- */
+
+.outline {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.outline__header {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.outline__list {
+  margin: 0;
+  padding: var(--space-1) 0;
+  list-style: none;
+}
+
+.outline__item {
+  display: block;
+  width: 100%;
+  padding: 4px var(--space-3) 4px 0;
+  overflow: hidden;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.outline__item:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+
+.outline__item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+/* 一级标题稍重，层级关系不只靠缩进传达（UI §39）。 */
+.outline__item[data-level="1"] { font-weight: 600; color: var(--text-primary); }
+
+.outline__empty {
+  margin: 0;
+  padding: var(--space-4) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
 .markdown-preview {
   flex: 1;
   min-height: 0;

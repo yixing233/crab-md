@@ -2,12 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import { MarkdownEditor } from "./components/editor/MarkdownEditor";
 import { EditorStatusBar } from "./components/editor/EditorStatusBar";
 import { MarkdownPreview } from "./components/editor/MarkdownPreview";
+import { OutlineTree } from "./components/editor/OutlineTree";
 import { AppToolbar } from "./components/workspace/AppToolbar";
 import { Sidebar } from "./components/workspace/Sidebar";
+import { Breadcrumb } from "./components/workspace/Breadcrumb";
 import { EmptyState } from "./components/ui/EmptyState";
 import { Button } from "./components/ui/Button";
 import { Dialog } from "./components/ui/Dialog";
 import { Spinner } from "./components/ui/Spinner";
+import { Toast } from "./components/ui/Toast";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { zh } from "./lib/i18n";
 import {
@@ -38,8 +41,15 @@ export default function App() {
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [previewVisible, setPreviewVisible] = useState(true);
+  const [outlineVisible, setOutlineVisible] = useState(false);
   // 编辑器光标位置，供状态栏显示（UI §28）。
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  // 大纲跳转目标；nonce 保证重复点同一标题也能再次跳转。
+  const [jumpTarget, setJumpTarget] = useState<{ line: number; nonce: number } | null>(null);
+  // 轻提示（UI §33）：保存成功/失败等非阻塞反馈。
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+  // Ctrl+F 的触发计数；递增即请求编辑器打开查找面板。
+  const [findNonce, setFindNonce] = useState(0);
   // 待删除的文档；非空时显示确认对话框（UI §14.4 要求破坏性操作先确认）。
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
@@ -117,6 +127,16 @@ export default function App() {
     void createDocument(zh.app.untitled);
   }, [createDocument]);
 
+  // 保存并给出反馈（UI §33）。自动保存与 Ctrl+S 都经过这里。
+  const handleSave = useCallback(async () => {
+    await saveActive();
+    if (useWorkspaceStore.getState().error) {
+      setToast({ message: zh.toast.saveFailed, tone: "error" });
+    } else {
+      setToast({ message: zh.toast.saved, tone: "success" });
+    }
+  }, [saveActive]);
+
   // 全局快捷键（UI_DESIGN_SYSTEM.md §29）。集中在此处而非散落各页面。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -128,10 +148,17 @@ export default function App() {
         handleNewDocument();
       } else if (e.key.toLowerCase() === "s") {
         e.preventDefault();
-        void saveActive();
+        void handleSave();
+      } else if (e.key.toLowerCase() === "f") {
+        // Ctrl+F：文档内查找。编辑器未聚焦时 searchKeymap 不生效，故在此兜住。
+        e.preventDefault();
+        setFindNonce((n) => n + 1);
       } else if (e.key === "\\") {
         e.preventDefault();
         setPreviewVisible((v) => !v);
+      } else if (e.shiftKey && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        setOutlineVisible((v) => !v);
       } else if (e.shiftKey && e.key.toLowerCase() === "l") {
         e.preventDefault();
         cycleTheme();
@@ -139,9 +166,10 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleNewDocument, saveActive, cycleTheme]);
+  }, [handleNewDocument, handleSave, cycleTheme]);
 
-  const activeTitle = documents.find((d) => d.id === activeId)?.title ?? "";
+  const activeDoc = documents.find((d) => d.id === activeId);
+  const activeTitle = activeDoc?.title ?? "";
 
   return (
     <div className="app-shell" data-sidebar={sidebarVisible || undefined}>
@@ -149,6 +177,8 @@ export default function App() {
         onNewDocument={handleNewDocument}
         onToggleSidebar={() => setSidebarVisible((v) => !v)}
         sidebarVisible={sidebarVisible}
+        outlineVisible={outlineVisible}
+        onToggleOutline={() => setOutlineVisible((v) => !v)}
         themePreference={themePreference}
         onCycleTheme={cycleTheme}
       />
@@ -178,16 +208,35 @@ export default function App() {
 
           {activeId ? (
             <>
-              <div className="app-panes" data-preview={previewVisible || undefined}>
+              {/* 面包屑：让用户知道当前文档在哪个目录下（UI §17）。 */}
+              <Breadcrumb
+                virtualPath={activeDoc?.virtualPath ?? "/"}
+                title={activeTitle}
+              />
+              <div
+                className="app-panes"
+                data-preview={previewVisible || undefined}
+                data-outline={outlineVisible || undefined}
+              >
                 <div className="app-pane app-pane--editor">
                   <MarkdownEditor
                     documentId={activeId}
                     value={activeContent}
                     onChange={setContent}
-                    onSave={() => void saveActive()}
+                    onSave={() => void handleSave()}
                     onCursor={(line, column) => setCursor({ line, column })}
+                    jumpTarget={jumpTarget}
+                    findNonce={findNonce}
                   />
                 </div>
+                {outlineVisible && (
+                  <div className="app-pane app-pane--outline">
+                    <OutlineTree
+                      source={activeContent}
+                      onJump={(line) => setJumpTarget({ line, nonce: Date.now() })}
+                    />
+                  </div>
+                )}
                 {previewVisible && (
                   <div className="app-pane app-pane--preview">
                     <MarkdownPreview source={activeContent} />
@@ -237,6 +286,12 @@ export default function App() {
         {/* 文案点名具体对象，避免用户误删（UI §16）。 */}
         {pendingDelete ? zh.dialog.deleteBody(pendingDelete.title) : null}
       </Dialog>
+
+      <Toast
+        message={toast?.message ?? null}
+        tone={toast?.tone}
+        onDismiss={() => setToast(null)}
+      />
     </div>
   );
 }

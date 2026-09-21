@@ -23,6 +23,16 @@
   background: var(--bg-surface);
 }
 
+/* 大纲是辅助导航，宽度固定、不参与剩余空间分配（UI §23）。
+   显示大纲时编辑区让出空间，但预览仍保留可读宽度。 */
+.app-pane--outline {
+  flex: 0 0 200px;
+  order: 2;
+}
+/* 有预览时大纲插在编辑与预览之间，预览需要让出空间。 */
+.app-panes[data-outline][data-preview] .app-pane--editor { flex: 1 1 45%; }
+.app-panes[data-outline][data-preview] .app-pane--preview { flex: 1 1 35%; }
+
 .app-error {
   display: flex;
   gap: var(--space-3);
@@ -48,4 +58,48 @@
 .app-loading p {
   margin: 0;
   font-size: var(--text-sm);
+}
+
+/* ---------------------------------------------------------------------------
+   响应式断点（UI_DESIGN_SYSTEM.md §10）
+
+   桌面 >= 900px：侧栏 + 编辑 + （大纲）+ 预览
+   紧凑 600–899px：收起预览，编辑为主；侧栏收窄
+   移动 < 600px：单栏，侧栏改为浮层
+   --------------------------------------------------------------------------- */
+
+/* 紧凑：预览自动让位。用户显式打开预览时仍按下面规则显示。 */
+@media (max-width: 899px) {
+  /* 侧栏收窄，把宽度让给编辑区。 */
+  .app-sidebar { flex-basis: 200px; }
+
+  /* 三栏在此宽度下每栏都太窄，大纲改为覆盖式显示。 */
+  .app-pane--outline {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    flex-basis: 220px;
+    box-shadow: -4px 0 16px rgb(0 0 0 / 0.12);
+  }
+  .app-panes { position: relative; }
+}
+
+/* 移动：单栏。侧栏改为覆盖在内容之上，由工具栏按钮开关。 */
+@media (max-width: 599px) {
+  .app-sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    flex-basis: 240px;
+    box-shadow: 4px 0 16px rgb(0 0 0 / 0.16);
+  }
+  .app-body { position: relative; }
+
+  /* 单栏下预览不再并排，需要时整屏显示。 */
+  .app-panes[data-preview] .app-pane--editor { display: none; }
+  .app-pane--preview { flex: 1 1 100%; border-left: none; }
 }

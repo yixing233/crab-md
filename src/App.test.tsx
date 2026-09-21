@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,10 +20,28 @@ vi.mock("./lib/api", () => ({
 
 import App from "./App";
 import { THEME_STORAGE_KEY } from "./lib/theme";
+import { useWorkspaceStore } from "./stores/useWorkspaceStore";
+
+/**
+ * store 是模块级单例，状态会跨用例泄漏（例如上一个用例留下的 activeId
+ * 会让状态栏显示「已保存」，与本用例的 toast 文案撞车）。
+ * 每个用例前显式重置，保证互相独立。
+ */
+function resetStore() {
+  useWorkspaceStore.setState({
+    documents: [],
+    activeId: null,
+    activeContent: "",
+    dirty: false,
+    loading: false,
+    error: null,
+  });
+}
 
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetStore();
     listDocuments.mockResolvedValue([]);
     localStorage.clear();
     document.documentElement.removeAttribute("data-theme");
@@ -94,5 +112,84 @@ describe("App", () => {
     render(<App />);
     await screen.findByRole("banner");
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+  });
+});
+
+/**
+ * 批次 C 补齐的能力：大纲、面包屑、快捷键、轻提示。
+ * 这些是「规范要求但此前完全不存在」的部分，用测试固定住。
+ */
+describe("App panes and shortcuts", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStore();
+    listDocuments.mockResolvedValue([]);
+    localStorage.clear();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("toggles the outline pane from the toolbar", async () => {
+    render(<App />);
+    await screen.findByRole("banner");
+
+    const toggle = screen.getByRole("button", { name: "大纲" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("toggles the outline with Ctrl+Shift+O", async () => {
+    render(<App />);
+    await screen.findByRole("banner");
+    const toggle = screen.getByRole("button", { name: "大纲" });
+
+    await userEvent.keyboard("{Control>}{Shift>}o{/Shift}{/Control}");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("creates a document with Ctrl+N", async () => {
+    const { api } = await import("./lib/api");
+    render(<App />);
+    await screen.findByRole("banner");
+
+    await userEvent.keyboard("{Control>}n{/Control}");
+    expect(api.createDocument).toHaveBeenCalled();
+  });
+
+  it("shows a toast after Ctrl+S", async () => {
+    const doc = {
+      id: "d1", title: "甲", virtualPath: "/", revision: 1,
+      contentHash: "sha256:x", createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z", size: 0,
+    };
+    const { api } = await import("./lib/api");
+    listDocuments.mockResolvedValue([doc]);
+    (api.readDocument as ReturnType<typeof vi.fn>).mockResolvedValue({ ...doc, content: "hi" });
+    (api.saveDocument as ReturnType<typeof vi.fn>).mockResolvedValue(doc);
+
+    render(<App />);
+    await userEvent.click(await screen.findByText("甲"));
+
+    await userEvent.keyboard("{Control>}s{/Control}");
+
+    // 「已保存」在状态栏也会出现（文档干净时），所以断言必须限定在提示元素上。
+    const toast = await waitFor(() => {
+      const el = document.querySelector(".ui-toast");
+      if (!el) throw new Error("toast not rendered");
+      return el;
+    });
+    expect(toast).toHaveTextContent("已保存");
+    expect(toast).toHaveAttribute("data-tone", "success");
+  });
+
+  it("shows a hint instead of a blank pane while the workspace loads", async () => {
+    // 让列表请求悬停不决，观察加载态。
+    listDocuments.mockImplementation(() => new Promise(() => {}));
+    render(<App />);
+    // 文案同时出现在 spinner 的 aria-label 与说明段落里，故用 getAllByText。
+    expect((await screen.findAllByText("正在载入工作区…")).length).toBeGreaterThan(0);
+    // 且确实渲染在 main 里，而不是某个被隐藏的区域。
+    expect(screen.getByRole("main").querySelector(".app-loading")).toBeTruthy();
   });
 });

@@ -23,6 +23,7 @@ export const zh = {
     },
     search: "搜索",
     newDocument: "新建",
+    toggleOutline: "大纲",
   },
 
   sidebar: {
@@ -90,6 +91,25 @@ export const zh = {
 
   preview: {
     empty: "暂无可预览的内容。",
+  },
+
+  outline: {
+    title: "大纲",
+    ariaLabel: "文档大纲",
+    empty: "这篇文档还没有标题。",
+    /** 空标题（只有一个 #）时的占位文字。 */
+    untitled: "（无标题）",
+  },
+
+  breadcrumb: {
+    ariaLabel: "文档位置",
+  },
+
+  toast: {
+    saved: "已保存",
+    saveFailed: "保存失败，内容仍保留在编辑器中",
+    renamed: "已重命名",
+    deleted: "已删除",
   },
 
   error: {

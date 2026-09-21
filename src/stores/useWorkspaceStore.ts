@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, toAppError } from "../lib/api";
+import { logFailure } from "../lib/log";
 import type { DocumentSummary } from "../types/document";
 
 /**
@@ -62,7 +63,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       set({ documents: await api.listDocuments(), loading: false });
     } catch (raw) {
-      set({ error: toAppError(raw).code, loading: false });
+      const code = toAppError(raw).code;
+      logFailure({ op: "listDocuments", code }, raw);
+      set({ error: code, loading: false });
     }
   },
 
@@ -75,7 +78,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const doc = await api.readDocument(id);
       set({ activeId: doc.id, activeContent: doc.content, dirty: false });
     } catch (raw) {
-      set({ error: toAppError(raw).code });
+      const code = toAppError(raw).code;
+      logFailure({ op: "openDocument", code, documentId: id }, raw);
+      set({ error: code });
     }
   },
 
@@ -89,7 +94,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({ activeId: created.id, activeContent: "", dirty: false });
       await get().loadDocuments();
     } catch (raw) {
-      set({ error: toAppError(raw).code });
+      const code = toAppError(raw).code;
+      logFailure({ op: "createDocument", code }, raw);
+      set({ error: code });
     }
   },
 
@@ -99,7 +106,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await api.renameDocument(id, title);
       await get().loadDocuments();
     } catch (raw) {
-      set({ error: toAppError(raw).code });
+      const code = toAppError(raw).code;
+      logFailure({ op: "renameDocument", code, documentId: id }, raw);
+      set({ error: code });
     }
   },
 
@@ -117,7 +126,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
       await get().loadDocuments();
     } catch (raw) {
-      set({ error: toAppError(raw).code });
+      const code = toAppError(raw).code;
+      logFailure({ op: "deleteDocument", code, documentId: id }, raw);
+      set({ error: code });
     }
   },
 
@@ -133,7 +144,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({ dirty: false });
       await get().loadDocuments();
     } catch (raw) {
-      set({ error: toAppError(raw).code });
+      const code = toAppError(raw).code;
+      // 只记录 id 与错误码；正文一律不进日志（ARCH §23 MUST NOT）。
+      logFailure({ op: "saveDocument", code, documentId: activeId }, raw);
+      set({ error: code });
     }
   },
 

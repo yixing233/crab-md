@@ -1,4 +1,4 @@
-import { Moon, PanelLeft, Plus, Search, Sun, SunMoon } from "lucide-react";
+import { ListTree, Moon, PanelLeft, Plus, Search, Sun, SunMoon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Tooltip } from "../ui/Tooltip";
 import { zh } from "../../lib/i18n";
@@ -8,6 +8,9 @@ export interface AppToolbarProps {
   onNewDocument: () => void;
   onToggleSidebar: () => void;
   sidebarVisible: boolean;
+  /** 是否显示文档大纲（UI §23）。 */
+  outlineVisible: boolean;
+  onToggleOutline: () => void;
   /** 当前主题偏好（UI_DESIGN_SYSTEM.md §4.1 要求 Light/Dark/Follow system）。 */
   themePreference: "light" | "dark" | "system";
   onCycleTheme: () => void;
@@ -20,6 +23,8 @@ export function AppToolbar({
   onNewDocument,
   onToggleSidebar,
   sidebarVisible,
+  outlineVisible,
+  onToggleOutline,
   themePreference,
   onCycleTheme,
 }: AppToolbarProps) {
@@ -44,6 +49,19 @@ export function AppToolbar({
       <span className="app-toolbar__title">{zh.app.name}</span>
 
       <span className="app-toolbar__spacer" />
+
+      <Tooltip content={`${zh.toolbar.toggleOutline}　Ctrl+Shift+O`}>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          onClick={onToggleOutline}
+          aria-pressed={outlineVisible}
+          aria-label={zh.toolbar.toggleOutline}
+        >
+          <ListTree size={16} aria-hidden />
+        </Button>
+      </Tooltip>
 
       <Tooltip content={`${themeLabel}　Ctrl+Shift+L`}>
         <Button
