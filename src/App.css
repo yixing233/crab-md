@@ -5,36 +5,11 @@
   background: var(--bg-app);
 }
 
-.app-toolbar {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  height: 40px;
-  padding: 0 var(--space-3);
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.app-toolbar__title { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
-.app-toolbar__spacer { flex: 1; }
+/* .app-toolbar* / .app-sidebar* / .sr-only 归 workspace.css 所有 ——
+   AppToolbar.tsx 与 Sidebar.tsx 各自 import 该文件，样式随之就近加载。
+   此处不再重复声明，避免同一选择器出现两处真相。 */
 
 .app-body { display: flex; flex: 1; min-height: 0; }
-
-.app-sidebar {
-  display: flex;
-  flex-direction: column;
-  width: 260px;
-  flex-shrink: 0;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border-subtle);
-}
-.app-sidebar__header {
-  padding: var(--space-3) var(--space-3) var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 
 /* 编辑器是主体：预览可折叠，且编辑区占比更大（UI §11）。 */
 .app-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
