@@ -16,6 +16,7 @@ import {
 import { EDITOR_ACTIONS, type MarkdownActionId } from "../../lib/markdownActions";
 import { zh } from "../../lib/i18n";
 import { Button } from "../ui/Button";
+import { Tooltip } from "../ui/Tooltip";
 import "./editor.css";
 
 const ICONS: Record<MarkdownActionId, LucideIcon> = {
@@ -67,19 +68,22 @@ export function EditorToolbar({ onAction }: EditorToolbarProps) {
             if (!action) return null;
             const Icon = ICONS[id];
             const label = zh.editor.actions[id];
+            // 提示里带上快捷键；用自绘 Tooltip 而非 title 属性，
+            // 以便控制延迟并让外观跟随主题（UI §13 必备组件）。
+            const tip = action.shortcut ? `${label}　${action.shortcut}` : label;
             return (
-              <Button
-                key={id}
-                variant="ghost"
-                size="sm"
-                iconOnly
-                className="editor-toolbar__button"
-                title={action.shortcut ? `${label}（${action.shortcut}）` : label}
-                aria-label={label}
-                onClick={() => onAction(id)}
-              >
-                <Icon size={15} strokeWidth={2} aria-hidden />
-              </Button>
+              <Tooltip key={id} content={tip}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  className="editor-toolbar__button"
+                  aria-label={label}
+                  onClick={() => onAction(id)}
+                >
+                  <Icon size={15} strokeWidth={2} aria-hidden />
+                </Button>
+              </Tooltip>
             );
           })}
         </Fragment>

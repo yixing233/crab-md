@@ -1,5 +1,6 @@
 import { Moon, PanelLeft, Plus, Search, Sun, SunMoon } from "lucide-react";
 import { Button } from "../ui/Button";
+import { Tooltip } from "../ui/Tooltip";
 import { zh } from "../../lib/i18n";
 import "./workspace.css";
 
@@ -27,53 +28,53 @@ export function AppToolbar({
 
   return (
     <header className="app-toolbar" role="banner">
-      <Button
-        variant="ghost"
-        size="sm"
-        iconOnly
-        onClick={onToggleSidebar}
-        aria-pressed={sidebarVisible}
-        title={zh.toolbar.toggleSidebar}
-        aria-label={zh.toolbar.toggleSidebar}
-      >
-        <PanelLeft size={16} aria-hidden />
-      </Button>
+      <Tooltip content={zh.toolbar.toggleSidebar}>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          onClick={onToggleSidebar}
+          aria-pressed={sidebarVisible}
+          aria-label={zh.toolbar.toggleSidebar}
+        >
+          <PanelLeft size={16} aria-hidden />
+        </Button>
+      </Tooltip>
 
       <span className="app-toolbar__title">{zh.app.name}</span>
 
       <span className="app-toolbar__spacer" />
 
-      <Button
-        variant="ghost"
-        size="sm"
-        iconOnly
-        onClick={onCycleTheme}
-        title={`${themeLabel}（Ctrl+Shift+L）`}
-        aria-label={themeLabel}
-      >
-        <ThemeIcon size={16} aria-hidden />
-      </Button>
+      <Tooltip content={`${themeLabel}　Ctrl+Shift+L`}>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          onClick={onCycleTheme}
+          aria-label={themeLabel}
+        >
+          <ThemeIcon size={16} aria-hidden />
+        </Button>
+      </Tooltip>
 
-      <Button
-        variant="ghost"
-        size="sm"
-        iconOnly
-        title={zh.toolbar.search}
-        aria-label={zh.toolbar.search}
-        disabled
-      >
-        <Search size={16} aria-hidden />
-      </Button>
+      <Tooltip content={zh.toolbar.search}>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          aria-label={zh.toolbar.search}
+          disabled
+        >
+          <Search size={16} aria-hidden />
+        </Button>
+      </Tooltip>
 
-      <Button
-        variant="primary"
-        size="sm"
-        onClick={onNewDocument}
-        title={`${zh.toolbar.newDocument}（Ctrl+N）`}
-      >
-        <Plus size={14} aria-hidden />
-        <span>{zh.toolbar.newDocument}</span>
-      </Button>
+      <Tooltip content={`${zh.toolbar.newDocument}　Ctrl+N`}>
+        <Button variant="primary" size="sm" onClick={onNewDocument}>
+          <Plus size={14} aria-hidden />
+          <span>{zh.toolbar.newDocument}</span>
+        </Button>
+      </Tooltip>
     </header>
   );
 }

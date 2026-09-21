@@ -112,3 +112,39 @@
 @keyframes ui-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ---------------------------------------------------------------------------
+   Tooltip（UI_DESIGN_SYSTEM.md §13）
+   自绘而非用原生 title：延迟可控，且配色跟随主题令牌。
+   --------------------------------------------------------------------------- */
+
+/* 锚点用 inline-flex，避免在工具栏里额外撑高或产生基线偏移。 */
+.ui-tooltip-anchor {
+  display: inline-flex;
+}
+
+.ui-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 260px;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-inverse);
+  background: var(--text-primary);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+  pointer-events: none;
+  white-space: nowrap;
+  animation: ui-tooltip-in var(--duration-fast) ease-out;
+}
+
+@keyframes ui-tooltip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-tooltip { animation: none; }
+}
