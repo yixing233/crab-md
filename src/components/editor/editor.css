@@ -5,24 +5,45 @@
   flex: 1;
 }
 
-/* 格式工具栏（UI_DESIGN_SYSTEM.md §21.1）：紧凑、克制，不与正文争主体。 */
+/* 格式工具栏（UI_DESIGN_SYSTEM.md §21.1）：紧凑、克制，不与正文争主体。
+   用分隔线把语义相近的动作分组，减少一排图标带来的视觉噪音。 */
 .editor-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px;
+  gap: var(--space-1);
   align-items: center;
-  padding: var(--space-1) var(--space-2);
-  background: var(--bg-app);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* 每组之后画一条 1px 竖线：选中态用背景而非边框，故此处只做分隔。 */
+.editor-toolbar__separator {
+  width: 1px;
+  height: 16px;
+  margin: 0 var(--space-1);
+  background: var(--border-subtle);
+  flex: 0 0 auto;
+}
+
 .editor-toolbar__button {
-  padding: 0 var(--space-2);
   color: var(--text-secondary);
+  border-radius: var(--radius-sm);
 }
 
 .editor-toolbar__button:hover:not(:disabled) {
+  background: var(--bg-surface-active);
   color: var(--text-primary);
+}
+
+/* 键盘可达性：焦点环内缩，避免与相邻按钮的圆角重叠（UI §39）。 */
+.editor-toolbar__button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.editor-toolbar__button:active:not(:disabled) {
+  background: var(--border-subtle);
 }
 
 .markdown-editor { flex: 1; min-height: 0; overflow: hidden; }

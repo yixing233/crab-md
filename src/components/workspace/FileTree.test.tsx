@@ -17,8 +17,8 @@ function doc(id: string, title: string, virtualPath = "/"): DocumentSummary {
 describe("FileTree", () => {
   it("shows an empty state with a create action when there are no notes", () => {
     render(<FileTree documents={[]} activeId={null} onSelect={() => {}} onCreate={() => {}} />);
-    expect(screen.getByText("No notes yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /new note/i })).toBeInTheDocument();
+    expect(screen.getByText("还没有笔记")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /新建笔记/ })).toBeInTheDocument();
   });
 
   it("renders documents as tree items", () => {
@@ -47,7 +47,7 @@ describe("FileTree", () => {
   it("creates a document from the empty state button", async () => {
     const onCreate = vi.fn();
     render(<FileTree documents={[]} activeId={null} onSelect={() => {}} onCreate={onCreate} />);
-    await userEvent.click(screen.getByRole("button", { name: /new note/i }));
+    await userEvent.click(screen.getByRole("button", { name: /新建笔记/ }));
     expect(onCreate).toHaveBeenCalledOnce();
   });
 

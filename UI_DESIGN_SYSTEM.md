@@ -64,6 +64,30 @@ Pages MUST use shared components from the design system where an appropriate com
 
 Pages MUST NOT create one-off button/input/dialog styles solely for local use.
 
+### 2.5 Product language
+
+The product targets Chinese-speaking users. All user-visible text MUST be Simplified Chinese.
+
+This includes:
+
+- buttons, menus, labels, placeholders, tooltips
+- empty / loading / error states and status vocabulary
+- dialog titles and confirmation copy
+- accessible names (`aria-label`, `title`) that a screen reader would read aloud
+
+The following MUST remain English because they are not user-facing copy:
+
+- code identifiers, CSS class names, file names
+- machine-readable error codes (see `ARCHITECTURE.md` §16.1)
+- developer-facing logs and diagnostics
+- syntax highlighting, and user document content
+
+Copy SHOULD be centralized in `src/lib/i18n.ts` rather than hard-coded inside
+feature components, so wording stays consistent and is reviewable in one place.
+
+Agents MUST NOT add new English UI strings. When touching existing English copy,
+convert it to Chinese in the same change.
+
 ---
 
 ## 3. Design Token System
@@ -1079,6 +1103,7 @@ Coding/UI agents MUST follow these rules unless a task explicitly overrides them
 12. Test every major component in light and dark themes.
 13. Add explicit empty/loading/error states for new major surfaces.
 14. Follow `ARCHITECTURE.md` for sync/auth/data behavior.
+15. Write all user-visible copy in Simplified Chinese, taken from `src/lib/i18n.ts` rather than hard-coded in components (see §2.5).
 
 ---
 

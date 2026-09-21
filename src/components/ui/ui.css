@@ -5,16 +5,39 @@
   gap: var(--space-2);
   font-family: inherit;
   font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: background-color var(--duration-fast) ease,
-    border-color var(--duration-fast) ease;
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+/* 图标与文字各自作为 flex item 居中；svg 不参与基线对齐，避免上下错位。 */
+.ui-button > svg {
+  flex: 0 0 auto;
+  display: block;
+}
+.ui-button__label {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 纯图标按钮：正方形，两个方向都居中。 */
+.ui-button[data-icon-only] {
+  padding: 0;
+  aspect-ratio: 1;
 }
 
 .ui-button[data-size="sm"] { height: 28px; padding: 0 var(--space-3); font-size: var(--text-sm); }
-.ui-button[data-size="md"] { height: 34px; padding: 0 var(--space-4); font-size: var(--text-md); }
+.ui-button[data-size="md"] { height: 32px; padding: 0 var(--space-3); font-size: var(--text-md); }
 .ui-button[data-size="lg"] { height: 40px; padding: 0 var(--space-5); font-size: var(--text-lg); }
+
+.ui-button[data-size="sm"][data-icon-only] { width: 28px; }
+.ui-button[data-size="md"][data-icon-only] { width: 32px; }
+.ui-button[data-size="lg"][data-icon-only] { width: 40px; }
 
 .ui-button[data-variant="primary"] { background: var(--accent); color: var(--text-inverse); }
 .ui-button[data-variant="primary"]:hover:not(:disabled) { background: var(--accent-hover); }
@@ -37,6 +60,12 @@
 .ui-button[data-variant="danger"]:hover:not(:disabled) { filter: brightness(0.92); }
 
 .ui-button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 焦点环（UI §39）：:focus-visible 只在键盘导航时出现，鼠标点击不显示。 */
+.ui-button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
 
 .ui-field { display: flex; flex-direction: column; gap: var(--space-1); }
 .ui-field__label { font-size: var(--text-sm); color: var(--text-secondary); }

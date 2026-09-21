@@ -1,7 +1,7 @@
 .file-tree {
   display: flex;
   flex-direction: column;
-  padding: var(--space-1) 0;
+  padding: var(--space-1) var(--space-2) var(--space-3);
   overflow-y: auto;
 }
 
@@ -10,6 +10,7 @@
   align-items: center;
   gap: var(--space-2);
   height: 26px;
+  padding-right: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-muted);
   user-select: none;
@@ -20,7 +21,7 @@
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  height: 28px;
+  height: 30px;
   padding-right: var(--space-2);
   font-family: inherit;
   font-size: var(--text-sm);
@@ -28,24 +29,40 @@
   text-align: left;
   background: transparent;
   border: none;
+  /* 整行平铺高亮，不用圆角胶囊：侧栏是列表，不是一组独立卡片。 */
   border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
 
 .file-tree__item:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
 
-/* 选中态用背景 + 左侧强调条，不只靠颜色（UI §39）。 */
+/* 选中态：整行填色 + 文字加重。
+   不用左侧色条 —— 那会让列表看起来像一堆被标记的标签页；
+   也不只靠颜色区分（同时加重字重，满足 UI §39 非纯色传达）。 */
 .file-tree__item[data-selected] {
-  background: var(--accent-soft);
+  background: var(--bg-surface-active);
   color: var(--text-primary);
   font-weight: 500;
-  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.file-tree__item[data-selected] svg { color: var(--accent); }
+
+.file-tree__item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 .file-tree__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 侧栏空态：与文件树列表同样的内边距，避免贴边。 */
+.app-sidebar .ui-empty {
+  padding: var(--space-10) var(--space-4);
+  gap: var(--space-3);
 }
 
 /* ---------------------------------------------------------------------------
@@ -55,14 +72,19 @@
 
 .app-toolbar {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
   align-items: center;
-  height: 40px;
+  height: 44px;
   padding: 0 var(--space-3);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
 }
-.app-toolbar__title { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
+.app-toolbar__title {
+  margin-left: var(--space-1);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
 .app-toolbar__spacer { flex: 1; }
 
 .app-sidebar {
@@ -73,13 +95,13 @@
   background: var(--bg-surface);
   border-right: 1px solid var(--border-subtle);
 }
+/* 中文标题不做 text-transform: uppercase —— 对汉字无意义，且会拉宽字距。 */
 .app-sidebar__header {
-  padding: var(--space-3) var(--space-3) var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-2);
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
 .sr-only {

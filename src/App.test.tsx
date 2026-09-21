@@ -44,7 +44,7 @@ describe("App", () => {
 
   it("shows the empty state when there are no notes", async () => {
     render(<App />);
-    expect(await screen.findByText("No notes yet")).toBeInTheDocument();
+    expect(await screen.findByText("还没有笔记")).toBeInTheDocument();
   });
 
   it("applies a resolved theme to <html> on mount", async () => {
@@ -62,7 +62,7 @@ describe("App", () => {
     await screen.findByRole("banner");
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
 
-    await userEvent.click(screen.getByTitle(/theme/i));
+    await userEvent.click(screen.getByLabelText(/主题/));
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
   });
@@ -74,7 +74,7 @@ describe("App", () => {
     await screen.findByRole("banner");
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
 
-    const btn = screen.getByTitle(/theme/i);
+    const btn = screen.getByLabelText(/主题/);
 
     await userEvent.click(btn); // dark -> system
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("system");

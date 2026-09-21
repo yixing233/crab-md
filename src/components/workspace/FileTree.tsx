@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { FileText, Folder, Plus } from "lucide-react";
 import { buildFileTree, type TreeNode } from "../../lib/fileTree";
 import type { DocumentSummary } from "../../types/document";
+import { zh } from "../../lib/i18n";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import "./workspace.css";
@@ -19,12 +20,12 @@ export function FileTree({ documents, activeId, onSelect, onCreate }: FileTreePr
   if (documents.length === 0) {
     return (
       <EmptyState
-        title="No notes yet"
-        description="Create your first Markdown document."
+        title={zh.fileTree.emptyTitle}
+        description={zh.fileTree.emptyDescription}
         action={
           <Button variant="primary" size="sm" onClick={onCreate}>
-            <Plus size={14} />
-            New note
+            <Plus size={14} aria-hidden />
+            <span>{zh.fileTree.newNote}</span>
           </Button>
         }
       />
@@ -32,7 +33,7 @@ export function FileTree({ documents, activeId, onSelect, onCreate }: FileTreePr
   }
 
   return (
-    <div className="file-tree" role="tree" aria-label="Notes">
+    <div className="file-tree" role="tree" aria-label={zh.fileTree.ariaLabel}>
       {tree.map((node) => (
         <TreeItem key={node.key} node={node} activeId={activeId} onSelect={onSelect} depth={0} />
       ))}
@@ -51,7 +52,7 @@ function TreeItem({ node, activeId, onSelect, depth }: TreeItemProps) {
   if (node.type === "folder") {
     return (
       <div className="file-tree__group">
-        <div className="file-tree__folder" style={{ paddingLeft: depth * 12 + 8 }}>
+        <div className="file-tree__folder" style={{ paddingLeft: depth * 14 + 10 }}>
           <Folder size={14} aria-hidden />
           <span>{node.name}</span>
         </div>
@@ -76,7 +77,7 @@ function TreeItem({ node, activeId, onSelect, depth }: TreeItemProps) {
       aria-selected={selected}
       className="file-tree__item"
       data-selected={selected || undefined}
-      style={{ paddingLeft: depth * 12 + 8 }}
+      style={{ paddingLeft: depth * 14 + 10 }}
       onClick={() => node.documentId && onSelect(node.documentId)}
     >
       <FileText size={14} aria-hidden />

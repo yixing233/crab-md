@@ -7,6 +7,7 @@ import { Sidebar } from "./components/workspace/Sidebar";
 import { EmptyState } from "./components/ui/EmptyState";
 import { Button } from "./components/ui/Button";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
+import { zh } from "./lib/i18n";
 import {
   applyTheme,
   readStoredPreference,
@@ -67,7 +68,7 @@ export default function App() {
   }, [loadDocuments]);
 
   const handleNewDocument = useCallback(() => {
-    void createDocument("Untitled");
+    void createDocument(zh.app.untitled);
   }, [createDocument]);
 
   // 全局快捷键（UI_DESIGN_SYSTEM.md §29）。集中在此处而非散落各页面。
@@ -119,9 +120,11 @@ export default function App() {
         <main className="app-main" role="main">
           {error && (
             <div className="app-error" role="alert">
-              <span>Something went wrong: {error}</span>
+              <span>
+                {zh.error.prefix}：{error}
+              </span>
               <Button variant="ghost" size="sm" onClick={clearError}>
-                Dismiss
+                {zh.error.dismiss}
               </Button>
             </div>
           )}
@@ -147,11 +150,11 @@ export default function App() {
             </>
           ) : (
             <EmptyState
-              title="No document open"
-              description="Pick a note from the sidebar, or create a new one."
+              title={zh.empty.noDocumentTitle}
+              description={zh.empty.noDocumentDescription}
               action={
                 <Button variant="primary" onClick={handleNewDocument}>
-                  New note
+                  {zh.empty.newNote}
                 </Button>
               }
             />
