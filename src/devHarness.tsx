@@ -11,6 +11,7 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SettingsPage } from "./components/settings/SettingsPage";
+import { Button } from "./components/ui/Button";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { applyTheme, resolveTheme, systemPrefersDark, type ThemePreference } from "./lib/theme";
 import {
@@ -63,19 +64,46 @@ function Harness() {
   }, [fontFamily]);
 
   return (
-    <SettingsPage
-      open
-      onClose={() => {}}
-      onChanged={() => {}}
-      themePreference={theme}
-      onChangeTheme={setTheme}
-      viewMode={viewMode}
-      onChangeViewMode={setViewMode}
-      fontSize={fontSize}
-      onChangeFontSize={setFontSize}
-      fontFamily={fontFamily}
-      onChangeFontFamily={setFontFamily}
-    />
+    <>
+      {/* 实心按钮的对比度最容易在改主题时被弄坏（深色下尤其），
+          这里放一组真实按钮，供截图直接核对。 */}
+      <div
+        style={{
+          position: "fixed",
+          top: 12,
+          left: 12,
+          display: "flex",
+          gap: 8,
+          zIndex: 2000,
+        }}
+      >
+        <Button variant="primary" size="md">
+          新建
+        </Button>
+        <Button variant="secondary" size="md">
+          次要
+        </Button>
+        <Button variant="ghost" size="md">
+          幽灵
+        </Button>
+        <Button variant="danger" size="md">
+          删除
+        </Button>
+      </div>
+      <SettingsPage
+        open
+        onClose={() => {}}
+        onChanged={() => {}}
+        themePreference={theme}
+        onChangeTheme={setTheme}
+        viewMode={viewMode}
+        onChangeViewMode={setViewMode}
+        fontSize={fontSize}
+        onChangeFontSize={setFontSize}
+        fontFamily={fontFamily}
+        onChangeFontFamily={setFontFamily}
+      />
+    </>
   );
 }
 
