@@ -1,19 +1,25 @@
 :root,
 [data-theme="light"] {
+  /* 纸/壳模型（UI §2.3「calm surfaces + subtle borders」）：
+     编辑器是「纸」，保持纯白；工具栏/侧栏/预览/大纲是「壳」，比纸略深。
+     关键是两级之间要有可感知的亮度差 —— 之前只差 2%，整体看着糊成一片。
+     现在的阶梯：255 → 245 → 235 → 224，每级约 10 步。 */
   --bg-app: #ffffff;
-  --bg-surface: #fafafa;
-  --bg-surface-hover: #f2f2f2;
-  --bg-surface-active: #e8e8e8;
+  --bg-surface: #f5f5f6;
+  --bg-surface-hover: #ebebed;
+  --bg-surface-active: #e0e0e3;
+  /* 浮层（对话框/菜单/提示）：纯白，靠阴影浮在壳之上。 */
   --bg-elevated: #ffffff;
 
-  --border-subtle: #ececec;
-  --border-default: #dcdcdc;
-  --border-strong: #c0c0c0;
+  --border-subtle: #e8e8ea;
+  --border-default: #d8d8dc;
+  --border-strong: #bfbfc4;
   --border-focus: #3b82f6;
 
   --text-primary: #1a1a1a;
   --text-secondary: #555555;
-  --text-muted: #8a8a8a;
+  /* 壳变深后同步压暗 muted，避免次要文字对比度被削弱。 */
+  --text-muted: #767676;
   --text-disabled: #b5b5b5;
   --text-inverse: #ffffff;
 
@@ -33,4 +39,10 @@
 
   --selection-bg: #bfdbfe;
   --selection-text: #1a1a1a;
+
+  /* 海拔令牌（UI §2.3「minimal shadow」）：只给真正浮起的层用，
+     结构性的分隔一律用边框与色阶，不用阴影堆层次。 */
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.08);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.10);
+  --shadow-lg: 0 10px 32px rgb(0 0 0 / 0.16);
 }

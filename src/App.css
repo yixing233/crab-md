@@ -19,16 +19,23 @@
 /* 编辑区始终是主体（UI §11：editor MUST remain the dominant pane）。
    侧栏与预览的宽度由内联 flex-basis 覆盖（分隔条拖拽，UI §11）。 */
 .app-pane--editor { flex: 1 1 auto; }
+
+/* 预览是「阅读面」而非「外壳」（UI §22：clean reading surface），
+   所以和编辑器同为纸色；两者的区别靠 1px 分隔线，而不是靠明暗
+   —— 否则预览看起来像次要面板，与「阅读」的定位矛盾。 */
 .app-pane--preview {
   flex: 0 0 auto;
-  border-left: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
+  background: var(--bg-app);
+  border-left: 1px solid var(--border-default);
 }
 
-/* 大纲是辅助导航，宽度固定、不参与剩余空间分配（UI §23）。 */
+/* 大纲是辅助导航（UI §23），归「外壳」：壳色 + 结构性左边框。
+   它的 border 在此声明（不放在 .outline 里），避免同一属性两处真相。 */
 .app-pane--outline {
   flex: 0 0 200px;
   order: 2;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-default);
 }
 
 .app-error {
@@ -79,7 +86,7 @@
     bottom: 0;
     z-index: 20;
     flex-basis: 220px;
-    box-shadow: -4px 0 16px rgb(0 0 0 / 0.12);
+    box-shadow: var(--shadow-md);
   }
   .app-panes { position: relative; }
 }
@@ -93,7 +100,7 @@
     left: 0;
     z-index: 30;
     flex-basis: 240px;
-    box-shadow: 4px 0 16px rgb(0 0 0 / 0.16);
+    box-shadow: var(--shadow-md);
   }
   .app-body { position: relative; }
 

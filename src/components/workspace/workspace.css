@@ -90,6 +90,8 @@
    Breadcrumb（UI §17）
    --------------------------------------------------------------------------- */
 
+/* 面包屑是编辑区顶部的一条「带」：用壳色与纸面区分，
+   下沿结构性边框，避免与正文粘连。 */
 .breadcrumb {
   display: flex;
   flex-wrap: wrap;
@@ -98,7 +100,8 @@
   padding: var(--space-1) var(--space-3);
   font-size: var(--text-xs);
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .breadcrumb__segment {
@@ -172,6 +175,9 @@ body[data-resizing="true"] {
    故这两组外壳样式在此就近声明，保证组件自包含。
    --------------------------------------------------------------------------- */
 
+/* 工具栏与侧栏是「外壳」：用 bg-surface（比编辑器的纸色深一档）。
+   与内容区之间用 border-default 而非 border-subtle —— 结构性分隔应当
+   比组件内部的分隔线更明确，否则整屏看起来只有一层平面。 */
 .app-toolbar {
   display: flex;
   gap: var(--space-1);
@@ -179,7 +185,7 @@ body[data-resizing="true"] {
   height: 44px;
   padding: 0 var(--space-3);
   background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-default);
 }
 .app-toolbar__title {
   margin-left: var(--space-1);
@@ -196,7 +202,8 @@ body[data-resizing="true"] {
      窄屏规则也能在同一属性上替换，避免两个属性互相打架。 */
   flex: 0 0 260px;
   background: var(--bg-surface);
-  border-right: 1px solid var(--border-subtle);
+  /* 结构性分隔（外壳↔内容）：比内部细线更明确。 */
+  border-right: 1px solid var(--border-default);
 }
 /* 中文标题不做 text-transform: uppercase —— 对汉字无意义，且会拉宽字距。 */
 .app-sidebar__header {

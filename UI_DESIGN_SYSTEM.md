@@ -112,6 +112,31 @@ src/styles/
 
 Exact hexadecimal values MAY evolve during visual tuning, but semantic names MUST remain stable where possible.
 
+### 4.0 Surface hierarchy
+
+The interface follows a paper/chrome model:
+
+```text
+--bg-app        the "paper"  — editor and preview reading surface
+--bg-surface    the "chrome" — toolbar, sidebar, outline, status bar
+--bg-elevated   floating layers — dialogs, menus, toasts
+```
+
+Adjacent levels MUST differ enough to be perceived without relying on
+borders alone (a luminance step of roughly 8/255 or more). A paper/chrome
+pair that differs by only ~2% reads as one flat surface.
+
+The direction inverts between themes:
+
+- Light: paper is lighter than chrome (the paper floats on the chrome)
+- Dark: nearer layers are lighter than farther ones
+
+`--bg-elevated` is lighter than `--bg-surface` in both themes.
+
+Structural separations (chrome ↔ content) SHOULD use `--border-default`;
+internal dividers within a component SHOULD use `--border-subtle`.
+Elevation shadows are limited to genuinely floating layers (`--shadow-sm/md/lg`).
+
 Required semantic tokens:
 
 ```text
@@ -148,6 +173,10 @@ Required semantic tokens:
 
 --selection-bg
 --selection-text
+
+--shadow-sm
+--shadow-md
+--shadow-lg
 ```
 
 ### 4.1 Theme rules

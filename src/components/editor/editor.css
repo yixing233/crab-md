@@ -7,6 +7,8 @@
 
 /* 格式工具栏（UI_DESIGN_SYSTEM.md §21.1）：紧凑、克制，不与正文争主体。
    用分隔线把语义相近的动作分组，减少一排图标带来的视觉噪音。 */
+/* 格式工具栏是一条「带」：用壳色与编辑器纸面区分，
+   下沿用结构性边框（而非内部细线），否则工具栏与正文糊在一起（UI §2.3）。 */
 .editor-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -14,7 +16,7 @@
   align-items: center;
   padding: var(--space-2) var(--space-3);
   background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-default);
 }
 
 /* 每组之后画一条 1px 竖线：选中态用背景而非边框，故此处只做分隔。 */
@@ -53,13 +55,13 @@
    OutlineTree（UI §19 / §23）
    --------------------------------------------------------------------------- */
 
+/* 大纲是导航栏（壳色）；背景由 .app-pane--outline 决定，
+   这里只管内部布局，避免同一属性两处声明。 */
 .outline {
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
-  background: var(--bg-surface);
-  border-left: 1px solid var(--border-subtle);
 }
 
 .outline__header {
@@ -176,16 +178,17 @@
 
 .markdown-preview img { max-width: 100%; height: auto; }
 
+/* 状态栏是底部「带」，与工具栏对称：壳色 + 结构性上边框。 */
 .editor-status {
   display: flex;
   gap: var(--space-4);
   align-items: center;
-  height: 24px;
+  height: 26px;
   padding: 0 var(--space-4);
   font-size: var(--text-xs);
   color: var(--text-muted);
   background: var(--bg-surface);
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border-default);
 }
 .editor-status__path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .editor-status__spacer { flex: 1; }

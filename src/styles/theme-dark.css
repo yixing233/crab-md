@@ -1,18 +1,21 @@
 [data-theme="dark"] {
+  /* 同浅色主题的纸/壳模型：暗色下无法「更亮」，改为越靠前的层越亮。
+     阶梯 26 → 35 → 45 → 56，每级约 10 步，保证肉眼可辨。 */
   --bg-app: #1a1a1a;
-  --bg-surface: #202020;
-  --bg-surface-hover: #2a2a2a;
-  --bg-surface-active: #333333;
-  --bg-elevated: #262626;
+  --bg-surface: #232326;
+  --bg-surface-hover: #2d2d31;
+  --bg-surface-active: #38383d;
+  /* 浮层比壳再亮一档，配合阴影与边框浮起。 */
+  --bg-elevated: #2c2c30;
 
-  --border-subtle: #2e2e2e;
-  --border-default: #3a3a3a;
-  --border-strong: #4d4d4d;
+  --border-subtle: #303034;
+  --border-default: #3d3d42;
+  --border-strong: #52525a;
   --border-focus: #60a5fa;
 
   --text-primary: #e8e8e8;
-  --text-secondary: #b0b0b0;
-  --text-muted: #808080;
+  --text-secondary: #b4b4b4;
+  --text-muted: #8a8a8a;
   --text-disabled: #5a5a5a;
   --text-inverse: #1a1a1a;
 
@@ -32,4 +35,9 @@
 
   --selection-bg: #1e40af;
   --selection-text: #ffffff;
+
+  /* 暗色下阴影要更重才看得出来，但仍是「minimal shadow」（UI §2.3）。 */
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.30);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.40);
+  --shadow-lg: 0 10px 32px rgb(0 0 0 / 0.55);
 }
