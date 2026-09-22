@@ -77,6 +77,9 @@ export const zh = {
       image: "图片",
       inlineCode: "行内代码",
       codeBlock: "代码块",
+      table: "表格",
+      math: "行内公式",
+      mathBlock: "块级公式",
     },
   },
 

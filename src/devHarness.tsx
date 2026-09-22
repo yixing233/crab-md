@@ -15,6 +15,7 @@ import { AppToolbar } from "./components/workspace/AppToolbar";
 import { Breadcrumb } from "./components/workspace/Breadcrumb";
 import { DocumentBar } from "./components/workspace/DocumentBar";
 import { UpdateBar } from "./components/workspace/UpdateBar";
+import { MarkdownPreview } from "./components/editor/MarkdownPreview";
 import { Button } from "./components/ui/Button";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { useUpdateStore } from "./stores/useUpdateStore";
@@ -122,6 +123,24 @@ function Harness() {
       >
         <Breadcrumb virtualPath="/笔记/" title="示例文档.md" />
       </DocumentBar>
+
+      {/* 表格与公式的真实渲染效果（含真实 KaTeX 样式与字体）。 */}
+      <div style={{ padding: 16, maxWidth: 720 }}>
+        <MarkdownPreview
+          source={[
+            "| 语言 | 并发模型 |",
+            "| --- | --- |",
+            "| Go | goroutine |",
+            "| Erlang | actor |",
+            "",
+            "行内公式 $E=mc^2$ 与分式 $\\frac{a}{b}$。",
+            "",
+            "$$",
+            "\\int_0^1 x^2 \\, dx = \\frac{1}{3}",
+            "$$",
+          ].join("\n")}
+        />
+      </div>
 
       <SettingsPage
         open

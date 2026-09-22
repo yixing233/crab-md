@@ -721,6 +721,32 @@ Rules:
   soft-break handling. It affects rendering only — the stored file keeps its
   original newlines, so standard Markdown fidelity is preserved.
 
+### 22.1 Math
+
+Math is rendered with KaTeX, offline, from a locally bundled stylesheet and fonts —
+MUST NOT depend on a CDN, because the app must work with no network.
+
+Supported delimiters:
+
+```text
+$...$      inline math
+$$...$$    block math
+```
+
+Rules:
+
+- A malformed formula MUST render as an inline error, and MUST NOT fail the rest
+  of the document. One typo cannot cost the user the whole preview.
+- Math MUST be rendered with `output: "htmlAndMathml"` so screen readers can read
+  formulas; the HTML-only output is invisible to assistive technology.
+- KaTeX needs inline `style` for sub/superscript and fraction positioning. Style
+  MUST therefore be allowed, but only through a **property allowlist** — `position`,
+  `inset`, `z-index`, `background` and `display` MUST stay blocked. Without that
+  restriction, synced content could cover the whole app with
+  `position:fixed;inset:0` and impersonate the UI (§19 untrusted input).
+- The filter MUST be keyed on the CSS property, not on an ancestor `class` check:
+  the class is author-controlled, so `class="katex"` would defeat it.
+
 ---
 
 ## 23. OutlineTree

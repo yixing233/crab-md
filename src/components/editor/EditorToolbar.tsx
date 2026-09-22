@@ -9,8 +9,11 @@ import {
   List,
   ListOrdered,
   Quote,
+  Sigma,
   SquareCode,
+  SquareFunction,
   Strikethrough,
+  Table,
   type LucideIcon,
 } from "lucide-react";
 import { EDITOR_ACTIONS, type MarkdownActionId } from "../../lib/markdownActions";
@@ -31,6 +34,9 @@ const ICONS: Record<MarkdownActionId, LucideIcon> = {
   image: ImageIcon,
   inlineCode: Code,
   codeBlock: SquareCode,
+  table: Table,
+  math: Sigma,
+  mathBlock: SquareFunction,
 };
 
 export interface EditorToolbarProps {
@@ -40,12 +46,15 @@ export interface EditorToolbarProps {
 
 /**
  * 动作分组（仅影响视觉排布，不改变 `EDITOR_ACTIONS` 的语义顺序）。
- * 组间画竖线，避免一排 11 个图标看起来像毛坯房式的裸按钮堆。
+ * 组间画竖线，避免一排图标看起来像毛坯房式的裸按钮堆。
  */
 const GROUPS: ReadonlyArray<ReadonlyArray<MarkdownActionId>> = [
   ["bold", "italic", "strikethrough", "inlineCode"],
   ["heading", "bulletList", "orderedList", "quote"],
   ["link", "image", "codeBlock"],
+  // 表格与公式是「插入结构」类动作，与上面的代码块同族，但单独成组
+  // 以免那一组过长，同时让「插入数据/数学」在视觉上可被一眼找到。
+  ["table", "math", "mathBlock"],
 ];
 
 /**

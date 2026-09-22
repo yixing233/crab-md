@@ -5,6 +5,9 @@ import {
   type EditorSelection,
   type MarkdownActionId,
 } from "./markdownActions";
+// 用真实渲染器验证插入的骨架确实能变成表格/公式，
+// 而不是只断言字符串长什么样。
+import { renderMarkdown } from "./markdown";
 
 /** 便捷构造：`sel("hello", 0, 5)` */
 function sel(text: string, from = 0, to = 0): EditorSelection {
@@ -216,6 +219,83 @@ describe("general invariants", () => {
       "image",
       "inlineCode",
       "codeBlock",
+      "table",
+      "math",
+      "mathBlock",
     ]);
+  });
+});
+
+describe("table", () => {
+  it("inserts a header, separator and body row", () => {
+    const r = applyMarkdownAction(sel(""), "table");
+    const lines = r.text.split("\n");
+    expect(lines[0]).toContain("|");
+    // 分隔行是表格能被解析的必要条件 —— 少了它整张表不成立。
+    expect(lines[1]).toMatch(/^\|[\s-|]+\|$/);
+    expect(lines.length).toBe(3);
+  });
+
+  it("selects the first header cell so the user can type immediately", () => {
+    const r = applyMarkdownAction(sel(""), "table");
+    expect(selectionText(r)).toBe("列 1");
+  });
+
+  it("separates the table from preceding text", () => {
+    // 表格必须独占块；紧跟在文字后会并进上一段而无法解析。
+    const r = applyMarkdownAction(sel("前面的文字", 5, 5), "table");
+    expect(r.text.startsWith("前面的文字\n|")).toBe(true);
+  });
+
+  it("produces a table the renderer actually parses", () => {
+    // 逐字跑一遍渲染链路，确保插入的骨架真的能变成表格。
+    const r = applyMarkdownAction(sel(""), "table");
+    const html = renderMarkdown(r.text);
+    expect(html).toContain("<table>");
+  });
+});
+
+describe("math", () => {
+  it("wraps a selection as inline math", () => {
+    const r = applyMarkdownAction(sel("E=mc^2", 0, 6), "math");
+    expect(r.text).toBe("$E=mc^2$");
+  });
+
+  it("inserts an inline placeholder and selects it when nothing is selected", () => {
+    const r = applyMarkdownAction(sel(""), "math");
+    expect(r.text).toBe("$公式$");
+    expect(selectionText(r)).toBe("公式");
+  });
+
+  it("puts block math on its own lines", () => {
+    const r = applyMarkdownAction(sel(""), "mathBlock");
+    const lines = r.text.split("\n");
+    expect(lines[0]).toBe("$$");
+    expect(lines[lines.length - 1]).toBe("$$");
+  });
+
+  it("gives block math a valid placeholder formula", () => {
+    const r = applyMarkdownAction(sel(""), "mathBlock");
+    expect(selectionText(r)).toBe("a^2 + b^2 = c^2");
+  });
+
+  it("separates block math from surrounding text", () => {
+    const r = applyMarkdownAction(sel("前文", 2, 2), "mathBlock");
+    expect(r.text.startsWith("前文\n$$")).toBe(true);
+  });
+
+  it("reuses the selected text as the formula body", () => {
+    const r = applyMarkdownAction(sel("x^2", 0, 3), "mathBlock");
+    expect(r.text).toContain("x^2");
+    expect(r.text).not.toContain("a^2 + b^2");
+  });
+
+  it("produces math the renderer actually renders", () => {
+    // 这是本次改动的核心：插入的公式必须真的被 KaTeX 渲染出来。
+    const inline = applyMarkdownAction(sel("E=mc^2", 0, 6), "math");
+    expect(renderMarkdown(inline.text)).toContain("katex");
+
+    const block = applyMarkdownAction(sel(""), "mathBlock");
+    expect(renderMarkdown(block.text)).toContain("katex-display");
   });
 });

@@ -31,7 +31,10 @@ export type MarkdownActionId =
   | "orderedList"
   | "quote"
   | "link"
-  | "image";
+  | "image"
+  | "table"
+  | "math"
+  | "mathBlock";
 
 /** 包裹型动作的标记。再次触发同一动作即取消（toggle）。 */
 const WRAP_MARKERS: Partial<Record<MarkdownActionId, string>> = {
@@ -161,6 +164,64 @@ function applyCodeBlock(sel: EditorSelection): EditorChange {
   return { text: out, from: contentStart, to: contentStart + selected.length };
 }
 
+/**
+ * 表格：插入一个两列三行的骨架（表头 + 分隔行 + 一行空体）。
+ *
+ * 插入后选中第一个表头单元格，用户可直接键入列名，按 Tab 走向下一格。
+ * 分隔行的 `---` 是 Markdown 表格的必需部分 —— 少了它整张表不会被解析，
+ * 因此必须一起给出，不能让用户自己补。
+ */
+function applyTable(sel: EditorSelection): EditorChange {
+  const { text, from, to } = sel;
+  // 前置换行：表格必须独占块。若光标紧跟在文字后面，不补换行会被并进上一段。
+  const before = from === 0 || text[from - 1] === "\n" ? "" : "\n";
+  const rows = [
+    "| 列 1 | 列 2 |",
+    "| --- | --- |",
+    "|  |  |",
+  ];
+  const inserted = `${before}${rows.join("\n")}`;
+  const out = text.slice(0, from) + inserted + text.slice(to);
+
+  // 选中首个「列 1」，便于直接覆盖输入。
+  const start = from + before.length + "| ".length;
+  return { text: out, from: start, to: start + "列 1".length };
+}
+
+/**
+ * 行内公式：`$...$`。
+ *
+ * 有选区时把选区包起来（用户很可能先写好公式再套标记）；
+ * 无选区时给出占位并选中，便于直接键入。
+ */
+function applyInlineMath(sel: EditorSelection): EditorChange {
+  const { text, from, to } = sel;
+  const selected = text.slice(from, to);
+  const body = selected || "公式";
+  const inserted = `$${body}$`;
+  const out = text.slice(0, from) + inserted + text.slice(to);
+  const start = from + 1;
+  return { text: out, from: start, to: start + body.length };
+}
+
+/**
+ * 块级公式：`$$` 独立成行。
+ *
+ * 与行内公式分开成两个动作，而不是自动判断：`$$` 独占一行才有编号与居中，
+ * 而用户想不想独占一行只有他自己知道 —— 交给两个按钮比猜测更可靠。
+ */
+function applyBlockMath(sel: EditorSelection): EditorChange {
+  const { text, from, to } = sel;
+  const selected = text.slice(from, to).trim();
+  const body = selected || "a^2 + b^2 = c^2";
+  const before = from === 0 || text[from - 1] === "\n" ? "" : "\n";
+  const after = text[to] === "\n" || to === text.length ? "" : "\n";
+  const inserted = `${before}$$\n${body}\n$$${after}`;
+  const out = text.slice(0, from) + inserted + text.slice(to);
+  const start = from + before.length + 3;
+  return { text: out, from: start, to: start + body.length };
+}
+
 /** 插入型动作（链接、图片）：无选区时给出占位文本并选中它，便于直接覆盖输入。 */
 function applyInsertTemplate(
   sel: EditorSelection,
@@ -190,6 +251,15 @@ export function applyMarkdownAction(sel: EditorSelection, action: MarkdownAction
 
     case "codeBlock":
       return applyCodeBlock(sel);
+
+    case "table":
+      return applyTable(sel);
+
+    case "math":
+      return applyInlineMath(sel);
+
+    case "mathBlock":
+      return applyBlockMath(sel);
 
     case "link":
       return applyInsertTemplate(sel, (label) => {
@@ -236,4 +306,7 @@ export const EDITOR_ACTIONS: ReadonlyArray<{
   { id: "image", label: "Image" },
   { id: "inlineCode", label: "Inline code", shortcut: "Ctrl+`" },
   { id: "codeBlock", label: "Code block" },
+  { id: "table", label: "Table" },
+  { id: "math", label: "Inline math" },
+  { id: "mathBlock", label: "Block math" },
 ];
