@@ -24,6 +24,13 @@ export const zh = {
     search: "搜索",
     newDocument: "新建",
     toggleOutline: "大纲",
+    /** 视图模式切换（编辑 / 分栏 / 阅读）。 */
+    view: {
+      label: "视图",
+      edit: "仅编辑",
+      split: "分栏",
+      preview: "仅阅读",
+    },
   },
 
   sidebar: {

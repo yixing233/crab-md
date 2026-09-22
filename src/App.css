@@ -29,6 +29,11 @@
   border-left: 1px solid var(--border-default);
 }
 
+/* 单栏（仅阅读）：预览占满宽度，忽略记忆的拖拽宽度。 */
+.app-panes[data-view="preview"] .app-pane--preview { flex: 1 1 auto; }
+/* 仅阅读时没有可拖的边界，也不需要左侧分隔线。 */
+.app-panes[data-view="preview"] .app-pane--preview { border-left: none; }
+
 /* 大纲是辅助导航（UI §23），归「外壳」：壳色 + 结构性左边框。
    它的 border 在此声明（不放在 .outline 里），避免同一属性两处真相。 */
 .app-pane--outline {
@@ -104,7 +109,8 @@
   }
   .app-body { position: relative; }
 
-  /* 单栏下预览不再并排，需要时整屏显示。 */
-  .app-panes[data-preview] .app-pane--editor { display: none; }
-  .app-pane--preview { flex: 1 1 100%; border-left: none; }
+  /* 单栏下并排不可读，由视图模式决定显示哪一栏 ——
+     分栏模式在此宽度下降级为「仅编辑」，用户仍可用
+     视图切换看预览，而不是被强制塞进两个窄栏。 */
+  .app-panes[data-view="split"] .app-pane--preview { display: none; }
 }

@@ -312,3 +312,44 @@
 @media (prefers-reduced-motion: reduce) {
   .ui-toast { animation: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   分段控件：用于互斥的少量选项，如视图模式（UI §11）。
+   --------------------------------------------------------------------------- */
+
+.ui-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-surface-active);
+  border-radius: var(--radius-md);
+}
+
+.ui-segmented__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.ui-segmented__item:hover { color: var(--text-primary); }
+
+/* 选中态：抬到纸色 + 加重文字色，不只靠颜色区分（UI §39）。 */
+.ui-segmented__item[data-active] {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.ui-segmented__item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -1px;
+}

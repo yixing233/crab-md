@@ -22,6 +22,14 @@ import {
   THEME_STORAGE_KEY,
   type ThemePreference,
 } from "./lib/theme";
+import {
+  nextViewMode,
+  readStoredViewMode,
+  showsEditor,
+  showsPreview,
+  VIEW_MODE_KEY,
+  type ViewMode,
+} from "./lib/viewMode";
 import "./App.css";
 
 /** 面板宽度持久化的存储键。 */
@@ -54,7 +62,10 @@ export default function App() {
   const clearError = useWorkspaceStore((s) => s.clearError);
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [previewVisible, setPreviewVisible] = useState(true);
+  // 视图模式：仅编辑 / 分栏 / 仅阅读（UI §11）。持久化，记住用户的选择。
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    readStoredViewMode(typeof localStorage === "undefined" ? null : localStorage.getItem(VIEW_MODE_KEY)),
+  );
   const [outlineVisible, setOutlineVisible] = useState(false);
   // 面板宽度（UI §11 pane resizing）。侧栏宽度持久化，符合「记住我的布局」预期。
   const [sidebarWidth, setSidebarWidth] = useState(() => readStoredWidth(SIDEBAR_WIDTH_KEY, 260));
@@ -106,6 +117,13 @@ export default function App() {
       localStorage.setItem(PREVIEW_WIDTH_KEY, String(previewWidth));
     }
   }, [previewWidth]);
+
+  // 视图模式持久化：下次打开应用保持同一档。
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(VIEW_MODE_KEY, viewMode);
+    }
+  }, [viewMode]);
 
   const cycleTheme = useCallback(() => {
     setThemePreference((p) => (p === "system" ? "light" : p === "light" ? "dark" : "system"));
@@ -183,8 +201,9 @@ export default function App() {
         e.preventDefault();
         setFindNonce((n) => n + 1);
       } else if (e.key === "\\") {
+        // Ctrl+\：在三档视图之间循环（规范 §29 未占用该组合）。
         e.preventDefault();
-        setPreviewVisible((v) => !v);
+        setViewMode((m) => nextViewMode(m));
       } else if (e.shiftKey && e.key.toLowerCase() === "o") {
         e.preventDefault();
         setOutlineVisible((v) => !v);
@@ -208,6 +227,8 @@ export default function App() {
         sidebarVisible={sidebarVisible}
         outlineVisible={outlineVisible}
         onToggleOutline={() => setOutlineVisible((v) => !v)}
+        viewMode={viewMode}
+        onChangeViewMode={setViewMode}
         themePreference={themePreference}
         onCycleTheme={cycleTheme}
       />
@@ -256,20 +277,23 @@ export default function App() {
               />
               <div
                 className="app-panes"
-                data-preview={previewVisible || undefined}
+                data-view={viewMode}
+                data-preview={showsPreview(viewMode) || undefined}
                 data-outline={outlineVisible || undefined}
               >
-                <div className="app-pane app-pane--editor">
-                  <MarkdownEditor
-                    documentId={activeId}
-                    value={activeContent}
-                    onChange={setContent}
-                    onSave={() => void handleSave()}
-                    onCursor={(line, column) => setCursor({ line, column })}
-                    jumpTarget={jumpTarget}
-                    findNonce={findNonce}
-                  />
-                </div>
+                {showsEditor(viewMode) && (
+                  <div className="app-pane app-pane--editor">
+                    <MarkdownEditor
+                      documentId={activeId}
+                      value={activeContent}
+                      onChange={setContent}
+                      onSave={() => void handleSave()}
+                      onCursor={(line, column) => setCursor({ line, column })}
+                      jumpTarget={jumpTarget}
+                      findNonce={findNonce}
+                    />
+                  </div>
+                )}
                 {outlineVisible && (
                   <div className="app-pane app-pane--outline">
                     <OutlineTree
@@ -278,18 +302,24 @@ export default function App() {
                     />
                   </div>
                 )}
-                {previewVisible && (
+                {showsPreview(viewMode) && (
                   <>
-                    {/* 预览在右，向左拖变宽（UI §11）。 */}
-                    <Splitter
-                      value={previewWidth}
-                      onChange={setPreviewWidth}
-                      min={260}
-                      max={760}
-                      ariaLabel={zh.splitter.preview}
-                      side="right"
-                    />
-                    <div className="app-pane app-pane--preview" style={{ flexBasis: previewWidth }}>
+                    {/* 分隔条只在两栏并存时有意义；单栏模式没有可拖的边界。 */}
+                    {showsEditor(viewMode) && (
+                      <Splitter
+                        value={previewWidth}
+                        onChange={setPreviewWidth}
+                        min={260}
+                        max={760}
+                        ariaLabel={zh.splitter.preview}
+                        side="right"
+                      />
+                    )}
+                    <div
+                      className="app-pane app-pane--preview"
+                      // 单栏（仅阅读）时占满宽度，忽略记忆的拖拽宽度。
+                      style={showsEditor(viewMode) ? { flexBasis: previewWidth } : undefined}
+                    >
                       <MarkdownPreview source={activeContent} />
                     </div>
                   </>

@@ -128,6 +128,82 @@ describe("App panes and shortcuts", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
+  /** 打开一篇文档，让三栏有内容可渲染。 */
+  async function openOneDocument() {
+    const doc = {
+      id: "d1", title: "甲", virtualPath: "/", revision: 1,
+      contentHash: "sha256:x", createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z", size: 0,
+    };
+    const { api } = await import("./lib/api");
+    listDocuments.mockResolvedValue([doc]);
+    (api.readDocument as ReturnType<typeof vi.fn>).mockResolvedValue({ ...doc, content: "# 标题" });
+    render(<App />);
+    await userEvent.click(await screen.findByText("甲"));
+  }
+
+  it("hides the preview in edit-only mode (收起预览栏)", async () => {
+    await openOneDocument();
+    // 分栏时两者都在。
+    expect(screen.getByTestId("markdown-editor")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "文档位置" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("radio", { name: "仅编辑" }));
+
+    // 编辑器保留，预览（阅读面）消失。
+    expect(screen.getByTestId("markdown-editor")).toBeInTheDocument();
+    expect(document.querySelector(".app-pane--preview")).toBeNull();
+  });
+
+  it("hides the source editor in preview-only mode (收起源码栏)", async () => {
+    await openOneDocument();
+
+    await userEvent.click(screen.getByRole("radio", { name: "仅阅读" }));
+
+    // 源码编辑器消失，阅读面保留。
+    expect(screen.queryByTestId("markdown-editor")).toBeNull();
+    expect(document.querySelector(".app-pane--preview")).not.toBeNull();
+  });
+
+  it("shows both panes in split mode", async () => {
+    await openOneDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "仅编辑" }));
+    await userEvent.click(screen.getByRole("radio", { name: "分栏" }));
+
+    expect(screen.getByTestId("markdown-editor")).toBeInTheDocument();
+    expect(document.querySelector(".app-pane--preview")).not.toBeNull();
+  });
+
+  it("records the chosen mode on the panes container", async () => {
+    await openOneDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "仅阅读" }));
+    // CSS 依赖该属性决定单栏铺满（见 App.css）。
+    expect(document.querySelector(".app-panes")).toHaveAttribute("data-view", "preview");
+  });
+
+  it("persists the view mode so it survives a restart", async () => {
+    await openOneDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "仅阅读" }));
+    expect(localStorage.getItem("crab-md.view-mode")).toBe("preview");
+  });
+
+  it("cycles the view mode with Ctrl+backslash", async () => {
+    await openOneDocument();
+    const panes = () => document.querySelector(".app-panes");
+
+    // 默认分栏 -> 仅阅读
+    await userEvent.keyboard("{Control>}\\{/Control}");
+    expect(panes()).toHaveAttribute("data-view", "preview");
+
+    // 仅阅读 -> 仅编辑
+    await userEvent.keyboard("{Control>}\\{/Control}");
+    expect(panes()).toHaveAttribute("data-view", "edit");
+
+    // 仅编辑 -> 分栏（回到起点）
+    await userEvent.keyboard("{Control>}\\{/Control}");
+    expect(panes()).toHaveAttribute("data-view", "split");
+  });
+
   it("toggles the outline pane from the toolbar", async () => {
     render(<App />);
     await screen.findByRole("banner");

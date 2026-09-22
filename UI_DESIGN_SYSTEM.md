@@ -395,6 +395,25 @@ The editor pane MUST remain the dominant pane.
 
 Pane resizing SHOULD be supported on desktop when practical.
 
+### 11.1 View modes
+
+Desktop SHOULD offer an explicit view mode switch rather than only a
+show/hide toggle for one pane:
+
+```text
+edit      source editor only   — preview hidden
+split     editor + preview     — the default baseline above
+preview   rendered reading only — source editor hidden
+```
+
+The modes are mutually exclusive visible states, so they SHOULD be presented
+as a segmented control (a radio group), not as independent toggles.
+
+The chosen mode SHOULD persist across sessions.
+
+Below the compact breakpoint the `split` mode MAY degrade to `edit`, but the
+user MUST still be able to reach the preview by switching modes explicitly.
+
 ---
 
 ## 12. Mobile Workspace Layout
@@ -863,6 +882,7 @@ Ctrl+Shift+F  Global search
 Ctrl+B        Bold
 Ctrl+I        Italic
 Ctrl+`        Inline code
+Ctrl+\        Cycle view mode (edit / split / preview) — see §11.1
 Ctrl+,        Settings
 Ctrl+Shift+P  Command palette
 ```
