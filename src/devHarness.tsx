@@ -16,6 +16,7 @@ import { Breadcrumb } from "./components/workspace/Breadcrumb";
 import { DocumentBar } from "./components/workspace/DocumentBar";
 import { UpdateBar } from "./components/workspace/UpdateBar";
 import { MarkdownPreview } from "./components/editor/MarkdownPreview";
+import { MarkdownEditor } from "./components/editor/MarkdownEditor";
 import { Button } from "./components/ui/Button";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { useUpdateStore } from "./stores/useUpdateStore";
@@ -123,6 +124,17 @@ function Harness() {
       >
         <Breadcrumb virtualPath="/笔记/" title="示例文档.md" />
       </DocumentBar>
+
+      {/* 真实 CodeMirror 编辑器：用来核对光标颜色是否跟随主题（§34.6）。
+          CodeMirror 基础主题把光标写死成黑色，必须验证覆盖真的生效。 */}
+      <div style={{ height: 160, border: "1px solid #888", margin: 16 }}>
+        <MarkdownEditor
+          documentId="harness"
+          value={"# 光标验证\n\n把光标放到这行文字上。"}
+          onChange={() => {}}
+          showToolbar={false}
+        />
+      </div>
 
       {/* 表格与公式的真实渲染效果（含真实 KaTeX 样式与字体）。 */}
       <div style={{ padding: 16, maxWidth: 720 }}>

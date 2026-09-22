@@ -1129,6 +1129,23 @@ Rules:
 - Font stacks MUST name explicit CJK faces. A generic-only stack (`serif`,
   `sans-serif`) resolves Chinese to one system font, making the choice
   invisible to the users this product targets.
+- The font choice MUST be offered as **concrete font names** (微软雅黑 / 黑体 /
+  宋体 / 楷体 / 仿宋 / Times New Roman), not abstract categories
+  (serif / sans-serif / mono). Chinese users think "I want 宋体", and the
+  serif–sans distinction is far less legible in CJK than in Latin.
+- Each option in the font list MUST be rendered in its own font. Seeing the
+  word 宋体 set in 宋体 is how users actually choose a font.
+- Missing fonts MUST be handled by the CSS stack fallback, NOT by probing font
+  availability in JS. Font enumeration is unreliable — measured on Windows,
+  `System.Drawing.FontFamily.Families` fails to report `SimSun` and `SimHei`
+  even though both are installed.
+- A stored preference from an older scheme MUST be migrated, not silently
+  reset. A reset reads to the user as "my setting was lost".
+- The caret MUST be driven by a theme token (`--caret`). CodeMirror's base
+  theme hard-codes the caret to black (`&light .cm-content { caretColor: black }`,
+  `.cm-cursor { border-left: 1.2px solid black }`) and only overrides it under
+  its own `&dark` marker, which a custom light-only theme never receives —
+  leaving a black caret on a dark background.
 
 ### 34.7 Token roles for solid surfaces
 

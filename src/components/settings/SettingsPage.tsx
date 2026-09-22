@@ -19,6 +19,8 @@ import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { zh } from "../../lib/i18n";
 import { api } from "../../lib/api";
 import {
+  EDITOR_FONT_FAMILIES,
+  EDITOR_FONT_SIZES,
   FONT_FAMILY_STACK,
   FONT_SIZE_PX,
   type EditorFontFamily,
@@ -28,6 +30,7 @@ import type { ViewMode } from "../../lib/viewMode";
 import type { ThemePreference } from "../../lib/theme";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
+import { FontPicker, type FontPickerOption } from "../ui/FontPicker";
 import { SegmentedControl, type SegmentedOption } from "../ui/SegmentedControl";
 import {
   type UpdateStatus,
@@ -249,16 +252,20 @@ export function SettingsPage({
     { value: "system", label: zh.settings.appearance.themeOption.system, icon: SunMoon },
   ];
 
-  const fontSizeOptions: readonly SegmentedOption<EditorFontSize>[] = (
-    ["sm", "md", "lg"] as const
-  ).map((size) => ({
-    value: size,
-    label: `${zh.settings.editor.fontSizeOption[size]} ${FONT_SIZE_PX[size]}`,
-  }));
+  const fontSizeOptions: readonly SegmentedOption<EditorFontSize>[] = EDITOR_FONT_SIZES.map(
+    (size) => ({
+      value: size,
+      label: `${zh.settings.editor.fontSizeOption[size]} ${FONT_SIZE_PX[size]}`,
+    }),
+  );
 
-  const fontFamilyOptions: readonly SegmentedOption<EditorFontFamily>[] = (
-    ["sans", "serif", "mono"] as const
-  ).map((family) => ({ value: family, label: zh.settings.editor.fontFamilyOption[family] }));
+  const fontFamilyOptions: readonly FontPickerOption<EditorFontFamily>[] =
+    EDITOR_FONT_FAMILIES.map((family) => ({
+      value: family,
+      label: zh.settings.editor.fontFamilyOption[family],
+      // 每个选项用该字体自身渲染，用户能直接看到效果（§34.6）。
+      stack: FONT_FAMILY_STACK[family],
+    }));
 
   const viewModeOptions: readonly SegmentedOption<ViewMode>[] = (
     ["edit", "split", "preview"] as const
@@ -360,12 +367,11 @@ export function SettingsPage({
                     <p className="settings-field__description">
                       {zh.settings.editor.fontFamilyHint}
                     </p>
-                    <SegmentedControl
+                    <FontPicker
                       value={fontFamily}
                       options={fontFamilyOptions}
                       onChange={onChangeFontFamily}
                       ariaLabel={zh.settings.editor.fontFamily}
-                      showLabels
                     />
                     {/* 用真实的字号 + 字体族渲染示例：两项目前互相影响，
                         分开看不出来它们合起来是什么效果。 */}

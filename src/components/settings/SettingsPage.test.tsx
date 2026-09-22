@@ -74,7 +74,7 @@ function renderPage(over: Partial<Parameters<typeof SettingsPage>[0]> = {}) {
     onChangeViewMode: vi.fn(),
     fontSize: "md",
     onChangeFontSize: vi.fn(),
-    fontFamily: "sans",
+    fontFamily: "system",
     onChangeFontFamily: vi.fn(),
     ...over,
   };
@@ -93,7 +93,7 @@ const BASE_PROPS: Parameters<typeof SettingsPage>[0] = {
   onChangeViewMode: () => {},
   fontSize: "md",
   onChangeFontSize: () => {},
-  fontFamily: "sans",
+  fontFamily: "system",
   onChangeFontFamily: () => {},
 };
 
@@ -191,7 +191,8 @@ describe("SettingsPage (UI §34)", () => {
     const props = renderPage();
     await goTo("编辑器");
 
-    await userEvent.click(screen.getByRole("radio", { name: /大/ }));
+    // 精确匹配：/大/ 会同时命中「大 16」与「特大 18」（子串匹配）。
+    await userEvent.click(screen.getByRole("radio", { name: "大 16" }));
 
     // 设置页是受控组件：它只上报选择，**应用与持久化由 App 负责**。
     // （字号在这里自己 setState + 应用的话，就只有打开过设置页才生效，
@@ -204,20 +205,57 @@ describe("SettingsPage (UI §34)", () => {
     const props = renderPage();
     await goTo("编辑器");
 
-    await userEvent.click(screen.getByRole("radio", { name: "衬线" }));
+    await userEvent.click(screen.getByRole("radio", { name: "宋体" }));
 
-    expect(props.onChangeFontFamily).toHaveBeenCalledWith("serif");
+    expect(props.onChangeFontFamily).toHaveBeenCalledWith("simsun");
+  });
+
+  it("offers the concrete fonts the user asked for", async () => {
+    setSettings();
+    renderPage();
+    await goTo("编辑器");
+
+    // 按字体名列出，而不是「衬线/无衬线」这类抽象类别。
+    for (const name of ["微软雅黑", "黑体", "宋体", "楷体", "仿宋", "Times New Roman"]) {
+      expect(screen.getByRole("radio", { name })).toBeInTheDocument();
+    }
+  });
+
+  it("renders each option's name in its own font so the choice is visible", async () => {
+    setSettings();
+    renderPage();
+    await goTo("编辑器");
+
+    // 这是选择列表的核心价值：读到「宋体」两个字本身就是宋体。
+    const option = screen.getByRole("radio", { name: "宋体" });
+    const nameEl = option.querySelector(".ui-font-picker__name") as HTMLElement;
+    expect(nameEl.style.fontFamily).toContain("SimSun");
+  });
+
+  it("marks the active font family as checked", async () => {
+    setSettings();
+    renderPage({ fontFamily: "kaiti" });
+    await goTo("编辑器");
+
+    expect(screen.getByRole("radio", { name: "楷体" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("radio", { name: "宋体" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
   });
 
   it("renders the sample with the current size and family", async () => {
     setSettings();
-    renderPage({ fontSize: "lg", fontFamily: "serif" });
+    renderPage({ fontSize: "lg", fontFamily: "simsun" });
     await goTo("编辑器");
 
     // 两项目前互相影响，用真实值渲染示例才看得出合起来的效果。
     const sample = screen.getByTestId("font-sample");
     expect(sample).toHaveStyle({ fontSize: "16px" });
-    expect(sample.style.fontFamily).toContain("Georgia");
+    expect(sample.style.fontFamily).toContain("SimSun");
   });
 
   it("offers the three view modes and reports the choice", async () => {

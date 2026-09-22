@@ -23,6 +23,12 @@
   --text-on-accent: #ffffff;
   --text-on-danger: #ffffff;
 
+  /* 编辑器光标。暗色下必须给亮色 —— CodeMirror 基础主题里把光标写死成
+     `&light .cm-content { caretColor: black }` 与 `.cm-cursor { border-left: black }`，
+     而本应用只用了一个不含 dark 标记的 EditorView.theme，
+     于是深色背景上光标仍是纯黑，几乎看不见。 */
+  --caret: #e8e8e8;
+
   /* --accent 是**前景强调色**（链接、选中图标、焦点环）：
      它必须在深底上够亮，故为 #3b82f6（对 #1a1a1a 4.73 ✓）。
      实心按钮底色是另一个角色 —— 用 #3b82f6 当底时白字只有 3.68 ✗，

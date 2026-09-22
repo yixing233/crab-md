@@ -413,3 +413,64 @@
   color: var(--text-on-accent);
   background: var(--warning);
 }
+
+/* ---------------------------------------------------------------------------
+   字体选择列表（UI §34.6）。
+   每个选项用自己的字体渲染名字，因此行高要容得下不同字体的差异。
+   --------------------------------------------------------------------------- */
+
+.ui-font-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  max-width: 320px;
+  /* 选项多时自身滚动，不把设置页撑长。 */
+  max-height: 260px;
+  overflow-y: auto;
+  padding: var(--space-1);
+  background: var(--bg-app);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.ui-font-picker__item {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ui-font-picker__item:hover { background: var(--bg-surface-hover); }
+
+.ui-font-picker__item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+/* 选中态：底色 + 勾选标记，不只靠颜色（UI §39）。 */
+.ui-font-picker__item[data-active] {
+  background: var(--bg-surface-active);
+  font-weight: 500;
+}
+
+/* 字体名：允许省略号，避免「Times New Roman」把行撑破。 */
+.ui-font-picker__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-font-picker__check {
+  flex: 0 0 auto;
+  color: var(--accent);
+}

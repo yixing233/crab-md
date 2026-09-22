@@ -29,6 +29,12 @@
   --text-on-accent: #ffffff;
   --text-on-danger: #ffffff;
 
+  /* 编辑器光标（插入符）。
+     单列一个令牌而不直接用 --text-primary：CodeMirror 基础主题里把光标
+     写死成 black/white（见 `&light .cm-content { caretColor: black }`），
+     它不认识本应用的主题令牌。用一个语义令牌兜住，明暗两侧各自取值。 */
+  --caret: #1a1a1a;
+
   /* 浅色下 accent 作前景（#2563eb on #ffffff = 5.17 ✓）与作实心底色
      （白字 5.17 ✓）都达标，故两者同值，无需拆分。 */
   --accent: #2563eb;

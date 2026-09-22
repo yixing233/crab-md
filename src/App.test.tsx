@@ -176,12 +176,24 @@ describe("App", () => {
   });
 
   it("applies the stored editor font family on mount", async () => {
+    localStorage.setItem("crab-md.editor-font-family", "simsun");
+    render(<App />);
+    await screen.findByRole("banner");
+
+    expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain(
+      "SimSun",
+    );
+  });
+
+  it("applies a font family stored by an older version, instead of resetting it", async () => {
+    // 旧版本存的是抽象类别。若不做迁移，老用户升级后会看到字体被重置，
+    // 体感就是「我的设置丢了」。
     localStorage.setItem("crab-md.editor-font-family", "serif");
     render(<App />);
     await screen.findByRole("banner");
 
     expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain(
-      "Georgia",
+      "SimSun",
     );
   });
 
@@ -197,7 +209,8 @@ describe("App", () => {
     await screen.findByRole("banner");
     await userEvent.click(screen.getByRole("button", { name: "设置" }));
     await userEvent.click(screen.getByRole("button", { name: "编辑器" }));
-    await userEvent.click(screen.getByRole("radio", { name: /大/ }));
+    // 精确匹配：/大/ 会同时命中「大 16」与「特大 18」（子串匹配）。
+    await userEvent.click(screen.getByRole("radio", { name: "大 16" }));
 
     await waitFor(() =>
       expect(localStorage.getItem("crab-md.editor-font-size")).toBe("lg"),

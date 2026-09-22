@@ -50,6 +50,15 @@ const appTheme = EditorView.theme({
     fontFamily: "var(--editor-font-family, var(--font-mono))",
     lineHeight: "var(--leading-prose)",
     padding: "var(--space-4) 0",
+    // 文字插入光标。CodeMirror 基础主题写死了 `&light { caretColor: black }`，
+    // 不覆盖的话深色背景下光标是黑的。
+    caretColor: "var(--caret)",
+  },
+  // 竖线光标同理：基础主题是 `.cm-cursor { border-left: 1.2px solid black }`，
+  // 亮色覆盖只写在 `&dark` 分支里。这里按令牌重设，明暗都正确。
+  ".cm-cursor, .cm-dropCursor": {
+    borderLeftColor: "var(--caret)",
+    borderLeftWidth: "2px",
   },
   ".cm-scroller": { overflow: "auto" },
   "&.cm-focused": { outline: "none" },

@@ -32,6 +32,29 @@ export function applyTheme(theme: ResolvedTheme, root: HTMLElement = document.do
   root.setAttribute("data-theme", theme);
 }
 
+/**
+ * 把主题同步到**原生窗口**，让标题栏也跟随明暗。
+ *
+ * 为什么需要单独做这件事：
+ * `applyTheme` 只改 WebView 内部的 CSS，原生标题栏由操作系统绘制，
+ * 不受 `data-theme` 影响。结果是深色模式下标题栏仍是刺眼的白色。
+ *
+ * 平台能力（已核实）：Tauri 的 `setTheme` 转调 tao，tao 在 Windows 上用
+ * `DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE)` 设置深色标题栏，
+ * 需要 Windows 10 build 18985+；更早的系统上调用是无害的 no-op。
+ *
+ * 失败一律静默：拿不到窗口（单测 / 浏览器预览）或权限缺失时，
+ * 界面本身仍然正确，不该因为标题栏而让应用报错。
+ */
+export async function applyWindowTheme(theme: ResolvedTheme): Promise<void> {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().setTheme(theme);
+  } catch {
+    // 无 Tauri IPC（单测、harness、浏览器）时静默跳过。
+  }
+}
+
 /** 查询当前系统是否偏好深色。老浏览器无 matchMedia 时按浅色处理。 */
 export function systemPrefersDark(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {

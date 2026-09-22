@@ -148,12 +148,22 @@ export const zh = {
         sm: "小",
         md: "中",
         lg: "大",
+        xl: "特大",
       },
       fontFamily: "字体",
-      fontFamilyHint: "选择正文使用的字体。衬线体更适合长时间阅读。",
+      fontFamilyHint: "选择正文使用的字体，编辑区与预览区同时生效。",
+      /**
+       * 用**字体自己的名字**，而不是「衬线/无衬线」这类抽象类别 ——
+       * 用户想的是「我要用宋体」，中文的衬线差别也不像西文那样直观。
+       */
       fontFamilyOption: {
-        sans: "无衬线",
-        serif: "衬线",
+        system: "系统默认",
+        yahei: "微软雅黑",
+        simhei: "黑体",
+        simsun: "宋体",
+        kaiti: "楷体",
+        fangsong: "仿宋",
+        times: "Times New Roman",
         mono: "等宽",
       },
       previewLabel: "预览",

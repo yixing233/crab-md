@@ -231,3 +231,39 @@ describe("update bar legibility", () => {
     expect(ratio).toBeLessThan(AA_NORMAL);
   });
 });
+
+/**
+ * 编辑器光标可见性。
+ *
+ * 背景：CodeMirror 基础主题把光标写死成黑色
+ * （`.cm-cursor { border-left: 1.2px solid black }`、`&light .cm-content { caretColor: black }`），
+ * 它的亮色覆盖只写在 `&dark` 分支里。本应用只用了一个不含 dark 标记的
+ * `EditorView.theme`，于是深色背景下光标是纯黑 —— 几乎看不见。
+ *
+ * 修法是给光标单列一个 `--caret` 令牌，明暗各自取值。
+ */
+describe("editor caret visibility", () => {
+  // 光标是细线，按 UI 组件（非文本）的 3:1 门槛要求。
+  const AA_NON_TEXT = 3;
+
+  it.each([
+    ["light", light],
+    ["dark", dark],
+  ])("%s: the caret is visible against the editor background", (_name, css) => {
+    expect(contrast(token(css as string, "caret"), token(css as string, "bg-app")))
+      .toBeGreaterThanOrEqual(AA_NON_TEXT);
+  });
+
+  it("uses a light caret in dark theme and a dark one in light theme", () => {
+    // 方向必须相反：否则等于把 CodeMirror 的写死黑光标换个名字保留下来。
+    expect(luminance(token(dark, "caret"))).toBeGreaterThan(luminance(token(dark, "bg-app")));
+    expect(luminance(token(light, "caret"))).toBeLessThan(luminance(token(light, "bg-app")));
+  });
+
+  it("keeps the caret distinct from the editor text colour", () => {
+    // 光标与文字同色时，光标停在某个字符上就分不清位置了。
+    // 但也不能差太远 —— 二者都必须在同一底上可读，故只要求值不同。
+    expect(token(dark, "caret")).not.toBe(token(dark, "text-muted"));
+    expect(token(light, "caret")).not.toBe(token(light, "text-muted"));
+  });
+});

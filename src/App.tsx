@@ -22,6 +22,7 @@ import { tauriUpdaterBridge } from "./lib/updaterBridge";
 import { useUpdateStore } from "./stores/useUpdateStore";
 import {
   applyTheme,
+  applyWindowTheme,
   readStoredPreference,
   resolveTheme,
   systemPrefersDark,
@@ -139,12 +140,19 @@ export default function App() {
 
   // 主题：写入 <html data-theme>，CSS 变量随之切换（UI_DESIGN_SYSTEM.md §4.1）。
   // 偏好为 system 时还要监听系统变化，用户切换系统主题应当即时跟随。
+  //
+  // 同时把主题同步给原生窗口：`data-theme` 只影响 WebView 内部，
+  // 原生标题栏由系统绘制，不同步的话深色下标题栏仍是白色。
   useEffect(() => {
     const mq = typeof window.matchMedia === "function"
       ? window.matchMedia("(prefers-color-scheme: dark)")
       : null;
 
-    const sync = () => applyTheme(resolveTheme(themePreference, systemPrefersDark()));
+    const sync = () => {
+      const resolved = resolveTheme(themePreference, systemPrefersDark());
+      applyTheme(resolved);
+      void applyWindowTheme(resolved);
+    };
 
     sync();
     if (themePreference !== "system" || !mq) return;

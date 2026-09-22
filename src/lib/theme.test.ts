@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { applyTheme, readStoredPreference, resolveTheme, systemPrefersDark } from "./theme";
+import { describe, expect, it, vi } from "vitest";
+import {
+  applyTheme,
+  applyWindowTheme,
+  readStoredPreference,
+  resolveTheme,
+  systemPrefersDark,
+} from "./theme";
 
 describe("resolveTheme", () => {
   it("returns the explicit preference as-is", () => {
@@ -53,5 +59,43 @@ describe("applyTheme", () => {
 describe("systemPrefersDark", () => {
   it("returns a boolean without throwing in jsdom", () => {
     expect(typeof systemPrefersDark()).toBe("boolean");
+  });
+});
+
+describe("applyWindowTheme", () => {
+  it("never throws when there is no Tauri bridge", async () => {
+    // jsdom 里没有 Tauri IPC。标题栏同步失败不该让应用崩掉 ——
+    // 界面本身仍然正确，只是标题栏没跟上。
+    await expect(applyWindowTheme("dark")).resolves.toBeUndefined();
+    await expect(applyWindowTheme("light")).resolves.toBeUndefined();
+  });
+
+  it("calls setTheme with the resolved theme when a window is available", async () => {
+    const setTheme = vi.fn().mockResolvedValue(undefined);
+    vi.doMock("@tauri-apps/api/window", () => ({
+      getCurrentWindow: () => ({ setTheme }),
+    }));
+    vi.resetModules();
+    const mod = await import("./theme");
+
+    await mod.applyWindowTheme("dark");
+
+    expect(setTheme).toHaveBeenCalledWith("dark");
+    vi.doUnmock("@tauri-apps/api/window");
+    vi.resetModules();
+  });
+
+  it("swallows a rejection from setTheme", async () => {
+    // 权限缺失 / 平台不支持时 setTheme 会 reject，同样必须静默。
+    const setTheme = vi.fn().mockRejectedValue(new Error("not allowed"));
+    vi.doMock("@tauri-apps/api/window", () => ({
+      getCurrentWindow: () => ({ setTheme }),
+    }));
+    vi.resetModules();
+    const mod = await import("./theme");
+
+    await expect(mod.applyWindowTheme("dark")).resolves.toBeUndefined();
+    vi.doUnmock("@tauri-apps/api/window");
+    vi.resetModules();
   });
 });
