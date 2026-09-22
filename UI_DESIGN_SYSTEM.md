@@ -992,7 +992,50 @@ About
 
 Do not expose internal database or API configuration in normal settings unless there is a real user need.
 
-### 34.1 Data directory
+### 34.1 Layout
+
+Settings MUST use a **left group navigation + right content** layout once there are
+more than two groups.
+
+A single scrolling column is not acceptable beyond two groups: the user cannot tell
+how many settings exist without scrolling to the bottom.
+
+Group rows MUST use a stable identifier, not an array index, so inserting a group
+later cannot silently shift the selected page.
+
+### 34.2 Preferences vs. configuration
+
+Two storage locations, chosen by **when the value is needed** — not by convenience:
+
+| Kind | Example | Where | Why |
+| --- | --- | --- | --- |
+| Configuration | data directory | app config dir (`settings.json`), via backend command | the backend must know it **before** it can open anything; a chicken-and-egg value cannot live inside what it configures |
+| Client preference | theme, font size, view mode | `localStorage` | purely presentational; reading from disk/IPC would flash the wrong value on startup |
+
+A client preference MUST NOT be promoted to backend configuration merely to
+"keep settings in one place" — doing so trades away startup smoothness for tidiness.
+
+### 34.3 Path and value display
+
+Paths and other long machine values MUST be shown on **one line with trailing
+ellipsis**, never broken character-by-character.
+
+```css
+/* Correct */
+overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+
+/* Wrong — breaks `workspace` into `workspac` / `e` */
+word-break: break-all;
+```
+
+Rules:
+
+- The full value MUST remain reachable (tooltip and/or copy button).
+- Values MUST be selectable text, so they can be copied even where the clipboard
+  API is unavailable.
+- Control labels SHOULD state the action ("更换…"), not the object ("目录").
+
+### 34.4 Data directory
 
 The local data directory MUST be viewable and changeable from settings.
 
@@ -1002,10 +1045,61 @@ Rules:
 - Changing it MUST be confirmed first, and the confirmation MUST state that
   content in the previous directory is **not deleted** and can be switched back to.
 - If the directory is overridden by an environment variable, settings MUST say so
-  and MUST NOT pretend the change took effect.
+  and MUST NOT pretend the change took effect — disable the controls rather than
+  letting the user click into a no-op.
 - A failed switch MUST leave the current directory fully usable.
 - The settings file MUST NOT live inside the data directory it configures;
   it belongs in the platform application-config directory.
+
+### 34.5 Empty groups
+
+A group MUST NOT be shown as an empty placeholder to make the navigation look
+fuller. A group appears when it has at least one real setting.
+
+### 34.6 Editor typography
+
+Editor font size and font family MUST be adjustable from settings.
+
+Rules:
+
+- Changing them MUST NOT rebuild the editor instance — that discards caret
+  position and undo history. Drive them through CSS custom properties that the
+  editor theme already consumes (`--editor-font-size`, `--editor-font-family`).
+- The preference MUST be owned by the app shell and applied **on mount**, not by
+  the settings panel. If the panel owns it, the value only takes effect once the
+  user has opened settings, and is lost on restart — which reads to the user as
+  "the setting did not save".
+- The preview pane is the primary long-form reading surface and MUST honour both
+  settings. Headings inside it MUST use relative units (`em`) so they scale with
+  the base size instead of flattening the hierarchy.
+- Font stacks MUST name explicit CJK faces. A generic-only stack (`serif`,
+  `sans-serif`) resolves Chinese to one system font, making the choice
+  invisible to the users this product targets.
+
+### 34.7 Token roles for solid surfaces
+
+A single colour token MUST NOT serve both "foreground accent" (links, selected
+icons, focus rings) and "solid button background".
+
+Contrast requirements conflict: a foreground accent must be legible **on** the
+app background, while a solid background must carry legible **text on top of
+it**. In the dark theme the same blue cannot satisfy both — `#3b82f6` passes as
+a foreground (4.73:1) but fails with white text (3.68:1).
+
+Use paired tokens instead:
+
+```text
+--accent / --danger              foreground role
+--accent-solid / --danger-solid  solid surface role
+--text-on-accent / --text-on-danger  text for solid surfaces
+```
+
+`--text-inverse` is **not** the text colour for solid buttons: it means "inverse
+of the current text colour" (dark in dark theme) and is used by tooltips.
+Repurposing it breaks one surface or the other.
+
+Contrast MUST be verified for: button text at rest, on hover/active, and the
+solid surface against the app background.
 
 ---
 

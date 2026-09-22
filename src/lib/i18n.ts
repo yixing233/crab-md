@@ -118,11 +118,52 @@ export const zh = {
   settings: {
     title: "设置",
     close: "关闭",
+    /** 左侧分组导航的无障碍名称。 */
+    navLabel: "设置分组",
     /** 按用户心智模型分组，不按实现模块（UI §34）。 */
     sections: {
-      files: "文件与数据",
       appearance: "外观",
+      editor: "编辑器",
+      files: "文件与数据",
+      about: "关于",
     },
+
+    appearance: {
+      theme: "主题",
+      themeHint: "可以选择固定的明暗主题，或跟随系统设置自动切换。",
+      themeOption: {
+        light: "浅色",
+        dark: "深色",
+        system: "跟随系统",
+      },
+    },
+
+    editor: {
+      fontSize: "字号",
+      fontSizeHint: "调整正文文字大小，编辑区与预览区同时生效。",
+      fontSizeOption: {
+        sm: "小",
+        md: "中",
+        lg: "大",
+      },
+      fontFamily: "字体",
+      fontFamilyHint: "选择正文使用的字体。衬线体更适合长时间阅读。",
+      fontFamilyOption: {
+        sans: "无衬线",
+        serif: "衬线",
+        mono: "等宽",
+      },
+      previewLabel: "预览",
+      viewMode: "默认视图",
+      viewModeHint: "仅编辑只看源码，仅阅读只看渲染结果。",
+      /** 复用工具栏的视图模式文案，避免两处各写一份。 */
+      viewModeOption: {
+        edit: "仅编辑",
+        split: "分栏",
+        preview: "仅阅读",
+      },
+    },
+
     storage: {
       label: "数据目录",
       description: "所有笔记、附件与索引都保存在这个文件夹里。",
@@ -130,18 +171,30 @@ export const zh = {
       /** 环境变量覆盖时的提示 —— 必须说清"改了也不会立刻生效"。 */
       fromEnvNote:
         "当前目录由环境变量 CRAB_MD_WORKSPACE 指定，在此修改不会生效。请先清除该环境变量。",
-      browse: "浏览…",
+      browse: "更换…",
+      open: "打开",
       reset: "恢复默认",
       defaultHint: "默认位置",
       configFile: "设置文件",
+      copyPath: "复制路径",
+      copied: "路径已复制",
+      copyFailed: "复制失败，请手动选择文本复制",
       /** 切换确认：换目录后看到的是另一套笔记，要说清不是删除。 */
       confirmTitle: "切换数据目录",
       confirmBody: (path: string) =>
         `切换到「${path}」后，将显示该目录中的笔记。原目录里的内容不会被删除，随时可以切回。`,
       confirmOk: "切换",
       cancel: "取消",
-      switching: "正在切换…",
       done: "已切换数据目录",
+    },
+
+    about: {
+      versionLabel: "版本",
+      /** 「关于」只放事实信息，不放推广内容（§34 不暴露内部实现细节）。 */
+      description:
+        "本地优先的 Markdown 笔记应用。笔记以标准 .md 文件保存在本机，不依赖网络。",
+      dataFormat: "数据格式",
+      dataFormatValue: "标准 Markdown + 本地 SQLite 索引",
     },
   },
 

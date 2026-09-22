@@ -1,7 +1,7 @@
-import { Columns2, SquarePen, TabletSmartphone, type LucideIcon } from "lucide-react";
+import { Columns2, SquarePen, TabletSmartphone } from "lucide-react";
 import { zh } from "../../lib/i18n";
 import { VIEW_MODES, type ViewMode } from "../../lib/viewMode";
-import { Tooltip } from "./Tooltip";
+import { SegmentedControl, type SegmentedOption } from "./SegmentedControl";
 import "./ui.css";
 
 export interface ViewModeSwitchProps {
@@ -9,48 +9,35 @@ export interface ViewModeSwitchProps {
   onChange: (mode: ViewMode) => void;
 }
 
-const ICONS: Record<ViewMode, LucideIcon> = {
-  edit: SquarePen,
-  split: Columns2,
-  preview: TabletSmartphone,
-};
+const OPTIONS: readonly SegmentedOption<ViewMode>[] = [
+  { value: "edit", label: zh.toolbar.view.edit, icon: SquarePen },
+  { value: "split", label: zh.toolbar.view.split, icon: Columns2 },
+  { value: "preview", label: zh.toolbar.view.preview, icon: TabletSmartphone },
+];
 
 /**
  * 视图模式分段控件（UI_DESIGN_SYSTEM.md §11）。
  *
- * 用分段控件而不是「一个循环按钮」：三档是**互斥的可见状态**，
- * 分段控件让「当前在哪一档」一目了然，循环按钮却要按下才知道。
+ * 工具栏里空间紧张，故用纯图标 + Tooltip；设置页里则用带文字的
+ * `SegmentedControl`（那里「当前选的是哪个」比省空间更重要）。
  *
- * 语义上用 radio 组而非一排普通按钮 —— 屏幕阅读器会正确播报
- * 「3 选 1」而不是「3 个独立开关」。
+ * 判据：`VIEW_MODES` 是唯一顺序来源，这里只做图标与文案映射，
+ * 循环切换（Ctrl+\）与分段控件不会各自维护一份顺序。
  */
 export function ViewModeSwitch({ value, onChange }: ViewModeSwitchProps) {
+  // 断言所有模式都有对应选项，避免新增模式时这里静默漏掉。
+  const options = VIEW_MODES.map((mode) => {
+    const found = OPTIONS.find((o) => o.value === mode);
+    if (!found) throw new Error(`ViewModeSwitch: missing option for mode "${mode}"`);
+    return found;
+  });
+
   return (
-    <div
-      className="ui-segmented"
-      role="radiogroup"
-      aria-label={zh.toolbar.view.label}
-    >
-      {VIEW_MODES.map((mode) => {
-        const Icon = ICONS[mode];
-        const label = zh.toolbar.view[mode];
-        const active = mode === value;
-        return (
-          <Tooltip key={mode} content={label}>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={active}
-              aria-label={label}
-              className="ui-segmented__item"
-              data-active={active || undefined}
-              onClick={() => onChange(mode)}
-            >
-              <Icon size={15} aria-hidden />
-            </button>
-          </Tooltip>
-        );
-      })}
-    </div>
+    <SegmentedControl
+      value={value}
+      options={options}
+      onChange={onChange}
+      ariaLabel={zh.toolbar.view.label}
+    />
   );
 }

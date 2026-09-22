@@ -18,17 +18,30 @@
   --text-muted: #8a8a8a;
   --text-disabled: #5a5a5a;
   --text-inverse: #1a1a1a;
+  /* 实心按钮上的文字。与 --text-inverse 分开：后者在暗色下是**深色**
+     （tooltip 的深字浅底要用它），而实心蓝/红底上必须用白字。 */
+  --text-on-accent: #ffffff;
+  --text-on-danger: #ffffff;
 
+  /* --accent 是**前景强调色**（链接、选中图标、焦点环）：
+     它必须在深底上够亮，故为 #3b82f6（对 #1a1a1a 4.73 ✓）。
+     实心按钮底色是另一个角色 —— 用 #3b82f6 当底时白字只有 3.68 ✗，
+     所以单独给 --accent-solid。一个 token 兼两职时对比度要求互相冲突。 */
   --accent: #3b82f6;
-  --accent-hover: #60a5fa;
-  --accent-active: #93c5fd;
   --accent-soft: #1e293b;
+
+  --accent-solid: #2563eb;
+  --accent-solid-hover: #1d4ed8;
+  --accent-solid-active: #1e40af;
 
   --success: #22c55e;
   --success-soft: #14261a;
   --warning: #f59e0b;
   --warning-soft: #2a2113;
+  /* 同 accent 的拆分：--danger 当前景色（错误文字/边框）在深底上 4.62 ✓；
+     做实心底时改用更深的 #dc2626，白字 4.83 ✓。 */
   --danger: #ef4444;
+  --danger-solid: #dc2626;
   --danger-soft: #2a1616;
   --info: #38bdf8;
   --info-soft: #12222b;

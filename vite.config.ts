@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -5,9 +6,15 @@ import react from "@vitejs/plugin-react";
 // TAURI_DEV_HOST 用于从真机/局域网访问开发服务器时指定可绑定的地址。
 const host = process.env.TAURI_DEV_HOST;
 
+// 「关于」页要显示版本号。构建期注入，避免运行时再发一次 IPC。
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
+
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   server: {
     port: 1420,
     strictPort: true,

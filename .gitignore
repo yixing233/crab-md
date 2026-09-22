@@ -31,3 +31,7 @@ src-tauri/gen/
 .manual-workspace/
 # Ad-hoc data directories created while verifying the configurable workspace root
 .manual-workspace-custom/
+
+# Screenshots and traces from the dev visual harness / playwright-cli
+output/
+.playwright-cli/

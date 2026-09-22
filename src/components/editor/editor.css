@@ -121,6 +121,10 @@
   overflow-y: auto;
   line-height: var(--leading-prose);
   color: var(--text-primary);
+  /* 阅读区同样跟随「字体」设置：这是产品里最主要的长文阅读面。
+     字号与字体族都由设置页驱动。 */
+  font-family: var(--editor-font-family, var(--font-ui));
+  font-size: var(--editor-font-size, var(--text-md));
 }
 
 /* 长文可读性：限制内容宽度（UI §22）。 */
@@ -128,13 +132,15 @@
 
 .markdown-preview--empty { color: var(--text-muted); }
 
+/* 标题用 em（相对基准字号），这样调大字号时标题一起放大；
+   若写死 px，正文放大而标题不动，层级关系会被压平。 */
 .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 {
   margin: var(--space-6) 0 var(--space-3);
   line-height: var(--leading-normal);
 }
-.markdown-preview h1 { font-size: var(--text-2xl); margin-top: 0; }
-.markdown-preview h2 { font-size: var(--text-xl); }
-.markdown-preview h3 { font-size: var(--text-lg); }
+.markdown-preview h1 { font-size: 1.7em; margin-top: 0; }
+.markdown-preview h2 { font-size: 1.4em; }
+.markdown-preview h3 { font-size: 1.15em; }
 
 .markdown-preview p { margin: 0 0 var(--space-4); }
 

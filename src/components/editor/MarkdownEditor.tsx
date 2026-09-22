@@ -39,12 +39,15 @@ export interface MarkdownEditorProps {
 const appTheme = EditorView.theme({
   "&": {
     height: "100%",
-    fontSize: "var(--text-md)",
+    // 字号走 CSS 变量：设置页改字号时无需重建编辑器实例
+    //（重建会丢光标位置与撤销历史）。
+    fontSize: "var(--editor-font-size, var(--text-md))",
     backgroundColor: "var(--bg-app)",
     color: "var(--text-primary)",
   },
   ".cm-content": {
-    fontFamily: "var(--font-mono)",
+    // 字体族同样走变量，与字号一样无需重建编辑器。
+    fontFamily: "var(--editor-font-family, var(--font-mono))",
     lineHeight: "var(--leading-prose)",
     padding: "var(--space-4) 0",
   },

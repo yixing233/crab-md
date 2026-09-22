@@ -4,11 +4,12 @@
 .settings-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  /* 高于工具栏与浮层，低于确认 Dialog（1100）。 */
+  z-index: 1050;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 8vh var(--space-4) var(--space-4);
+  padding: 6vh var(--space-4);
   background: rgb(0 0 0 / 0.28);
   animation: ui-fade-in var(--duration-fast) ease-out;
 }
@@ -17,24 +18,23 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 560px;
-  max-height: 84vh;
-  overflow-y: auto;
+  max-width: 680px;
+  /* 固定高度而非 max-height：切换分组时面板不应忽高忽低。 */
+  height: min(520px, 84vh);
+  overflow: hidden;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
 }
 
-/* 设置面板在确认框之下（Dialog 用 1100）。 */
-.settings-overlay { z-index: 1050; }
-
 .settings-panel__header {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .settings-panel__title {
@@ -44,21 +44,80 @@
   color: var(--text-primary);
 }
 
+/* 左导航 + 右内容。 */
+.settings-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-nav {
+  display: flex;
+  flex: 0 0 148px;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-2);
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.settings-nav__item {
+  padding: var(--space-2) var(--space-3);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.settings-nav__item:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+
+/* 选中项：填色 + 加重字重，不只靠颜色区分（UI §39）。 */
+.settings-nav__item[data-active] {
+  color: var(--text-primary);
+  font-weight: 500;
+  background: var(--bg-surface-active);
+}
+
+.settings-nav__item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+}
+
 .settings-section {
   padding: var(--space-4) var(--space-5) var(--space-5);
 }
 
 .settings-section__title {
-  margin: 0 0 var(--space-3);
-  font-size: var(--text-xs);
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-muted);
 }
 
+/* 一项设置 = 标签 + 说明 + 控件，纵向排布。 */
 .settings-field {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+/* 同一分组内多于一项目时用分隔线隔开，避免糊在一起。 */
+.settings-field + .settings-field {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .settings-field__label {
@@ -72,37 +131,71 @@
 
 .settings-field__description {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
   color: var(--text-secondary);
 }
 
-.settings-field__hint {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+/* 路径与元信息 */
+
+/* 路径行：等宽路径 + 复制按钮。路径**单行末尾省略**，
+   不再 break-all 逐字符折断 —— 后者会把 `workspace` 断成 `workspac`/`e`。 */
+.settings-path-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
 }
 
-/* 路径用等宽字体、可换行：长路径不该撑破面板。 */
-.settings-path,
-.settings-field__hint code {
-  padding: var(--space-1) var(--space-2);
+.settings-path {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow: hidden;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  word-break: break-all;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+  /* 允许用户选中复制（有些环境剪贴板不可用）。 */
+  user-select: text;
+}
+
+/* 元信息用定义列表：左标签右值，值同样单行省略。 */
+.settings-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+}
+
+.settings-meta dt {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.settings-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-note {
   margin: 0;
   padding: var(--space-2) var(--space-3);
   font-size: var(--text-xs);
+  line-height: var(--leading-normal);
   border-radius: var(--radius-sm);
 }
 
-/* 环境变量锁定时用 warning 语义：这是"设置被别处覆盖"的例外状态。 */
+/* 环境变量锁定时用 warning 语义：这是「设置被别处覆盖」的例外状态。 */
 .settings-note--warn {
   color: var(--warning);
   background: var(--warning-soft);
@@ -110,8 +203,24 @@
 
 .settings-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-1);
+}
+
+/* 分段控件按内容宽度，不跟着纵列容器拉满整行 ——
+   否则灰色轨道铺满一行、按钮挤在左侧，看起来像没对齐。
+   （分段控件是 inline-flex，只在 flex 纵列里才会被 stretch。） */
+.settings-field > .ui-segmented {
+  align-self: flex-start;
+}
+
+/* 字号示例：当场看到改动效果，不必回编辑器确认。 */
+.settings-sample {
+  margin: var(--space-1) 0 0;
+  color: var(--text-primary);
+  /* 字号由内联 style 提供；行高跟随，避免大字号时行距过密。 */
+  line-height: var(--leading-prose);
 }
 
 @media (prefers-reduced-motion: reduce) {

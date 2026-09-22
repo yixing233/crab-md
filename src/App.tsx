@@ -24,6 +24,16 @@ import {
   type ThemePreference,
 } from "./lib/theme";
 import {
+  applyFontFamily,
+  applyFontSize,
+  FONT_FAMILY_KEY,
+  FONT_SIZE_KEY,
+  readStoredFontFamily,
+  readStoredFontSize,
+  type EditorFontFamily,
+  type EditorFontSize,
+} from "./lib/editorPrefs";
+import {
   nextViewMode,
   readStoredViewMode,
   showsEditor,
@@ -87,6 +97,32 @@ export default function App() {
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
     readStoredPreference(typeof localStorage === "undefined" ? null : localStorage.getItem(THEME_STORAGE_KEY)),
   );
+  // 编辑器字号与主题同属「纯展示偏好」，都由 App 持有 ——
+  // 只有这样它才会在**启动时**生效；若只由设置页持有，
+  // 就必须先打开设置页才应用，重启即回到默认值。
+  const [fontSize, setFontSize] = useState<EditorFontSize>(() =>
+    readStoredFontSize(typeof localStorage === "undefined" ? null : localStorage.getItem(FONT_SIZE_KEY)),
+  );
+  const [fontFamily, setFontFamily] = useState<EditorFontFamily>(() =>
+    readStoredFontFamily(typeof localStorage === "undefined" ? null : localStorage.getItem(FONT_FAMILY_KEY)),
+  );
+
+  // 字号：写 CSS 变量（CodeMirror theme 读它），并持久化。
+  // 用变量而非重建编辑器：重建会丢光标位置与撤销历史。
+  useEffect(() => {
+    applyFontSize(fontSize);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(FONT_SIZE_KEY, fontSize);
+    }
+  }, [fontSize]);
+
+  // 字体族同上，同样走 CSS 变量。
+  useEffect(() => {
+    applyFontFamily(fontFamily);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(FONT_FAMILY_KEY, fontFamily);
+    }
+  }, [fontFamily]);
 
   // 主题：写入 <html data-theme>，CSS 变量随之切换（UI_DESIGN_SYSTEM.md §4.1）。
   // 偏好为 system 时还要监听系统变化，用户切换系统主题应当即时跟随。
@@ -408,6 +444,14 @@ export default function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onChanged={(message) => setToast({ message, tone: "success" })}
+        themePreference={themePreference}
+        onChangeTheme={setThemePreference}
+        viewMode={viewMode}
+        onChangeViewMode={setViewMode}
+        fontSize={fontSize}
+        onChangeFontSize={setFontSize}
+        fontFamily={fontFamily}
+        onChangeFontFamily={setFontFamily}
       />
     </div>
   );

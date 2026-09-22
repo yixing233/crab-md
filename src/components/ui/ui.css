@@ -39,9 +39,13 @@
 .ui-button[data-size="md"][data-icon-only] { width: 32px; }
 .ui-button[data-size="lg"][data-icon-only] { width: 40px; }
 
-.ui-button[data-variant="primary"] { background: var(--accent); color: var(--text-inverse); }
-.ui-button[data-variant="primary"]:hover:not(:disabled) { background: var(--accent-hover); }
-.ui-button[data-variant="primary"]:active:not(:disabled) { background: var(--accent-active); }
+/* 实心按钮用 --*-solid 底色 + --text-on-* 文字：
+   这两个 token 是配套的，不要换成 --accent/--text-inverse。
+   实测（暗色）白字 on #3b82f6 只有 3.68（不达 AA 4.5），
+   而 on #2563eb 是 5.17 ✓ —— 这正是拆分角色的原因。 */
+.ui-button[data-variant="primary"] { background: var(--accent-solid); color: var(--text-on-accent); }
+.ui-button[data-variant="primary"]:hover:not(:disabled) { background: var(--accent-solid-hover); }
+.ui-button[data-variant="primary"]:active:not(:disabled) { background: var(--accent-solid-active); }
 
 .ui-button[data-variant="secondary"] {
   background: var(--bg-surface);
@@ -56,7 +60,7 @@
   color: var(--text-primary);
 }
 
-.ui-button[data-variant="danger"] { background: var(--danger); color: var(--text-inverse); }
+.ui-button[data-variant="danger"] { background: var(--danger-solid); color: var(--text-on-danger); }
 .ui-button[data-variant="danger"]:hover:not(:disabled) { filter: brightness(0.92); }
 
 .ui-button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -314,7 +318,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   分段控件：用于互斥的少量选项，如视图模式（UI §11）。
+   分段控件：用于互斥的少量选项（视图模式、主题、字号）。
    --------------------------------------------------------------------------- */
 
 .ui-segmented {
@@ -325,13 +329,21 @@
   border-radius: var(--radius-md);
 }
 
+/* 纯图标模式会被 Tooltip 包一层锚点 span；让它当 flex 项并撑满，
+   否则按钮尺寸不受控。锚点必须保留盒子（不能用 display:contents），
+   否则 Tooltip 量不到位置。 */
+.ui-segmented > .ui-tooltip-anchor { display: inline-flex; }
+
 .ui-segmented__item {
   display: inline-flex;
+  gap: var(--space-2);
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 24px;
   padding: 0;
+  font-family: inherit;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   background: transparent;
   border: none;
@@ -340,11 +352,19 @@
   transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
 
+/* 带文字标签时按内容宽度，并给足内边距。 */
+.ui-segmented[data-labeled] .ui-segmented__item {
+  width: auto;
+  height: 30px;
+  padding: 0 var(--space-3);
+}
+
 .ui-segmented__item:hover { color: var(--text-primary); }
 
 /* 选中态：抬到纸色 + 加重文字色，不只靠颜色区分（UI §39）。 */
 .ui-segmented__item[data-active] {
   color: var(--text-primary);
+  font-weight: 500;
   background: var(--bg-elevated);
   box-shadow: var(--shadow-sm);
 }
@@ -353,3 +373,6 @@
   outline: 2px solid var(--border-focus);
   outline-offset: -1px;
 }
+
+/* 窄容器里允许换行，而不是把控件挤扁。 */
+.ui-segmented[data-labeled] { flex-wrap: wrap; }

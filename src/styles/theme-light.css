@@ -18,21 +18,32 @@
 
   --text-primary: #1a1a1a;
   --text-secondary: #555555;
-  /* 壳变深后同步压暗 muted，避免次要文字对比度被削弱。 */
-  --text-muted: #767676;
+  /* 壳变深后同步压暗 muted，避免次要文字对比度被削弱。
+     再压到 #6b6b6b：muted 会落在 hover/active 壳（#ebebed/#e0e0e3）上，
+     在 #e0e0e3 上 #767676 只有 3.45（不达 AA）。 */
+  --text-muted: #6b6b6b;
   --text-disabled: #b5b5b5;
   --text-inverse: #ffffff;
+  /* 实心按钮上的文字：浅色下与 --text-inverse 同值，
+     但语义独立（见 theme-dark.css 的说明）。 */
+  --text-on-accent: #ffffff;
+  --text-on-danger: #ffffff;
 
+  /* 浅色下 accent 作前景（#2563eb on #ffffff = 5.17 ✓）与作实心底色
+     （白字 5.17 ✓）都达标，故两者同值，无需拆分。 */
   --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-active: #1e40af;
   --accent-soft: #eff6ff;
+
+  --accent-solid: #2563eb;
+  --accent-solid-hover: #1d4ed8;
+  --accent-solid-active: #1e40af;
 
   --success: #16a34a;
   --success-soft: #f0fdf4;
   --warning: #d97706;
   --warning-soft: #fffbeb;
   --danger: #dc2626;
+  --danger-solid: #dc2626;
   --danger-soft: #fef2f2;
   --info: #0284c7;
   --info-soft: #f0f9ff;

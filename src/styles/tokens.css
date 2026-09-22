@@ -32,4 +32,10 @@
 
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-mono: "Cascadia Mono", "JetBrains Mono", Consolas, "Courier New", monospace;
+
+  /* 编辑器可调偏好（设置页 §34「编辑器」分组）。
+     这里只是**默认值**，App 启动时会用 localStorage 里的偏好覆盖它们。
+     放在 tokens 而非组件里，是为了首次绘制就有确定值，不出现字体跳变。 */
+  --editor-font-size: var(--text-md);
+  --editor-font-family: var(--font-mono);
 }

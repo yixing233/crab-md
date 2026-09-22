@@ -57,6 +57,55 @@ describe("App", () => {
     listDocuments.mockResolvedValue([]);
     localStorage.clear();
     document.documentElement.removeAttribute("data-theme");
+    document.documentElement.style.removeProperty("--editor-font-size");
+    document.documentElement.style.removeProperty("--editor-font-family");
+  });
+
+  // 编辑器偏好必须在**挂载时**就生效。曾经它只由设置页持有，
+  // 于是必须先打开过设置页才应用，重启应用即回到默认值 —— 用户会认为
+  // 「字号设置没保存」。
+  it("applies the stored editor font size on mount, without opening settings", async () => {
+    localStorage.setItem("crab-md.editor-font-size", "lg");
+    render(<App />);
+    await screen.findByRole("banner");
+
+    expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("16px");
+  });
+
+  it("applies the stored editor font family on mount", async () => {
+    localStorage.setItem("crab-md.editor-font-family", "serif");
+    render(<App />);
+    await screen.findByRole("banner");
+
+    expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain(
+      "Georgia",
+    );
+  });
+
+  it("falls back to the default font size when nothing is stored", async () => {
+    render(<App />);
+    await screen.findByRole("banner");
+
+    expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("14px");
+  });
+
+  it("persists a font size chosen in settings and survives a remount", async () => {
+    const { unmount } = render(<App />);
+    await screen.findByRole("banner");
+    await userEvent.click(screen.getByRole("button", { name: "设置" }));
+    await userEvent.click(screen.getByRole("button", { name: "编辑器" }));
+    await userEvent.click(screen.getByRole("radio", { name: /大/ }));
+
+    await waitFor(() =>
+      expect(localStorage.getItem("crab-md.editor-font-size")).toBe("lg"),
+    );
+    unmount();
+
+    // 重启后仍是「大」—— 这正是之前缺的那一环。
+    document.documentElement.style.removeProperty("--editor-font-size");
+    render(<App />);
+    await screen.findByRole("banner");
+    expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("16px");
   });
 
   it("renders the toolbar, sidebar and editor regions", async () => {
@@ -264,7 +313,8 @@ describe("App panes and shortcuts", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "设置" }));
 
-    expect(await screen.findByTestId("effective-workspace-root")).toBeInTheDocument();
+    // 默认打开「外观」分组；用面板的分组导航确认打开了。
+    expect(await screen.findByRole("navigation", { name: "设置分组" })).toBeInTheDocument();
   });
 
   it("opens settings with Ctrl+comma (UI §29)", async () => {
@@ -273,19 +323,19 @@ describe("App panes and shortcuts", () => {
 
     await userEvent.keyboard("{Control>},{/Control}");
 
-    expect(await screen.findByTestId("effective-workspace-root")).toBeInTheDocument();
+    expect(await screen.findByRole("navigation", { name: "设置分组" })).toBeInTheDocument();
   });
 
   it("closes settings again", async () => {
     render(<App />);
     await screen.findByRole("banner");
     await userEvent.click(screen.getByRole("button", { name: "设置" }));
-    await screen.findByTestId("effective-workspace-root");
+    await screen.findByRole("navigation", { name: "设置分组" });
 
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
 
     await waitFor(() =>
-      expect(screen.queryByTestId("effective-workspace-root")).not.toBeInTheDocument(),
+      expect(screen.queryByRole("navigation", { name: "设置分组" })).not.toBeInTheDocument(),
     );
   });
 

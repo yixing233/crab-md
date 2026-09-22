@@ -108,3 +108,89 @@ describe("theme surface hierarchy", () => {
     }
   });
 });
+
+/**
+ * 文字对比度回归（UI_DESIGN_SYSTEM.md §4、§39）。
+ *
+ * 背景：暗色主题的主按钮曾用 `--accent`(#3b82f6) 作底 + `--text-inverse`
+ * (#1a1a1a) 作字 —— 4.73 勉强过 AA，但那是「深字压蓝底」，视觉发闷。
+ * 把 `--accent` 换成 #2563eb 后白字只有 3.68，**反而违规**。根因是一个
+ * token 兼任两种角色（前景强调 vs 实心底色），两者对亮度要求相反。
+ *
+ * 该组用例把「实心按钮底 + 其上文字」的对比度固定下来，
+ * 避免以后调色时凭感觉改回不达标的值。
+ */
+
+/** WCAG 相对亮度。 */
+function relLuminance(hex: string): number {
+  const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const [r, g, b] = channels.map((v) =>
+    v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4),
+  );
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG 对比度（1–21）。 */
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [relLuminance(a), relLuminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+describe("text contrast on solid buttons", () => {
+  // 正文级文字的 AA 门槛。
+  const AA_NORMAL = 4.5;
+
+  it.each([
+    ["light", light],
+    ["dark", dark],
+  ])("%s: primary button text meets AA", (_name, css) => {
+    const bg = token(css as string, "accent-solid");
+    const fg = token(css as string, "text-on-accent");
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it.each([
+    ["light", light],
+    ["dark", dark],
+  ])("%s: primary button hover/active still meet AA", (_name, css) => {
+    const fg = token(css as string, "text-on-accent");
+    for (const name of ["accent-solid-hover", "accent-solid-active"]) {
+      expect(contrast(fg, token(css as string, name))).toBeGreaterThanOrEqual(AA_NORMAL);
+    }
+  });
+
+  it.each([
+    ["light", light],
+    ["dark", dark],
+  ])("%s: danger button text meets AA", (_name, css) => {
+    const bg = token(css as string, "danger-solid");
+    const fg = token(css as string, "text-on-danger");
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it.each([
+    ["light", light],
+    ["dark", dark],
+  ])("%s: solid buttons are visible against the app background", (_name, css) => {
+    // 按钮底色与背景差得太少时，按钮边界不可辨（非文本对比需 ≥3）。
+    const app = token(css as string, "bg-app");
+    for (const name of ["accent-solid", "danger-solid"]) {
+      expect(contrast(token(css as string, name), app)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it.each([
+    ["light", light],
+    ["dark", dark],
+  ])("%s: accent as a foreground colour stays readable on the app background", (_name, css) => {
+    // `--accent` 的另一半角色：链接与选中图标，必须比背景亮/暗得足够。
+    expect(contrast(token(css as string, "accent"), token(css as string, "bg-app")))
+      .toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it("keeps solid button colours distinct from the foreground accent in dark theme", () => {
+    // 暗色下两者必须不同 —— 同值就说明又重新把两种角色合并了，
+    // 而那正是白字对比度不达标的原因。
+    expect(token(dark, "accent-solid")).not.toBe(token(dark, "accent"));
+  });
+});
