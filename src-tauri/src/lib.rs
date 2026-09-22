@@ -52,6 +52,16 @@ fn close_window(window: tauri::Window) {
     let _ = window.close();
 }
 
+/// 当前应用版本（取自 Cargo manifest，即打包进二进制的那一份）。
+///
+/// 不用前端构建期注入的 `__APP_VERSION__`：「关于」页展示的版本必须是
+/// **实际运行的二进制**的版本，两者在「前端已更新、二进制未换」时可能不一致，
+/// 而更新检查正是最需要这个值可信的场景。
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -59,6 +69,12 @@ pub fn run() {
         // 设置页需要「浏览…」选目录；原生选择器交给官方插件，
         // 不在前端自造路径输入。
         .plugin(tauri_plugin_dialog::init())
+        // 内置更新：检查 → 下载 → 校验签名 → 安装。
+        // 签名公钥在 tauri.conf.json；校验由插件完成，前端无法跳过，
+        // 因此被篡改的安装包会被拒绝而不是静默装上。
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // 安装完成后需要重启进程才能生效。
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let root = resolve_workspace_root(app.handle())?;
             let service = DocumentService::new(root)?;
@@ -90,6 +106,7 @@ pub fn run() {
             commands::documents::set_workspace_root,
             commands::documents::reset_workspace_root,
             commands::documents::default_workspace_root,
+            app_version,
             close_window,
         ])
         .run(tauri::generate_context!())

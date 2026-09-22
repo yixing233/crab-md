@@ -1,0 +1,105 @@
+name: release
+
+# 触发：推送 v* 标签即发布。
+#
+# 为什么用标签而不是每次 push main：更新清单里的下载地址指向
+# `releases/download/<tag>/...`，若每次提交都发版，用户会被
+# 频繁打扰，且历史版本难以回溯。版本号由人决定何时对外发布。
+on:
+  push:
+    tags:
+      - "v*"
+  # 允许手动重跑某个标签的发布（例如 CI 临时故障后补齐产物）。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的标签（如 v0.1.1，须已存在）"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Rust 构建缓存：首次约 5-8 分钟，命中后约 1-2 分钟。
+      # swatinem/rust-cache 会按 Cargo.lock 的哈希做键，依赖没变就复用。
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      # 版本一致性检查：标签、package.json、tauri.conf.json 三处必须一致。
+      # 不一致会导致「用户装到的版本」与「清单声明的版本」不符，
+      # 客户端可能反复提示同一个更新（或永远不提示）。
+      - name: Verify version consistency
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}".TrimStart("v")
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $conf = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          Write-Host "tag=$tag package.json=$pkg tauri.conf.json=$conf"
+          if ($pkg -ne $tag) { throw "package.json 版本 ($pkg) 与标签 ($tag) 不一致" }
+          if ($conf -ne $tag) { throw "tauri.conf.json 版本 ($conf) 与标签 ($tag) 不一致" }
+
+      # 一步完成：构建前端 + 编译 Rust + 打 NSIS 安装包 + 用私钥签名。
+      # createUpdaterArtifacts 已在 tauri.conf.json 打开，故会产出
+      # *.nsis.zip 与对应 *.sig。
+      - name: Build signed bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build
+
+      # 由产物生成 updater 清单。清单必须与实际产物同名同版本，
+      # 因此放在构建之后、发布之前。
+      - name: Generate updater manifest
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+          node scripts/make-latest-json.mjs --tag $tag --notes "crab-md $tag"
+
+      - name: Show artifacts
+        shell: pwsh
+        run: Get-ChildItem -Recurse src-tauri/target/release/bundle | Select-Object FullName, Length
+
+      # 发布：安装包、签名、清单一起上传。
+      # 少传 .sig 会让客户端拒绝安装（签名校验失败）；
+      # 少传 latest.json 则客户端根本发现不了更新。
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+          $files = @()
+          $files += (Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis -Include *.exe, *.sig | ForEach-Object FullName)
+          $files += (Get-ChildItem -Recurse src-tauri/target/release/bundle -Filter *.nsis.zip | ForEach-Object FullName)
+          $files += "src-tauri/target/release/bundle/latest.json"
+
+          if (gh release view $tag 2>$null) {
+            Write-Host "Release $tag 已存在，改为上传/覆盖附件"
+            gh release upload $tag @files --clobber
+          } else {
+            gh release create $tag @files --title "crab-md $tag" --notes "crab-md $tag" --latest
+          }

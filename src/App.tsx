@@ -15,6 +15,8 @@ import { Spinner } from "./components/ui/Spinner";
 import { Toast } from "./components/ui/Toast";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { zh } from "./lib/i18n";
+import { checkForUpdate, readLastCheck, shouldAutoCheck, writeLastCheck } from "./lib/updater";
+import { tauriUpdaterBridge } from "./lib/updaterBridge";
 import {
   applyTheme,
   readStoredPreference,
@@ -157,6 +159,39 @@ export default function App() {
       localStorage.setItem(PREVIEW_WIDTH_KEY, String(previewWidth));
     }
   }, [previewWidth]);
+
+  /**
+   * 启动时后台检查更新。
+   *
+   * 三条约束（「稳定」的核心）：
+   * - **节流**：一天最多一次，避免每次开应用都打扰；
+   * - **静默**：网络不可达是常态（GitHub 在部分网络下不通），
+   *   失败只写日志，绝不弹窗、绝不阻塞编辑；
+   * - **不自动安装**：只在设置页里提示有新版，装不装由用户决定。
+   */
+  useEffect(() => {
+    const storage = typeof localStorage === "undefined" ? null : localStorage;
+    const now = Date.now();
+    if (!shouldAutoCheck(now, readLastCheck(storage))) return;
+
+    let cancelled = false;
+    void (async () => {
+      const result = await checkForUpdate(tauriUpdaterBridge);
+      // 无论成功失败都记时间：失败时若也重试，网络异常会变成每次启动都试。
+      if (!cancelled) writeLastCheck(storage, now);
+      if (!cancelled && "update" in result && result.update) {
+        // 有新版时用轻提示告知，安装入口在设置页。
+        setToast({
+          message: zh.settings.update.available(result.update.version),
+          tone: "success",
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 视图模式持久化：下次打开应用保持同一档。
   useEffect(() => {

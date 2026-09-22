@@ -223,6 +223,22 @@
   line-height: var(--leading-prose);
 }
 
+/* 更新状态一行：占位保持高度稳定，避免文字在空↔有之间跳动。 */
+.settings-update-status {
+  min-height: 1.2em;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* 下载进度：细一点，不要喧宾夺主。 */
+.settings-progress {
+  width: 100%;
+  height: 4px;
+  margin-top: var(--space-1);
+  accent-color: var(--accent-solid);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .settings-overlay { animation: none; }
 }

@@ -196,6 +196,33 @@ export const zh = {
       dataFormat: "数据格式",
       dataFormatValue: "标准 Markdown + 本地 SQLite 索引",
     },
+
+    update: {
+      label: "软件更新",
+      /** 自动检查的说明：让用户知道"它自己会看"，但一天最多一次。 */
+      hint: "应用每天最多自动检查一次更新。",
+      check: "检查更新",
+      checking: "正在检查…",
+      upToDate: "已是最新版本",
+      available: (version: string) => `发现新版本 ${version}`,
+      downloading: (percent: number) => `正在下载… ${percent}%`,
+      /** 下载中拿不到总大小时不假装知道进度。 */
+      downloadingUnknown: "正在下载…",
+      install: "下载并安装",
+      /** 安装会关闭应用 —— 必须提前说清并确认（§16 破坏性操作先确认）。 */
+      confirmTitle: "安装更新",
+      confirmBody: (version: string) =>
+        `将下载并安装 ${version}，安装完成后应用会自动重启。未保存的内容会先自动保存。`,
+      confirmOk: "安装并重启",
+      cancel: "取消",
+      restarting: "正在重启…",
+      /** 失败原因对用户可操作：给出网络/代理的提示，而不是只报错。 */
+      failed: "检查更新失败",
+      failedHint: "请检查网络连接后重试。若使用了代理，请确认代理可访问 GitHub。",
+      installFailed: "安装失败",
+      /** 签名不匹配是安全信号，必须明确告知而不是含糊过去。 */
+      installFailedHint: "更新包校验未通过，已中止安装。当前版本不受影响。",
+    },
   },
 
   splitter: {

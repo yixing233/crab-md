@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import {
   Check,
   Copy,
+  Download,
   FolderOpen,
   HardDrive,
   Info,
   Moon,
+  RefreshCw,
   RotateCcw,
   SquarePen,
   Sun,
@@ -26,7 +28,37 @@ import type { ThemePreference } from "../../lib/theme";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { SegmentedControl, type SegmentedOption } from "../ui/SegmentedControl";
+import {
+  checkForUpdate,
+  downloadAndInstall,
+  getPendingUpdate,
+  relaunchApp,
+  type UpdateStatus,
+} from "../../lib/updater";
+import { tauriUpdaterBridge } from "../../lib/updaterBridge";
 import "./settings.css";
+
+/** 把更新状态翻成一句给用户看的话。 */
+function updateMessage(status: UpdateStatus): string {
+  switch (status.kind) {
+    case "idle":
+      return "";
+    case "checking":
+      return zh.settings.update.checking;
+    case "up-to-date":
+      return zh.settings.update.upToDate;
+    case "available":
+      return zh.settings.update.available(status.version);
+    case "downloading":
+      return status.total === null
+        ? zh.settings.update.downloadingUnknown
+        : zh.settings.update.downloading(Math.round((status.downloaded / status.total) * 100));
+    case "ready":
+      return zh.settings.update.restarting;
+    case "error":
+      return zh.settings.update.failed;
+  }
+}
 
 /** 左侧分组。用稳定 id 而非索引，避免将来插入分组时页面错位。 */
 type SectionId = "appearance" | "editor" | "files" | "about";
@@ -86,6 +118,7 @@ export function SettingsPage({
   const loadSettings = useWorkspaceStore((s) => s.loadSettings);
   const setWorkspaceRoot = useWorkspaceStore((s) => s.setWorkspaceRoot);
   const resetWorkspaceRoot = useWorkspaceStore((s) => s.resetWorkspaceRoot);
+  const flushActive = useWorkspaceStore((s) => s.flushActive);
 
   const [section, setSection] = useState<SectionId>("appearance");
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
@@ -93,6 +126,9 @@ export function SettingsPage({
   const [copied, setCopied] = useState(false);
   // 待确认的目标目录；非空时弹出确认对话框。
   const [pending, setPending] = useState<string | null>(null);
+  // 更新状态与「待确认安装」的版本。
+  const [update, setUpdate] = useState<UpdateStatus>({ kind: "idle" });
+  const [pendingInstall, setPendingInstall] = useState<string | null>(null);
 
   // 打开时刷新，避免显示过期路径。
   useEffect(() => {
@@ -162,6 +198,56 @@ export function SettingsPage({
     setBusy(false);
     setPending(null);
     if (ok) onChanged(zh.settings.storage.done);
+  };
+
+  /** 用户主动检查更新：失败要给出原因（与后台静默检查不同）。 */
+  const handleCheckUpdate = async () => {
+    setUpdate({ kind: "checking" });
+    const result = await checkForUpdate(tauriUpdaterBridge);
+    if ("error" in result) {
+      setUpdate({ kind: "error", code: "UPDATE_CHECK_FAILED" });
+      return;
+    }
+    setUpdate(
+      result.update
+        ? {
+            kind: "available",
+            version: result.update.version,
+            notes: result.update.notes ?? null,
+          }
+        : { kind: "up-to-date", version: __APP_VERSION__ },
+    );
+  };
+
+  /**
+   * 安装更新。**顺序不可颠倒**：
+   * 1) 先把未保存内容落盘 —— 安装会关掉应用，不落盘等于丢数据；
+   * 2) 落盘失败就中止，绝不在有未保存内容时关应用；
+   * 3) 安装成功后再重启。
+   */
+  const handleInstall = async () => {
+    setPendingInstall(null);
+
+    const saved = await flushActive();
+    if (!saved) {
+      setUpdate({ kind: "error", code: "UPDATE_SAVE_FAILED", fatal: true } as UpdateStatus);
+      return;
+    }
+
+    const found = getPendingUpdate();
+    if (!found) {
+      setUpdate({ kind: "error", code: "UPDATE_NOT_FOUND" });
+      return;
+    }
+
+    const result = await downloadAndInstall(found, setUpdate);
+    if (!result.ok) {
+      setUpdate({ kind: "error", code: "UPDATE_INSTALL_FAILED", fatal: true } as UpdateStatus);
+      return;
+    }
+
+    // 安装完成，重启以生效。
+    await relaunchApp(tauriUpdaterBridge);
   };
 
   const lockedByEnv = settings?.workspaceRootIsFromEnv === true;
@@ -449,6 +535,70 @@ export function SettingsPage({
                       <dd>{zh.settings.about.dataFormatValue}</dd>
                     </dl>
                   </div>
+
+                  {/* ---- 软件更新 ---- */}
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Download size={14} aria-hidden />
+                      {zh.settings.update.label}
+                    </span>
+                    <p className="settings-field__description">{zh.settings.update.hint}</p>
+
+                    {/* 状态一行：空 / 检查中 / 最新 / 有新版 / 下载中 / 失败。 */}
+                    <p className="settings-update-status" role="status" data-testid="update-status">
+                      {updateMessage(update)}
+                    </p>
+
+                    {update.kind === "error" && (
+                      <p className="settings-note settings-note--warn">
+                        {update.fatal
+                          ? zh.settings.update.installFailedHint
+                          : zh.settings.update.failedHint}
+                      </p>
+                    )}
+
+                    {/* 下载中的进度条：有总量才显示百分比，否则只显示忙态，
+                        不假装知道进度。 */}
+                    {update.kind === "downloading" && update.total !== null && (
+                      <progress
+                        className="settings-progress"
+                        value={update.downloaded}
+                        max={update.total}
+                        aria-label={zh.settings.update.label}
+                      />
+                    )}
+
+                    <div className="settings-actions">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={update.kind === "checking" || update.kind === "downloading"}
+                        onClick={() => void handleCheckUpdate()}
+                      >
+                        <RefreshCw size={14} aria-hidden />
+                        <span>
+                          {update.kind === "checking"
+                            ? zh.settings.update.checking
+                            : zh.settings.update.check}
+                        </span>
+                      </Button>
+
+                      {update.kind === "available" && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            // 安装会关闭应用：先确认，再落盘，最后才安装。
+                            // 顺序反了就会丢掉用户正在写的内容。
+                            setPendingInstall(update.version);
+                          }}
+                        >
+                          <Download size={14} aria-hidden />
+                          <span>{zh.settings.update.install}</span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </section>
               )}
             </div>
@@ -468,6 +618,19 @@ export function SettingsPage({
         }}
       >
         {pending ? zh.settings.storage.confirmBody(pending) : null}
+      </Dialog>
+
+      {/* 安装更新前确认：会关闭并重启应用，必须先说清。
+          文案同时说明「未保存内容会先自动保存」，避免用户不敢点。 */}
+      <Dialog
+        open={pendingInstall !== null}
+        title={zh.settings.update.confirmTitle}
+        confirmLabel={zh.settings.update.confirmOk}
+        cancelLabel={zh.settings.update.cancel}
+        onCancel={() => setPendingInstall(null)}
+        onConfirm={() => void handleInstall()}
+      >
+        {pendingInstall ? zh.settings.update.confirmBody(pendingInstall) : null}
       </Dialog>
     </>
   );

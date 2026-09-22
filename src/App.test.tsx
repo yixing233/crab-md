@@ -34,6 +34,17 @@ import App from "./App";
 import { THEME_STORAGE_KEY } from "./lib/theme";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 
+// 更新检查会走 Tauri IPC，jsdom 里没有桥。替身让它可断言，
+// 也避免每次挂载都在控制台刷 "UPDATE_CHECK_FAILED"。
+const updaterCheck = vi.fn();
+vi.mock("./lib/updaterBridge", () => ({
+  tauriUpdaterBridge: {
+    check: () => updaterCheck(),
+    relaunch: vi.fn().mockResolvedValue(undefined),
+    currentVersion: vi.fn().mockResolvedValue("0.1.0"),
+  },
+}));
+
 /**
  * store 是模块级单例，状态会跨用例泄漏（例如上一个用例留下的 activeId
  * 会让状态栏显示「已保存」，与本用例的 toast 文案撞车）。
@@ -55,10 +66,75 @@ describe("App", () => {
     vi.clearAllMocks();
     resetStore();
     listDocuments.mockResolvedValue([]);
+    // 默认「已是最新」：大多数用例不关心更新，别让它们被更新提示干扰。
+    updaterCheck.mockResolvedValue(null);
     localStorage.clear();
     document.documentElement.removeAttribute("data-theme");
     document.documentElement.style.removeProperty("--editor-font-size");
     document.documentElement.style.removeProperty("--editor-font-family");
+  });
+
+  describe("update check on startup", () => {
+    it("checks for updates once on mount", async () => {
+      render(<App />);
+      await screen.findByRole("banner");
+
+      await waitFor(() => expect(updaterCheck).toHaveBeenCalledOnce());
+    });
+
+    it("does not check again within the throttle window", async () => {
+      // 记下「刚刚检查过」，再挂载一次：应当被节流挡住，不再请求。
+      localStorage.setItem("crab-md.update-last-check", String(Date.now()));
+      render(<App />);
+      await screen.findByRole("banner");
+
+      expect(updaterCheck).not.toHaveBeenCalled();
+    });
+
+    it("checks again after the throttle window has passed", async () => {
+      localStorage.setItem(
+        "crab-md.update-last-check",
+        String(Date.now() - 25 * 60 * 60 * 1000),
+      );
+      render(<App />);
+      await screen.findByRole("banner");
+
+      await waitFor(() => expect(updaterCheck).toHaveBeenCalledOnce());
+    });
+
+    it("mentions the new version when one is available", async () => {
+      updaterCheck.mockResolvedValue({
+        version: "9.9.9",
+        notes: null,
+        downloadAndInstall: vi.fn(),
+      });
+      render(<App />);
+      await screen.findByRole("banner");
+
+      await waitFor(() =>
+        expect(screen.getByText(/9\.9\.9/)).toBeInTheDocument(),
+      );
+    });
+
+    it("stays silent when the check fails (offline is normal)", async () => {
+      // 网络不通不能变成错误提示 —— 用户开应用是来写笔记的。
+      updaterCheck.mockRejectedValue(new Error("offline"));
+      render(<App />);
+      await screen.findByRole("banner");
+
+      await waitFor(() => expect(updaterCheck).toHaveBeenCalled());
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("records the check time even when it fails, so it does not retry every launch", async () => {
+      updaterCheck.mockRejectedValue(new Error("offline"));
+      render(<App />);
+      await screen.findByRole("banner");
+
+      await waitFor(() =>
+        expect(localStorage.getItem("crab-md.update-last-check")).not.toBeNull(),
+      );
+    });
   });
 
   // 编辑器偏好必须在**挂载时**就生效。曾经它只由设置页持有，
