@@ -129,6 +129,9 @@ export function SettingsPage({
   // 更新状态与「待确认安装」的版本。
   const [update, setUpdate] = useState<UpdateStatus>({ kind: "idle" });
   const [pendingInstall, setPendingInstall] = useState<string | null>(null);
+  // 「关于」页的版本：由后端给出（与更新器比较的版本同源）。
+  // 初始值用构建期常量，避免 IPC 回来前显示空白。
+  const [version, setVersion] = useState<string>(__APP_VERSION__);
 
   // 打开时刷新，避免显示过期路径。
   useEffect(() => {
@@ -138,6 +141,11 @@ export function SettingsPage({
       .then(({ api }) => api.defaultWorkspaceRoot())
       .then(setDefaultRoot)
       .catch(() => setDefaultRoot(null));
+    // 版本以后端为准；取不到就退回构建期常量（不影响其它功能）。
+    void import("../../lib/api")
+      .then(({ api }) => api.appVersion())
+      .then(setVersion)
+      .catch(() => {});
   }, [open, loadSettings]);
 
   // Escape 关闭面板 —— 但确认对话框打开时让它先处理。
@@ -215,7 +223,7 @@ export function SettingsPage({
             version: result.update.version,
             notes: result.update.notes ?? null,
           }
-        : { kind: "up-to-date", version: __APP_VERSION__ },
+        : { kind: "up-to-date", version },
     );
   };
 
@@ -530,7 +538,7 @@ export function SettingsPage({
                     </p>
                     <dl className="settings-meta">
                       <dt>{zh.settings.about.versionLabel}</dt>
-                      <dd data-testid="app-version">{__APP_VERSION__}</dd>
+                      <dd data-testid="app-version">{version}</dd>
                       <dt>{zh.settings.about.dataFormat}</dt>
                       <dd>{zh.settings.about.dataFormatValue}</dd>
                     </dl>

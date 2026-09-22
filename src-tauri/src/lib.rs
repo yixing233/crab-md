@@ -52,14 +52,15 @@ fn close_window(window: tauri::Window) {
     let _ = window.close();
 }
 
-/// 当前应用版本（取自 Cargo manifest，即打包进二进制的那一份）。
+/// 当前应用版本。
 ///
-/// 不用前端构建期注入的 `__APP_VERSION__`：「关于」页展示的版本必须是
-/// **实际运行的二进制**的版本，两者在「前端已更新、二进制未换」时可能不一致，
-/// 而更新检查正是最需要这个值可信的场景。
+/// 取自 `package_info()`，即 `tauri.conf.json` 的 version —— **与更新检查用的是
+/// 同一个值**。不用 `env!("CARGO_PKG_VERSION")`：那读的是 Cargo.toml，
+/// 与 tauri.conf.json 是两份可以各自漂移的版本号；一旦不一致，
+/// 「关于」页显示的版本就和更新器比较的版本不是一回事。
 #[tauri::command]
-fn app_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+fn app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

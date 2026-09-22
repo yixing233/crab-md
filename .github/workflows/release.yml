@@ -49,18 +49,21 @@ jobs:
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
-      # 版本一致性检查：标签、package.json、tauri.conf.json 三处必须一致。
-      # 不一致会导致「用户装到的版本」与「清单声明的版本」不符，
-      # 客户端可能反复提示同一个更新（或永远不提示）。
+      # 版本一致性检查：标签、package.json、tauri.conf.json、Cargo.toml
+      # 四处必须一致。任何一处漂移都会导致「装到的版本」与「清单声明的版本」
+      # 不符，客户端可能反复提示同一个更新（或永远不提示）。
+      # Cargo.toml 容易被漏掉 —— 它是 Cargo 的版本号，与 tauri.conf.json 各自独立。
       - name: Verify version consistency
         shell: pwsh
         run: |
           $tag = "${{ github.event.inputs.tag || github.ref_name }}".TrimStart("v")
           $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $conf = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          Write-Host "tag=$tag package.json=$pkg tauri.conf.json=$conf"
+          $cargo = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches.Groups[1].Value
+          Write-Host "tag=$tag package.json=$pkg tauri.conf.json=$conf Cargo.toml=$cargo"
           if ($pkg -ne $tag) { throw "package.json 版本 ($pkg) 与标签 ($tag) 不一致" }
           if ($conf -ne $tag) { throw "tauri.conf.json 版本 ($conf) 与标签 ($tag) 不一致" }
+          if ($cargo -ne $tag) { throw "Cargo.toml 版本 ($cargo) 与标签 ($tag) 不一致" }
 
       # 一步完成：构建前端 + 编译 Rust + 打 NSIS 安装包 + 用私钥签名。
       # createUpdaterArtifacts 已在 tauri.conf.json 打开，故会产出

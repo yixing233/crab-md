@@ -69,4 +69,10 @@ export const api = {
 
   /** 平台默认数据目录，用于「恢复默认」时展示目标位置。 */
   defaultWorkspaceRoot: () => call<string>("default_workspace_root"),
+
+  /**
+   * 当前运行的二进制版本（后端提供，与更新检查的基准一致）。
+   * 不用前端构建期常量：那是另一份可能漂移的版本号。
+   */
+  appVersion: () => call<string>("app_version"),
 };
