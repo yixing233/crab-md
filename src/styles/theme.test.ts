@@ -194,3 +194,40 @@ describe("text contrast on solid buttons", () => {
     expect(token(dark, "accent-solid")).not.toBe(token(dark, "accent"));
   });
 });
+
+/**
+ * 更新提示条的可读性（UI §33 要求这类信息用持久 UI，因此它长期可见）。
+ *
+ * 背景：`--accent` 作前景色放在 `--accent-soft` 底上时，暗色主题实测
+ * 只有 3.98，达不到 AA。提示条的内容必须一直清晰可读 ——
+ * 它承载的是「要不要现在更新」这个决策。
+ */
+describe("update bar legibility", () => {
+  const AA_NORMAL = 4.5;
+
+  it.each([
+    ["light", light],
+    ["dark", dark],
+  ])("%s: bar text is readable on the soft accent background", (_name, css) => {
+    const bg = token(css as string, "accent-soft");
+    const fg = token(css as string, "text-primary");
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it.each([
+    ["light", light],
+    ["dark", dark],
+  ])("%s: the bar icon colour is readable on its background", (_name, css) => {
+    // 图标改用 text-primary —— 这里断言的就是实际渲染用的那个令牌。
+    const bg = token(css as string, "accent-soft");
+    const fg = token(css as string, "text-primary");
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it("documents why the bar icon is not the raw accent in dark theme", () => {
+    // 若有人把图标改回 `--accent`，暗色下会掉到 4.5 以下。
+    // 这条用例把「不能这么做」的原因固定下来。
+    const ratio = contrast(token(dark, "accent"), token(dark, "accent-soft"));
+    expect(ratio).toBeLessThan(AA_NORMAL);
+  });
+});

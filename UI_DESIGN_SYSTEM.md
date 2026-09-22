@@ -974,6 +974,34 @@ Bad uses:
 
 Those require persistent UI/dialogs.
 
+### 33.1 Update availability
+
+"An update is available" is a **decision**, not a confirmation, therefore it MUST
+NOT be delivered by a toast (§33). A toast disappears after ~2 s; a user who
+looked away never learns the update exists.
+
+It MUST be surfaced on two levels:
+
+```text
+toolbar entry + badge   always reachable, even after the banner is dismissed
+persistent banner       states the version and offers the action
+```
+
+Rules:
+
+- Nothing is shown when no update exists — the toolbar stays quiet (§2.1).
+- Dismissing the banner MUST NOT remove the toolbar entry: otherwise one
+  dismissal hides all future updates for that version.
+- Dismissal is per version. A newer version MUST show the banner again.
+- A user-initiated check MUST clear a previous dismissal — the user just
+  expressed interest.
+- While downloading, the banner MUST stay visible and MUST NOT offer dismissal;
+  a half-started install that silently disappears reads as a failure.
+- Progress MUST NOT be faked: without a known total, show an indeterminate
+  state rather than a percentage.
+- Installing MAY close the app, so it MUST be confirmed first and unsaved
+  content MUST be flushed before the install begins (§16).
+
 ---
 
 ## 34. Settings UI

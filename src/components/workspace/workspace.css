@@ -195,6 +195,48 @@ body[data-resizing="true"] {
 }
 .app-toolbar__spacer { flex: 1; }
 
+/* 工具栏里的版本徽标：贴近图标，不要撑开按钮。 */
+.app-toolbar .ui-badge { margin-left: 2px; }
+
+/* ---------------------------------------------------------------------------
+   更新提示条：常驻在工具栏之下。
+   用「带左侧强调边的浅色条」而非浮层 —— 不遮挡内容、不阻断操作，
+   但持续可见（UI §33 要求这类信息用持久 UI，不能用会消失的 toast）。
+   --------------------------------------------------------------------------- */
+
+.update-bar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  /* 强调边用 accent 而非 warning：这是「可以更新了」，不是错误。 */
+  border-left: 3px solid var(--accent-solid);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.update-bar__icon {
+  flex: 0 0 auto;
+  /* 用 text-primary 而非 accent：实测量得 accent(#3b82f6) 在深色主题的
+     accent-soft(#1e293b) 上只有 3.98，达不到 AA 4.5。图标是这条提示的
+     主要视觉锚点，必须清晰。强调感由左侧色边与浅色底提供，不靠图标颜色。 */
+  color: var(--text-primary);
+}
+
+.update-bar__text {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.update-bar__spacer { flex: 1; }
+
+/* 进度条：细，且不参与弹性伸缩，避免把文案挤走。 */
+.update-bar__progress {
+  flex: 0 0 120px;
+  height: 4px;
+  accent-color: var(--accent-solid);
+}
+
 .app-sidebar {
   display: flex;
   flex-direction: column;

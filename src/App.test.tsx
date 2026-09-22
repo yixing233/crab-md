@@ -105,7 +105,7 @@ describe("App", () => {
       await waitFor(() => expect(updaterCheck).toHaveBeenCalledOnce());
     });
 
-    it("mentions the new version when one is available", async () => {
+    it("makes a new version visible in both the toolbar and a persistent bar", async () => {
       updaterCheck.mockResolvedValue({
         version: "9.9.9",
         notes: null,
@@ -114,9 +114,33 @@ describe("App", () => {
       render(<App />);
       await screen.findByRole("banner");
 
-      await waitFor(() =>
-        expect(screen.getByText(/9\.9\.9/)).toBeInTheDocument(),
-      );
+      // 提示条：常驻（UI §33 要求「需要用户选择」用持久 UI，不能用会消失的 toast）。
+      const bar = await screen.findByTestId("update-bar");
+      expect(bar).toHaveTextContent("9.9.9");
+
+      // 工具栏徽标：即使提示条被关掉，入口仍然可达。
+      expect(
+        screen.getByRole("button", { name: /有新版本 9\.9\.9/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the toolbar entry after the bar is dismissed", async () => {
+      updaterCheck.mockResolvedValue({
+        version: "9.9.9",
+        notes: null,
+        downloadAndInstall: vi.fn(),
+      });
+      render(<App />);
+      await screen.findByRole("banner");
+      await screen.findByTestId("update-bar");
+
+      // 关掉提示条后仍能从工具栏进入 —— 否则用户关一次就再也找不到更新。
+      await userEvent.click(screen.getByRole("button", { name: "暂不更新" }));
+
+      expect(screen.queryByTestId("update-bar")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /有新版本 9\.9\.9/ }),
+      ).toBeInTheDocument();
     });
 
     it("stays silent when the check fails (offline is normal)", async () => {

@@ -5,9 +5,10 @@ import { MarkdownPreview } from "./components/editor/MarkdownPreview";
 import { OutlineTree } from "./components/editor/OutlineTree";
 import { AppToolbar } from "./components/workspace/AppToolbar";
 import { Sidebar } from "./components/workspace/Sidebar";
+import { UpdateBar } from "./components/workspace/UpdateBar";
 import { Breadcrumb } from "./components/workspace/Breadcrumb";
 import { Splitter } from "./components/workspace/Splitter";
-import { SettingsPage } from "./components/settings/SettingsPage";
+import { SettingsPage, type SettingsSection } from "./components/settings/SettingsPage";
 import { EmptyState } from "./components/ui/EmptyState";
 import { Button } from "./components/ui/Button";
 import { Dialog } from "./components/ui/Dialog";
@@ -17,6 +18,7 @@ import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { zh } from "./lib/i18n";
 import { checkForUpdate, readLastCheck, shouldAutoCheck, writeLastCheck } from "./lib/updater";
 import { tauriUpdaterBridge } from "./lib/updaterBridge";
+import { useUpdateStore } from "./stores/useUpdateStore";
 import {
   applyTheme,
   readStoredPreference,
@@ -72,6 +74,7 @@ export default function App() {
   const deleteDocument = useWorkspaceStore((s) => s.deleteDocument);
   const duplicateDocument = useWorkspaceStore((s) => s.duplicateDocument);
   const saveActive = useWorkspaceStore((s) => s.saveActive);
+  const flushActive = useWorkspaceStore((s) => s.flushActive);
   const setContent = useWorkspaceStore((s) => s.setContent);
   const clearError = useWorkspaceStore((s) => s.clearError);
 
@@ -94,6 +97,13 @@ export default function App() {
   const [findNonce, setFindNonce] = useState(0);
   // 设置页开关（UI §34）。
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 打开设置时要落到哪个分组。工具栏的更新入口需要直达「关于」，
+  // 否则用户点「有新版本」却停在「外观」，还要自己再找一次。
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  // 有新版时工具栏显示徽标；null 表示无更新（工具栏保持安静，§2.1）。
+  const updateStatus = useUpdateStore((s) => s.status);
+  const pendingUpdateVersion =
+    updateStatus.kind === "available" ? updateStatus.version : null;
   // 待删除的文档；非空时显示确认对话框（UI §14.4 要求破坏性操作先确认）。
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
@@ -167,7 +177,10 @@ export default function App() {
    * - **节流**：一天最多一次，避免每次开应用都打扰；
    * - **静默**：网络不可达是常态（GitHub 在部分网络下不通），
    *   失败只写日志，绝不弹窗、绝不阻塞编辑；
-   * - **不自动安装**：只在设置页里提示有新版，装不装由用户决定。
+   * - **不自动安装**：只提示有新版，装不装由用户决定。
+   *
+   * 结果写进 useUpdateStore，由工具栏徽标与提示条呈现 ——
+   * 不再用会消失的 toast（UI §33 把「需要用户选择」列为 toast 反例）。
    */
   useEffect(() => {
     const storage = typeof localStorage === "undefined" ? null : localStorage;
@@ -180,11 +193,7 @@ export default function App() {
       // 无论成功失败都记时间：失败时若也重试，网络异常会变成每次启动都试。
       if (!cancelled) writeLastCheck(storage, now);
       if (!cancelled && "update" in result && result.update) {
-        // 有新版时用轻提示告知，安装入口在设置页。
-        setToast({
-          message: zh.settings.update.available(result.update.version),
-          tone: "success",
-        });
+        useUpdateStore.getState().setAvailable(result.update);
       }
     })();
 
@@ -192,6 +201,17 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  /** 安装更新：先落盘，再安装（store 内部保证这个顺序）。 */
+  const handleInstallUpdate = useCallback(() => {
+    void useUpdateStore.getState().install(async () => {
+      const saved = await flushActive();
+      if (!saved) {
+        setToast({ message: zh.toast.saveFailed, tone: "error" });
+      }
+      return saved;
+    });
+  }, [flushActive]);
 
   // 视图模式持久化：下次打开应用保持同一档。
   useEffect(() => {
@@ -328,9 +348,17 @@ export default function App() {
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
         onOpenSettings={() => setSettingsOpen(true)}
+        pendingVersion={pendingUpdateVersion}
+        onOpenUpdate={() => {
+          // 直接落到「关于」分组 —— 用户点更新入口就是想安装。
+          setSettingsSection("about");
+          setSettingsOpen(true);
+        }}
         themePreference={themePreference}
         onCycleTheme={cycleTheme}
       />
+
+      <UpdateBar onInstall={handleInstallUpdate} />
 
       <div className="app-body">
         {sidebarVisible && (
@@ -477,7 +505,11 @@ export default function App() {
 
       <SettingsPage
         open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => {
+          setSettingsOpen(false);
+          // 关掉后清空指定分组，下次从默认分组开始。
+          setSettingsSection(null);
+        }}
         onChanged={(message) => setToast({ message, tone: "success" })}
         themePreference={themePreference}
         onChangeTheme={setThemePreference}
@@ -487,6 +519,7 @@ export default function App() {
         onChangeFontSize={setFontSize}
         fontFamily={fontFamily}
         onChangeFontFamily={setFontFamily}
+        initialSection={settingsSection}
       />
     </div>
   );

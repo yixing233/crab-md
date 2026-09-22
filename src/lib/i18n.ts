@@ -209,6 +209,10 @@ export const zh = {
       /** 下载中拿不到总大小时不假装知道进度。 */
       downloadingUnknown: "正在下载…",
       install: "下载并安装",
+      /** 提示条上的关闭（与设置页的「取消」语义不同：这是忽略本次提示）。 */
+      dismiss: "暂不更新",
+      /** 工具栏入口的提示文案：有更新时按钮带徽标。 */
+      toolbarLabel: (version: string) => `有新版本 ${version}`,
       /** 安装会关闭应用 —— 必须提前说清并确认（§16 破坏性操作先确认）。 */
       confirmTitle: "安装更新",
       confirmBody: (version: string) =>

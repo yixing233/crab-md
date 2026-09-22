@@ -11,8 +11,11 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SettingsPage } from "./components/settings/SettingsPage";
+import { AppToolbar } from "./components/workspace/AppToolbar";
+import { UpdateBar } from "./components/workspace/UpdateBar";
 import { Button } from "./components/ui/Button";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
+import { useUpdateStore } from "./stores/useUpdateStore";
 import { applyTheme, resolveTheme, systemPrefersDark, type ThemePreference } from "./lib/theme";
 import {
   applyFontFamily,
@@ -39,6 +42,12 @@ useWorkspaceStore.setState({
   setWorkspaceRoot: async () => true,
   resetWorkspaceRoot: async () => true,
 } as never);
+
+// 更新提示条要显示内容，先给 store 灌一个「有新版」的状态。
+useUpdateStore.setState({
+  status: { kind: "available", version: "1.2.3", notes: null },
+  barDismissed: false,
+});
 
 function Harness() {
   const [theme, setTheme] = useState<ThemePreference>("light");
@@ -90,6 +99,24 @@ function Harness() {
           删除
         </Button>
       </div>
+      {/* 更新提示：工具栏徽标 + 常驻提示条。
+          用假版本注入 store，便于目视核对配色与排布。 */}
+      <UpdateBar onInstall={() => {}} />
+      <AppToolbar
+        onNewDocument={() => {}}
+        onToggleSidebar={() => {}}
+        sidebarVisible
+        outlineVisible={false}
+        onToggleOutline={() => {}}
+        viewMode={viewMode}
+        onChangeViewMode={setViewMode}
+        onOpenSettings={() => {}}
+        pendingVersion="1.2.3"
+        onOpenUpdate={() => {}}
+        themePreference={theme}
+        onCycleTheme={() => {}}
+      />
+
       <SettingsPage
         open
         onClose={() => {}}

@@ -1,5 +1,6 @@
-import { ListTree, Moon, PanelLeft, Plus, Search, Settings, Sun, SunMoon } from "lucide-react";
+import { Download, ListTree, Moon, PanelLeft, Plus, Search, Settings, Sun, SunMoon } from "lucide-react";
 import { Button } from "../ui/Button";
+import { Badge } from "../ui/Badge";
 import { Tooltip } from "../ui/Tooltip";
 import { ViewModeSwitch } from "../ui/ViewModeSwitch";
 import { zh } from "../../lib/i18n";
@@ -18,6 +19,13 @@ export interface AppToolbarProps {
   onChangeViewMode: (mode: ViewMode) => void;
   /** 打开设置页（UI §34，快捷键 Ctrl+,）。 */
   onOpenSettings: () => void;
+  /**
+   * 有新版本时显示常驻入口（含徽标）。
+   * 传 null 表示无更新 —— 工具栏保持安静（§2.1）。
+   */
+  pendingVersion: string | null;
+  /** 点更新入口：打开设置页的「关于」分组。 */
+  onOpenUpdate: () => void;
   /** 当前主题偏好（UI_DESIGN_SYSTEM.md §4.1 要求 Light/Dark/Follow system）。 */
   themePreference: "light" | "dark" | "system";
   onCycleTheme: () => void;
@@ -35,6 +43,8 @@ export function AppToolbar({
   viewMode,
   onChangeViewMode,
   onOpenSettings,
+  pendingVersion,
+  onOpenUpdate,
   themePreference,
   onCycleTheme,
 }: AppToolbarProps) {
@@ -99,6 +109,22 @@ export function AppToolbar({
           <Search size={16} aria-hidden />
         </Button>
       </Tooltip>
+
+      {/* 有更新时才出现的常驻入口：带徽标，一眼可见。
+          没有更新时整块不渲染 —— 工具栏平时保持安静（§2.1）。 */}
+      {pendingVersion !== null && (
+        <Tooltip content={zh.settings.update.toolbarLabel(pendingVersion)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onOpenUpdate}
+            aria-label={zh.settings.update.toolbarLabel(pendingVersion)}
+          >
+            <Download size={16} aria-hidden />
+            <Badge pill>{pendingVersion}</Badge>
+          </Button>
+        </Tooltip>
+      )}
 
       <Tooltip content={`${zh.toolbar.settings}　Ctrl+,`}>
         <Button

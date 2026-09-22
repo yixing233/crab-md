@@ -30,13 +30,9 @@ import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { SegmentedControl, type SegmentedOption } from "../ui/SegmentedControl";
 import {
-  checkForUpdate,
-  downloadAndInstall,
-  getPendingUpdate,
-  relaunchApp,
   type UpdateStatus,
 } from "../../lib/updater";
-import { tauriUpdaterBridge } from "../../lib/updaterBridge";
+import { useUpdateStore } from "../../stores/useUpdateStore";
 import "./settings.css";
 
 /** 把更新状态翻成一句给用户看的话。 */
@@ -62,9 +58,9 @@ function updateMessage(status: UpdateStatus): string {
 }
 
 /** 左侧分组。用稳定 id 而非索引，避免将来插入分组时页面错位。 */
-type SectionId = "appearance" | "editor" | "files" | "about";
+export type SettingsSection = "appearance" | "editor" | "files" | "about";
 
-const SECTION_ORDER: readonly SectionId[] = ["appearance", "editor", "files", "about"] as const;
+const SECTION_ORDER: readonly SettingsSection[] = ["appearance", "editor", "files", "about"] as const;
 
 export interface SettingsPageProps {
   open: boolean;
@@ -87,6 +83,11 @@ export interface SettingsPageProps {
   /** 字体族同样由 App 持有（启动即生效，理由同字号）。 */
   fontFamily: EditorFontFamily;
   onChangeFontFamily: (family: EditorFontFamily) => void;
+  /**
+   * 打开时要落到哪个分组（如工具栏的更新入口直达「关于」）。
+   * null 表示保持上次/默认分组。
+   */
+  initialSection?: SettingsSection | null;
 }
 
 /**
@@ -114,6 +115,7 @@ export function SettingsPage({
   onChangeFontSize,
   fontFamily,
   onChangeFontFamily,
+  initialSection = null,
 }: SettingsPageProps) {
   const settings = useWorkspaceStore((s) => s.settings);
   const loadSettings = useWorkspaceStore((s) => s.loadSettings);
@@ -121,18 +123,27 @@ export function SettingsPage({
   const resetWorkspaceRoot = useWorkspaceStore((s) => s.resetWorkspaceRoot);
   const flushActive = useWorkspaceStore((s) => s.flushActive);
 
-  const [section, setSection] = useState<SectionId>("appearance");
+  // 更新状态来自共享 store：工具栏徽标、提示条、这里三处必须是同一份，
+  // 各自 useState 会互相看不见（字号曾犯过同类错）。
+  const update = useUpdateStore((s) => s.status);
+  const check = useUpdateStore((s) => s.check);
+  const install = useUpdateStore((s) => s.install);
+
+  const [section, setSection] = useState<SettingsSection>("appearance");
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   // 待确认的目标目录；非空时弹出确认对话框。
   const [pending, setPending] = useState<string | null>(null);
-  // 更新状态与「待确认安装」的版本。
-  const [update, setUpdate] = useState<UpdateStatus>({ kind: "idle" });
   const [pendingInstall, setPendingInstall] = useState<string | null>(null);
   // 「关于」页的版本：由后端给出（与更新器比较的版本同源）。
   // 初始值用构建期常量，避免 IPC 回来前显示空白。
   const [version, setVersion] = useState<string>(__APP_VERSION__);
+
+  // 外部指定分组（如点工具栏的更新入口）时切换过去。
+  useEffect(() => {
+    if (open && initialSection) setSection(initialSection);
+  }, [open, initialSection]);
 
   // 打开时刷新，避免显示过期路径。
   useEffect(() => {
@@ -210,53 +221,23 @@ export function SettingsPage({
   };
 
   /** 用户主动检查更新：失败要给出原因（与后台静默检查不同）。 */
-  const handleCheckUpdate = async () => {
-    setUpdate({ kind: "checking" });
-    const result = await checkForUpdate(tauriUpdaterBridge);
-    if ("error" in result) {
-      setUpdate({ kind: "error", code: "UPDATE_CHECK_FAILED" });
-      return;
-    }
-    setUpdate(
-      result.update
-        ? {
-            kind: "available",
-            version: result.update.version,
-            notes: result.update.notes ?? null,
-          }
-        : { kind: "up-to-date", version },
-    );
-  };
+  const handleCheckUpdate = () => void check();
 
   /**
    * 安装更新。**顺序不可颠倒**：
    * 1) 先把未保存内容落盘 —— 安装会关掉应用，不落盘等于丢数据；
    * 2) 落盘失败就中止，绝不在有未保存内容时关应用；
    * 3) 安装成功后再重启。
+   *
+   * 顺序由 store 的 install() 保证；这里只负责提供落盘回调。
    */
-  const handleInstall = async () => {
+  const handleInstall = () => {
     setPendingInstall(null);
-
-    const saved = await flushActive();
-    if (!saved) {
-      setUpdate({ kind: "error", code: "UPDATE_SAVE_FAILED", fatal: true } as UpdateStatus);
-      return;
-    }
-
-    const found = getPendingUpdate();
-    if (!found) {
-      setUpdate({ kind: "error", code: "UPDATE_NOT_FOUND" });
-      return;
-    }
-
-    const result = await downloadAndInstall(found, setUpdate);
-    if (!result.ok) {
-      setUpdate({ kind: "error", code: "UPDATE_INSTALL_FAILED", fatal: true } as UpdateStatus);
-      return;
-    }
-
-    // 安装完成，重启以生效。
-    await relaunchApp(tauriUpdaterBridge);
+    void install(async () => {
+      const saved = await flushActive();
+      if (!saved) onChanged(zh.toast.saveFailed);
+      return saved;
+    });
   };
 
   const lockedByEnv = settings?.workspaceRootIsFromEnv === true;
@@ -283,7 +264,7 @@ export function SettingsPage({
     ["edit", "split", "preview"] as const
   ).map((mode) => ({ value: mode, label: zh.settings.editor.viewModeOption[mode] }));
 
-  const SECTION_LABEL: Record<SectionId, string> = {
+  const SECTION_LABEL: Record<SettingsSection, string> = {
     appearance: zh.settings.sections.appearance,
     editor: zh.settings.sections.editor,
     files: zh.settings.sections.files,
@@ -310,8 +291,7 @@ export function SettingsPage({
           <div className="settings-body">
             {/* 左侧分组导航：让用户一眼看到「一共有几组」，不必滚动确认。 */}
             <nav className="settings-nav" aria-label={zh.settings.navLabel}>
-              {SECTION_ORDER.map((id) => (
-                <button
+              {SECTION_ORDER.map((id) => (                <button
                   key={id}
                   type="button"
                   className="settings-nav__item"
