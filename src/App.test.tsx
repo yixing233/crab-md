@@ -23,6 +23,9 @@ vi.mock("./lib/api", () => ({
     setWorkspaceRoot: vi.fn(),
     resetWorkspaceRoot: vi.fn(),
     defaultWorkspaceRoot: vi.fn().mockResolvedValue("E:/default/workspace"),
+    // SettingsPage 挂载即拉版本；工厂是整体替换，漏了会抛
+    // "api.appVersion is not a function"。
+    appVersion: vi.fn().mockResolvedValue("0.1.0"),
   },
   toAppError: (raw: unknown) =>
     raw && typeof raw === "object" && "code" in raw
