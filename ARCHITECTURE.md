@@ -789,3 +789,72 @@ When a future task requires changing one of the following invariants, this docum
 - authentication trust boundary
 - conflict behavior
 
+---
+
+## 28. Application Updates
+
+The desktop client supports checking for, downloading, and installing updates
+published as GitHub Releases.
+
+### 28.1 Trust model
+
+Update packages MUST be cryptographically signed, and the client MUST verify the
+signature **before** installing. Verification happens in the backend: the public
+key is compiled into the app configuration, and the frontend cannot skip or
+influence it.
+
+The private key MUST NOT be committed. For CI it lives in a repository secret;
+for local builds it lives outside the repository. Losing it means existing
+installs can no longer receive updates — there is no recovery path short of a
+manual reinstall, so it MUST be backed up.
+
+### 28.2 Update manifest
+
+The manifest (`latest.json`) MUST be generated from the build artifacts, not
+hand-written, and MUST list per platform:
+
+- the target version,
+- the download URL for that exact release tag,
+- the signature of that artifact.
+
+The URL MUST point at the versioned tag (`releases/download/<tag>/<file>`),
+not at `latest`. Under concurrent or re-rolled releases, `latest` can resolve to
+a different version than the manifest advertises, producing a
+"downloaded X, installed Y" inconsistency.
+
+The published release MUST include the manifest **and** every signature file it
+references. A manifest naming a file the release does not contain becomes a
+download failure for every user on that platform.
+
+### 28.3 Client behaviour
+
+Automatic checks MUST be:
+
+- **throttled** — at most once per day. Checking on every launch is more
+  disruptive than not updating.
+- **silent on failure** — an unreachable network, a blocked GitHub, or a
+  misconfigured proxy are normal conditions and MUST NOT surface an error,
+  block the UI, or affect editing. Only an explicitly user-initiated check
+  reports a failure.
+- **non-installing** — a discovered update is reported, never applied on its own.
+
+Failure to persist the throttle timestamp (private browsing, quota) MUST NOT
+break the flow; at worst it costs one extra check.
+
+### 28.4 Installing
+
+Installing restarts the application, therefore:
+
+1. unsaved content MUST be flushed **before** installation begins;
+2. if flushing fails, installation MUST be aborted — losing user data to ship an
+   update is never an acceptable trade;
+3. the user MUST confirm first, and the confirmation MUST state that the
+   application will restart.
+
+### 28.5 Version consistency
+
+The release tag, `package.json`, and `tauri.conf.json` MUST carry the same
+version. A mismatch makes the installed version differ from the version the
+manifest advertises, which shows up as a permanently re-offered update (or one
+that never appears). CI enforces this before building.
+
