@@ -18,23 +18,35 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 }));
 
 const defaultWorkspaceRoot = vi.fn();
+const appVersion = vi.fn();
 // getSettings 的返回值由 setSettings() 同步设置，避免挂载后的 loadSettings
 // 用一份"默认值"覆盖掉各个用例自己的 fixture。
 const getSettingsApi = vi.fn();
-// 工厂是**整体替换**模块：真实 useWorkspaceStore 会调用 api.getSettings /
-// setWorkspaceRoot / resetWorkspaceRoot，漏掉哪个就会在运行时 undefined 并
-// 被 store 的 catch 静默吞掉（测试仍绿，但该路径其实没被验证）。
+// 工厂是**整体替换**模块：真实 useWorkspaceStore / SettingsPage 会调用
+// api 上多个方法，漏掉哪个就会在运行时 undefined 并被 catch 静默吞掉
+//（测试仍绿，但该路径其实没被验证）。
 vi.mock("../../lib/api", () => ({
   api: {
     getSettings: () => getSettingsApi(),
     setWorkspaceRoot: vi.fn(),
     resetWorkspaceRoot: vi.fn(),
     defaultWorkspaceRoot: () => defaultWorkspaceRoot(),
+    appVersion: () => appVersion(),
   },
   toAppError: (raw: unknown) =>
     raw && typeof raw === "object" && "code" in raw
       ? raw
       : { code: "UNKNOWN", message: String(raw) },
+}));
+
+// 更新检查走 Tauri IPC；替身让它可控，也避免控制台刷错误日志。
+const updaterCheck = vi.fn();
+vi.mock("../../lib/updaterBridge", () => ({
+  tauriUpdaterBridge: {
+    check: () => updaterCheck(),
+    relaunch: vi.fn().mockResolvedValue(undefined),
+    currentVersion: vi.fn().mockResolvedValue("0.1.0"),
+  },
 }));
 
 function setSettings(over: Partial<Record<string, unknown>> = {}) {
@@ -94,6 +106,9 @@ describe("SettingsPage (UI §34)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     defaultWorkspaceRoot.mockResolvedValue("E:/default/workspace");
+    // 默认「版本取不到」-> 组件回退到构建期常量；需要断言的用例自行覆盖。
+    appVersion.mockRejectedValue(new Error("no ipc"));
+    updaterCheck.mockResolvedValue(null);
     localStorage.clear();
     useWorkspaceStore.setState({
       settings: null,
@@ -346,8 +361,29 @@ describe("SettingsPage (UI §34)", () => {
     setSettings();
     renderPage();
     await goTo("关于");
-    // 版本由 Vite 构建期注入。
     expect(screen.getByTestId("app-version")).toBeInTheDocument();
+  });
+
+  it("shows the running version reported by the backend, not a build-time constant", async () => {
+    setSettings();
+    // 后端是版本的权威来源（与更新检查同源），前端常量可能漂移。
+    appVersion.mockResolvedValue("1.2.3");
+    renderPage();
+    await goTo("关于");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("app-version")).toHaveTextContent("1.2.3"),
+    );
+  });
+
+  it("falls back to the build-time version when the backend is unreachable", async () => {
+    setSettings();
+    appVersion.mockRejectedValue(new Error("no ipc"));
+    renderPage();
+    await goTo("关于");
+
+    // 取不到也不该显示空白或报错。
+    expect(screen.getByTestId("app-version")).not.toHaveTextContent("");
   });
 
   it("describes itself as local-first rather than advertising", async () => {
@@ -355,5 +391,110 @@ describe("SettingsPage (UI §34)", () => {
     renderPage();
     await goTo("关于");
     expect(screen.getByText(/本地优先/)).toBeInTheDocument();
+  });
+
+  // ---- 软件更新 ----
+
+  it("reports when the app is up to date", async () => {
+    setSettings();
+    updaterCheck.mockResolvedValue(null);
+    renderPage();
+    await goTo("关于");
+
+    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
+
+    expect(await screen.findByText("已是最新版本")).toBeInTheDocument();
+  });
+
+  it("offers to install when a new version exists", async () => {
+    setSettings();
+    updaterCheck.mockResolvedValue({ version: "9.9.9", notes: null, downloadAndInstall: vi.fn() });
+    renderPage();
+    await goTo("关于");
+
+    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
+
+    expect(await screen.findByText(/9\.9\.9/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /下载并安装/ })).toBeInTheDocument();
+  });
+
+  it("explains a check failure and suggests what to do", async () => {
+    setSettings();
+    updaterCheck.mockRejectedValue(new Error("network down"));
+    renderPage();
+    await goTo("关于");
+
+    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
+
+    // 主动检查要给出可操作的原因（代理/GitHub 不可达），而不是空手而归。
+    expect(await screen.findByText("检查更新失败")).toBeInTheDocument();
+    expect(screen.getByText(/代理/)).toBeInTheDocument();
+  });
+
+  it("asks for confirmation before installing, since it restarts the app", async () => {
+    setSettings();
+    const update = { version: "9.9.9", notes: null, downloadAndInstall: vi.fn() };
+    updaterCheck.mockResolvedValue(update);
+    renderPage();
+    await goTo("关于");
+
+    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /下载并安装/ }));
+
+    // 安装会关闭应用 —— 必须确认，且说清会重启。
+    expect(await screen.findByText(/安装完成后应用会自动重启/)).toBeInTheDocument();
+    expect(update.downloadAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("does not install when the confirmation is cancelled", async () => {
+    setSettings();
+    const update = { version: "9.9.9", notes: null, downloadAndInstall: vi.fn() };
+    updaterCheck.mockResolvedValue(update);
+    renderPage();
+    await goTo("关于");
+
+    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /下载并安装/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "取消" }));
+
+    expect(update.downloadAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("saves unsaved work before installing, so the restart cannot lose it", async () => {
+    setSettings();
+    const update = { version: "9.9.9", notes: null, downloadAndInstall: vi.fn() };
+    updaterCheck.mockResolvedValue(update);
+
+    const flushActive = vi.fn().mockResolvedValue(true);
+    useWorkspaceStore.setState({ flushActive } as never);
+
+    renderPage();
+    await goTo("关于");
+    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /下载并安装/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /安装并重启/ }));
+
+    // 顺序很关键：先落盘，再安装。
+    await waitFor(() => expect(flushActive).toHaveBeenCalled());
+    await waitFor(() => expect(update.downloadAndInstall).toHaveBeenCalled());
+  });
+
+  it("aborts installation when saving fails, rather than losing the user's work", async () => {
+    setSettings();
+    const update = { version: "9.9.9", notes: null, downloadAndInstall: vi.fn() };
+    updaterCheck.mockResolvedValue(update);
+
+    // 落盘失败 => 绝不安装（安装会关应用，等于丢内容）。
+    const flushActive = vi.fn().mockResolvedValue(false);
+    useWorkspaceStore.setState({ flushActive } as never);
+
+    renderPage();
+    await goTo("关于");
+    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /下载并安装/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /安装并重启/ }));
+
+    await waitFor(() => expect(flushActive).toHaveBeenCalled());
+    expect(update.downloadAndInstall).not.toHaveBeenCalled();
   });
 });

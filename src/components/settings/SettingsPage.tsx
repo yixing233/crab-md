@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { zh } from "../../lib/i18n";
+import { api } from "../../lib/api";
 import {
   FONT_FAMILY_STACK,
   FONT_SIZE_PX,
@@ -137,13 +138,13 @@ export function SettingsPage({
   useEffect(() => {
     if (!open) return;
     void loadSettings();
-    void import("../../lib/api")
-      .then(({ api }) => api.defaultWorkspaceRoot())
+    void api
+      .defaultWorkspaceRoot()
       .then(setDefaultRoot)
       .catch(() => setDefaultRoot(null));
     // 版本以后端为准；取不到就退回构建期常量（不影响其它功能）。
-    void import("../../lib/api")
-      .then(({ api }) => api.appVersion())
+    void api
+      .appVersion()
       .then(setVersion)
       .catch(() => {});
   }, [open, loadSettings]);
