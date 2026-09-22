@@ -6,6 +6,7 @@ const readDocument = vi.fn();
 const saveDocument = vi.fn();
 const renameDocument = vi.fn();
 const deleteDocument = vi.fn();
+const duplicateDocument = vi.fn();
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -15,6 +16,7 @@ vi.mock("../lib/api", () => ({
     saveDocument: (...a: unknown[]) => saveDocument(...a),
     renameDocument: (...a: unknown[]) => renameDocument(...a),
     deleteDocument: (...a: unknown[]) => deleteDocument(...a),
+    duplicateDocument: (...a: unknown[]) => duplicateDocument(...a),
   },
   toAppError: (raw: unknown) =>
     raw && typeof raw === "object" && "code" in raw
@@ -262,5 +264,88 @@ describe("autosave debounce", () => {
     await new Promise((r) => setTimeout(r, 80));
     expect(saveDocument).toHaveBeenCalledTimes(1);
     expect(saveDocument).toHaveBeenCalledWith("1", "abc");
+  });
+});
+
+/**
+ * 另存为副本（ARCHITECTURE.md §11：副本必须是独立身份）。
+ */
+describe("useWorkspaceStore duplicateDocument", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __setAutosaveDelay(60_000);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useWorkspaceStore.setState({
+      documents: [], activeId: null, activeContent: "",
+      loading: false, error: null, dirty: false,
+    });
+  });
+
+  it("calls the backend with the id and the new title", async () => {
+    duplicateDocument.mockResolvedValue(summary("copy", "原名 副本"));
+    listDocuments.mockResolvedValue([summary("orig", "原名"), summary("copy", "原名 副本")]);
+    readDocument.mockResolvedValue({ ...summary("copy", "原名 副本"), content: "正文" });
+
+    await useWorkspaceStore.getState().duplicateDocument("orig", "原名 副本");
+    expect(duplicateDocument).toHaveBeenCalledWith("orig", "原名 副本");
+  });
+
+  it("opens the new copy so the user is editing it right away", async () => {
+    duplicateDocument.mockResolvedValue(summary("copy", "副本"));
+    listDocuments.mockResolvedValue([summary("orig", "原本"), summary("copy", "副本")]);
+    readDocument.mockResolvedValue({ ...summary("copy", "副本"), content: "复制来的正文" });
+
+    await useWorkspaceStore.getState().duplicateDocument("orig", "副本");
+
+    const s = useWorkspaceStore.getState();
+    expect(s.activeId).toBe("copy");
+    expect(s.activeContent).toBe("复制来的正文");
+  });
+
+  it("keeps the original document untouched", async () => {
+    readDocument.mockResolvedValue({ ...summary("orig", "原本"), content: "原文" });
+    saveDocument.mockResolvedValue(summary("orig"));
+    listDocuments.mockResolvedValue([summary("orig", "原本")]);
+    await useWorkspaceStore.getState().openDocument("orig");
+
+    duplicateDocument.mockResolvedValue(summary("copy", "副本"));
+    listDocuments.mockResolvedValue([summary("orig", "原本"), summary("copy", "副本")]);
+    readDocument.mockResolvedValue({ ...summary("copy", "副本"), content: "原文" });
+
+    await useWorkspaceStore.getState().duplicateDocument("orig", "副本");
+
+    // 原文档从未被写入，只是被读取过。
+    expect(saveDocument).not.toHaveBeenCalled();
+  });
+
+  it("flushes unsaved edits first, so the copy includes what the user sees", async () => {
+    // 这是关键语义：另存为必须复制眼前的内容，而不是上次保存的版本。
+    readDocument.mockResolvedValue({ ...summary("orig", "原本"), content: "旧" });
+    saveDocument.mockResolvedValue(summary("orig"));
+    listDocuments.mockResolvedValue([summary("orig", "原本")]);
+    await useWorkspaceStore.getState().openDocument("orig");
+    useWorkspaceStore.getState().setContent("刚编辑的新内容");
+
+    duplicateDocument.mockResolvedValue(summary("copy", "副本"));
+
+    await useWorkspaceStore.getState().duplicateDocument("orig", "原本 副本");
+
+    expect(saveDocument).toHaveBeenCalledWith("orig", "刚编辑的新内容");
+  });
+
+  it("records an error code when the copy fails", async () => {
+    duplicateDocument.mockRejectedValue({ code: "IO_ERROR", message: "disk full" });
+    await useWorkspaceStore.getState().duplicateDocument("orig", "副本");
+    expect(useWorkspaceStore.getState().error).toBe("IO_ERROR");
+  });
+
+  it("refreshes the list so the copy shows up in the sidebar", async () => {
+    duplicateDocument.mockResolvedValue(summary("copy", "副本"));
+    listDocuments.mockResolvedValue([summary("orig", "原本"), summary("copy", "副本")]);
+    readDocument.mockResolvedValue({ ...summary("copy", "副本"), content: "" });
+
+    await useWorkspaceStore.getState().duplicateDocument("orig", "副本");
+
+    expect(useWorkspaceStore.getState().documents).toHaveLength(2);
   });
 });

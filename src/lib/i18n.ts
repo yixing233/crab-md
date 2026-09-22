@@ -45,6 +45,8 @@ export const zh = {
     ariaLabel: "笔记列表",
     rename: "重命名",
     delete: "删除",
+    /** 另存为副本（新身份、独立文件，原标题与原文不动）。 */
+    duplicate: "另存为副本",
     /** 行内重命名输入框的无障碍标签。 */
     renameLabel: "笔记名称",
     /** 顶部「更多操作」按钮，用于触屏等无右键场景。 */
@@ -122,7 +124,17 @@ export const zh = {
     saveFailed: "保存失败，内容仍保留在编辑器中",
     renamed: "已重命名",
     deleted: "已删除",
+    duplicated: "已另存为副本",
+    duplicateFailed: "另存失败，原文未受影响",
   },
+
+  /**
+   * 另存为副本时的默认标题。
+   *
+   * 放在 i18n 而不是 Rust 侧：这是界面文案，语言属前端职责
+   * （UI §2.5 要求文案集中在 src/lib/i18n.ts）。
+   */
+  duplicateTitle: (original: string) => `${original} 副本`,
 
   error: {
     /** 前缀 + 中文说明。 */

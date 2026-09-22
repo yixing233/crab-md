@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { FileTree } from "./FileTree";
@@ -16,12 +16,13 @@ function doc(id: string, title: string, virtualPath = "/"): DocumentSummary {
 
 /** 默认 props：只关心被测行为，其余用空实现。 */
 function renderTree(over: Partial<Parameters<typeof FileTree>[0]> = {}) {
-  const props = {
+  const props: Parameters<typeof FileTree>[0] = {
     documents: [] as DocumentSummary[],
     activeId: null,
     onSelect: vi.fn(),
     onCreate: vi.fn(),
     onRename: vi.fn(),
+    onDuplicate: vi.fn(),
     onRequestDelete: vi.fn(),
     ...over,
   };
@@ -152,5 +153,51 @@ describe("FileTree delete entry", () => {
 
     // 组件只上报请求，确认对话框由上层负责（破坏性操作必须先确认）。
     expect(props.onRequestDelete).toHaveBeenCalledWith("9", "要删的");
+  });
+
+  it("marks delete as the dangerous item (UI §14.4)", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    // 删除是本菜单里唯一的破坏性操作，必须带 danger 语义。
+    expect(screen.getByRole("menuitem", { name: "删除" })).toHaveAttribute("data-danger");
+    expect(screen.getByRole("menuitem", { name: "另存为副本" })).not.toHaveAttribute("data-danger");
+  });
+});
+
+describe("FileTree duplicate entry (另存为)", () => {
+  it("offers 另存为副本 in the more menu", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    expect(screen.getByRole("menuitem", { name: "另存为副本" })).toBeInTheDocument();
+  });
+
+  it("reports the id and current title to the parent", async () => {
+    const props = renderTree({ documents: [doc("5", "原始标题")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "另存为副本" }));
+
+    // 组件不自己拼标题 —— 文案属 i18n，由上层决定（UI §2.5）。
+    expect(props.onDuplicate).toHaveBeenCalledWith("5", "原始标题");
+  });
+
+  it("closes the menu after duplicating", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "另存为副本" }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("reaches duplicate from right-click too, not just the more button", async () => {
+    const props = renderTree({ documents: [doc("7", "右键的")] });
+    fireEvent.contextMenu(screen.getByRole("treeitem", { name: /右键的/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "另存为副本" }));
+    expect(props.onDuplicate).toHaveBeenCalledWith("7", "右键的");
+  });
+
+  it("keeps duplicate above delete so a destructive action is never first", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    const labels = screen.getAllByRole("menuitem").map((el) => el.textContent);
+    expect(labels.indexOf("另存为副本")).toBeLessThan(labels.indexOf("删除"));
   });
 });

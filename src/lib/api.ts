@@ -48,6 +48,10 @@ export const api = {
 
   deleteDocument: (id: string) => call<void>("delete_document", { id }),
 
+  /** 另存为副本：新身份、独立文件，原标题与原文不动。 */
+  duplicateDocument: (id: string, title: string) =>
+    call<DocumentSummary>("duplicate_document", { id, title }),
+
   searchDocuments: (query: string, limit = 50) =>
     call<SearchHit[]>("search_documents", { query, limit }),
 };

@@ -39,6 +39,8 @@ export interface WorkspaceState {
   createDocument: (title: string, virtualPath?: string) => Promise<void>;
   renameDocument: (id: string, title: string) => Promise<void>;
   deleteDocument: (id: string) => Promise<void>;
+  /** 另存为副本；成功后打开新副本，符合「另存为后我就在编辑它」的预期。 */
+  duplicateDocument: (id: string, title: string) => Promise<void>;
   saveActive: () => Promise<void>;
   /**
    * 立即落盘未保存内容（取消防抖等待）。
@@ -128,6 +130,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (raw) {
       const code = toAppError(raw).code;
       logFailure({ op: "deleteDocument", code, documentId: id }, raw);
+      set({ error: code });
+    }
+  },
+
+  duplicateDocument: async (id, title) => {
+    set({ error: null });
+    try {
+      const copy = await api.duplicateDocument(id, title);
+      await get().loadDocuments();
+      // 打开新副本：另存为之后用户预期正在编辑那份副本。
+      // openDocument 会读回正文（副本内容即原文），无需在这里预置。
+      await get().openDocument(copy.id);
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "duplicateDocument", code, documentId: id }, raw);
       set({ error: code });
     }
   },

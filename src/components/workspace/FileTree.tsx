@@ -17,6 +17,8 @@ export interface FileTreeProps {
   onCreate: () => void;
   /** 重命名（UI_DESIGN_SYSTEM.md §18.2）。 */
   onRename: (id: string, title: string) => void;
+  /** 另存为副本：新身份、独立文件，原标题与原文不动。 */
+  onDuplicate: (id: string, title: string) => void;
   /** 请求删除；确认对话框由上层负责。 */
   onRequestDelete: (id: string, title: string) => void;
 }
@@ -27,6 +29,7 @@ export function FileTree({
   onSelect,
   onCreate,
   onRename,
+  onDuplicate,
   onRequestDelete,
 }: FileTreeProps) {
   const tree = useMemo(() => buildFileTree(documents), [documents]);
@@ -38,7 +41,7 @@ export function FileTree({
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
-  // 菜单里的「删除」只上报请求，确认由上层负责（破坏性操作须确认，§14.4）。
+  // 非破坏性操作在前，删除单独放最后（破坏性操作须确认，§14.4）。
   const menuItems = useCallback(
     (id: string, title: string): ContextMenuItem[] => [
       {
@@ -51,13 +54,18 @@ export function FileTree({
         },
       },
       {
+        id: "duplicate",
+        label: zh.fileTree.duplicate,
+        onSelect: () => onDuplicate(id, title),
+      },
+      {
         id: "delete",
         label: zh.fileTree.delete,
         danger: true,
         onSelect: () => onRequestDelete(id, title),
       },
     ],
-    [closeMenu, onRequestDelete],
+    [closeMenu, onDuplicate, onRequestDelete],
   );
 
   const startRename = useCallback((id: string) => {

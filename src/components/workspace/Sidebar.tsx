@@ -9,6 +9,8 @@ export interface SidebarProps {
   onSelect: (id: string) => void;
   onCreate: () => void;
   onRename: (id: string, title: string) => void;
+  /** 另存为副本（新身份、独立文件）。 */
+  onDuplicate: (id: string, title: string) => void;
   onRequestDelete: (id: string, title: string) => void;
   /** 面板宽度（px），由外层分隔条调整（UI §11）。 */
   width?: number;
@@ -20,6 +22,7 @@ export function Sidebar({
   onSelect,
   onCreate,
   onRename,
+  onDuplicate,
   onRequestDelete,
   width,
 }: SidebarProps) {
@@ -37,6 +40,7 @@ export function Sidebar({
         onSelect={onSelect}
         onCreate={onCreate}
         onRename={onRename}
+        onDuplicate={onDuplicate}
         onRequestDelete={onRequestDelete}
       />
     </aside>

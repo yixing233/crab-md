@@ -64,6 +64,7 @@ pub fn run() {
             commands::documents::save_document,
             commands::documents::rename_document,
             commands::documents::delete_document,
+            commands::documents::duplicate_document,
             commands::documents::search_documents,
             close_window,
         ])

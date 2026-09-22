@@ -57,6 +57,7 @@ export default function App() {
   const createDocument = useWorkspaceStore((s) => s.createDocument);
   const renameDocument = useWorkspaceStore((s) => s.renameDocument);
   const deleteDocument = useWorkspaceStore((s) => s.deleteDocument);
+  const duplicateDocument = useWorkspaceStore((s) => s.duplicateDocument);
   const saveActive = useWorkspaceStore((s) => s.saveActive);
   const setContent = useWorkspaceStore((s) => s.setContent);
   const clearError = useWorkspaceStore((s) => s.clearError);
@@ -184,6 +185,25 @@ export default function App() {
     }
   }, [saveActive]);
 
+  /**
+   * 另存为副本（新身份、独立文件）。
+   *
+   * 先把当前未保存的编辑 flush 掉：用户点「另存为」时预期副本包含
+   * 眼前看到的内容，而不是上次保存的版本（ARCHITECTURE.md §18.1）。
+   */
+  const handleDuplicate = useCallback(
+    async (id: string, title: string) => {
+      if (!(await useWorkspaceStore.getState().flushActive())) return;
+      await duplicateDocument(id, zh.duplicateTitle(title));
+      if (useWorkspaceStore.getState().error) {
+        setToast({ message: zh.toast.duplicateFailed, tone: "error" });
+      } else {
+        setToast({ message: zh.toast.duplicated, tone: "success" });
+      }
+    },
+    [duplicateDocument],
+  );
+
   // 全局快捷键（UI_DESIGN_SYSTEM.md §29）。集中在此处而非散落各页面。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -242,6 +262,7 @@ export default function App() {
               onSelect={(id) => void openDocument(id)}
               onCreate={handleNewDocument}
               onRename={(id, title) => void renameDocument(id, title)}
+              onDuplicate={(id, title) => void handleDuplicate(id, title)}
               onRequestDelete={(id, title) => setPendingDelete({ id, title })}
               width={sidebarWidth}
             />

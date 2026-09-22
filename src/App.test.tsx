@@ -11,6 +11,7 @@ vi.mock("./lib/api", () => ({
     saveDocument: vi.fn(),
     renameDocument: vi.fn(),
     deleteDocument: vi.fn(),
+    duplicateDocument: vi.fn(),
   },
   toAppError: (raw: unknown) =>
     raw && typeof raw === "object" && "code" in raw
@@ -141,6 +142,48 @@ describe("App panes and shortcuts", () => {
     render(<App />);
     await userEvent.click(await screen.findByText("甲"));
   }
+
+  it("duplicates a document from the sidebar menu and confirms with a toast", async () => {
+    await openOneDocument();
+    const { api } = await import("./lib/api");
+    (api.duplicateDocument as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "d2", title: "甲 副本", virtualPath: "/", revision: 1,
+      contentHash: "sha256:x", createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z", size: 0,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "另存为副本" }));
+
+    // 默认标题由 i18n 生成（「<原标题> 副本」），不是硬编码在组件里。
+    expect(api.duplicateDocument).toHaveBeenCalledWith("d1", "甲 副本");
+    const toast = await waitFor(() => {
+      const el = document.querySelector(".ui-toast");
+      if (!el) throw new Error("toast not rendered");
+      return el;
+    });
+    expect(toast).toHaveTextContent("已另存为副本");
+  });
+
+  it("reports a failed duplicate without claiming success", async () => {
+    await openOneDocument();
+    const { api } = await import("./lib/api");
+    (api.duplicateDocument as ReturnType<typeof vi.fn>).mockRejectedValue({
+      code: "IO_ERROR",
+      message: "disk full",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "另存为副本" }));
+
+    const toast = await waitFor(() => {
+      const el = document.querySelector(".ui-toast[data-tone='error']");
+      if (!el) throw new Error("error toast not rendered");
+      return el;
+    });
+    // 文案要说明原文未受影响，否则用户会以为原稿也出问题了。
+    expect(toast).toHaveTextContent("另存失败，原文未受影响");
+  });
 
   it("hides the preview in edit-only mode (收起预览栏)", async () => {
     await openOneDocument();

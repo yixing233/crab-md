@@ -146,6 +146,50 @@ impl DocumentService {
         Ok(())
     }
 
+    /// 另存为副本：以新 UUID 复制一篇文档，原标题与原文**完全不动**。
+    ///
+    /// 为什么不复用文件名：文档身份是 UUID（ARCHITECTURE.md §11、§7.1），
+    /// 副本必须是独立身份，不能与原文档共享任何标识或磁盘文件。
+    ///
+    /// title 由调用方给出（界面文案属前端 i18n 职责）。
+    /// 文件夹跟随原文档，符合「副本就在我手边」的预期。
+    pub fn duplicate(&self, id: &str, title: &str) -> AppResult<DocumentSummary> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(AppError::InvalidInput("title must not be empty".into()));
+        }
+
+        // 先取原文与元数据；失败的写操作一律不做，避免留下半成品。
+        let original = self.read(id)?;
+        let new_id = workspace::new_document_id();
+        let now = workspace::now_iso8601();
+        let content = original.content;
+        let hash = workspace::content_hash(&content);
+        let virtual_path = original.summary.virtual_path;
+
+        let conn = self.conn()?;
+        docs::insert(&conn, &new_id, title, &virtual_path, &hash, &now, content.len() as i64)?;
+        drop(conn);
+
+        // 落盘失败时回滚元数据，不留下一篇读不出内容的空文档。
+        if let Err(e) = workspace::atomic_write(
+            &workspace::note_path(&self.root, &new_id)?,
+            content.as_bytes(),
+        ) {
+            let conn = self.conn()?;
+            let _ = docs::soft_delete(&conn, &new_id, &workspace::now_iso8601());
+            return Err(e);
+        }
+
+        let conn = self.conn()?;
+        let created = docs::get(&conn, &new_id)?.ok_or_else(|| AppError::NotFound(new_id.clone()))?;
+        drop(conn);
+
+        let conn = self.conn()?;
+        search::reindex(&conn, &new_id, title, &content)?;
+        Ok(created)
+    }
+
     pub fn search(&self, query: &str, limit: i64) -> AppResult<Vec<search::SearchHit>> {
         let conn = self.conn()?;
         search::search(&conn, query, limit).map_err(AppError::from)
@@ -193,6 +237,15 @@ pub fn rename_document(
 #[tauri::command]
 pub fn delete_document(svc: tauri::State<'_, DocumentService>, id: String) -> AppResult<()> {
     svc.delete(&id)
+}
+
+#[tauri::command]
+pub fn duplicate_document(
+    svc: tauri::State<'_, DocumentService>,
+    id: String,
+    title: String,
+) -> AppResult<DocumentSummary> {
+    svc.duplicate(&id, &title)
 }
 
 #[tauri::command]
@@ -363,5 +416,148 @@ mod tests {
     fn list_is_empty_for_a_fresh_workspace() {
         let (_d, svc) = svc();
         assert!(svc.list().unwrap().is_empty());
+    }
+
+    // ---- 另存为副本（duplicate）----
+
+    #[test]
+    fn duplicate_copies_content_under_a_new_identity() {
+        let (_d, svc) = svc();
+        let original = svc.create("原本", "/").unwrap();
+        svc.save(&original.id, "# 正文\n\n内容").unwrap();
+
+        let copy = svc.duplicate(&original.id, "原本 副本").unwrap();
+
+        assert_ne!(copy.id, original.id, "副本必须是新身份（§11）");
+        assert_eq!(copy.title, "原本 副本");
+        assert_eq!(svc.read(&copy.id).unwrap().content, "# 正文\n\n内容");
+    }
+
+    #[test]
+    fn duplicate_leaves_the_original_untouched() {
+        let (_d, svc) = svc();
+        let original = svc.create("原本", "/").unwrap();
+        svc.save(&original.id, "原始内容").unwrap();
+        let before = svc.read(&original.id).unwrap();
+
+        svc.duplicate(&original.id, "副本").unwrap();
+
+        let after = svc.read(&original.id).unwrap();
+        assert_eq!(after.content, "原始内容", "原文档内容不得改变");
+        assert_eq!(after.summary.title, "原本", "原标题不得改变");
+        assert_eq!(after.summary.revision, before.summary.revision, "原版本号不得改变");
+        assert_eq!(after.summary.content_hash, before.summary.content_hash);
+    }
+
+    #[test]
+    fn duplicate_writes_its_own_file_on_disk() {
+        let (d, svc) = svc();
+        let original = svc.create("A", "/").unwrap();
+        svc.save(&original.id, "body").unwrap();
+
+        let copy = svc.duplicate(&original.id, "B").unwrap();
+
+        let orig_path = workspace::note_path(d.path(), &original.id).unwrap();
+        let copy_path = workspace::note_path(d.path(), &copy.id).unwrap();
+        assert!(orig_path.is_file() && copy_path.is_file());
+        assert_ne!(orig_path, copy_path, "两者必须是不同文件");
+        // 两份文件内容一致，但各自独立。
+        assert_eq!(std::fs::read_to_string(&copy_path).unwrap(), "body");
+        assert_eq!(std::fs::read_to_string(&orig_path).unwrap(), "body");
+    }
+
+    #[test]
+    fn duplicate_keeps_the_virtual_folder() {
+        let (_d, svc) = svc();
+        let original = svc.create("A", "/笔记/Go/").unwrap();
+        let copy = svc.duplicate(&original.id, "B").unwrap();
+        assert_eq!(copy.virtual_path, "/笔记/Go/", "副本应留在同一文件夹");
+    }
+
+    #[test]
+    fn duplicate_starts_at_revision_one() {
+        let (_d, svc) = svc();
+        let original = svc.create("A", "/").unwrap();
+        // 把原文改到 revision 3，副本仍应是全新的第 1 版。
+        svc.save(&original.id, "v2").unwrap();
+        svc.save(&original.id, "v3").unwrap();
+        let copy = svc.duplicate(&original.id, "B").unwrap();
+        assert_eq!(copy.revision, 1);
+    }
+
+    #[test]
+    fn duplicate_records_the_right_size_and_hash() {
+        let (_d, svc) = svc();
+        let original = svc.create("A", "/").unwrap();
+        let body = "内容 with unicode 🦀";
+        svc.save(&original.id, body).unwrap();
+
+        let copy = svc.duplicate(&original.id, "B").unwrap();
+        assert_eq!(copy.size, body.len() as i64);
+        assert_eq!(copy.content_hash, workspace::content_hash(body));
+    }
+
+    #[test]
+    fn duplicate_makes_the_copy_searchable_under_its_new_title() {
+        let (_d, svc) = svc();
+        let original = svc.create("alpha", "/").unwrap();
+        svc.save(&original.id, "并发编程与信道").unwrap();
+
+        svc.duplicate(&original.id, "beta").unwrap();
+
+        // 副本的标题与正文都要进索引。
+        assert_eq!(svc.search("beta", 10).unwrap().len(), 1, "副本标题应可检索");
+        assert_eq!(svc.search("并发", 10).unwrap().len(), 2, "原文与副本各一条");
+    }
+
+    #[test]
+    fn duplicate_appears_in_the_list_alongside_the_original() {
+        let (_d, svc) = svc();
+        let original = svc.create("A", "/").unwrap();
+        svc.duplicate(&original.id, "B").unwrap();
+        assert_eq!(svc.list().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn duplicate_rejects_a_blank_title() {
+        let (_d, svc) = svc();
+        let original = svc.create("A", "/").unwrap();
+        assert!(matches!(svc.duplicate(&original.id, "  "), Err(AppError::InvalidInput(_))));
+        assert_eq!(svc.list().unwrap().len(), 1, "被拒绝时不得留下副本");
+    }
+
+    #[test]
+    fn duplicate_of_a_missing_document_fails_without_writing_anything() {
+        let (d, svc) = svc();
+        let ghost = workspace::new_document_id();
+        assert!(matches!(svc.duplicate(&ghost, "X"), Err(AppError::NotFound(_))));
+        assert!(svc.list().unwrap().is_empty());
+        assert!(!workspace::note_path(d.path(), &ghost).unwrap().exists());
+    }
+
+    #[test]
+    fn duplicate_rejects_hostile_ids() {
+        let (_d, svc) = svc();
+        assert!(matches!(
+            svc.duplicate("../../etc/passwd", "X"),
+            Err(AppError::InvalidId(_))
+        ));
+    }
+
+    #[test]
+    fn duplicate_survives_a_workspace_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+
+        let copy_id = {
+            let svc = DocumentService::new(root.clone()).unwrap();
+            let original = svc.create("原本", "/").unwrap();
+            svc.save(&original.id, "# 要保留的内容").unwrap();
+            svc.duplicate(&original.id, "副本").unwrap().id
+        };
+
+        let svc2 = DocumentService::new(root).unwrap();
+        assert_eq!(svc2.read(&copy_id).unwrap().content, "# 要保留的内容");
+        assert_eq!(svc2.list().unwrap().len(), 2);
     }
 }
