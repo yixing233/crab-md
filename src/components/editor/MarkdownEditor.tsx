@@ -2,14 +2,22 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { bracketMatching, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorSelection as CmSelection, EditorState } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, Decoration, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { searchKeymap } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { applyMarkdownAction, type MarkdownActionId } from "../../lib/markdownActions";
+import type { EditorCjkFont, EditorLatinFont } from "../../lib/editorPrefs";
+import {
+  applyFontToSelection,
+  findFontSpans,
+  removeFontFromSelection,
+  selectionHasFontSpan,
+} from "../../lib/fontSpan";
 import { cmPhrases } from "../../lib/i18n";
 import { EditorToolbar } from "./EditorToolbar";
+import { EditorFontBar } from "./EditorFontBar";
 import "./editor.css";
 
 export interface MarkdownEditorProps {
@@ -33,6 +41,27 @@ export interface MarkdownEditorProps {
   findNonce?: number;
   /** 是否显示格式工具栏（UI_DESIGN_SYSTEM.md §21.1）。 */
   showToolbar?: boolean;
+  /**
+   * 选区字体的目标值。设过之后**必须**用新 nonce 再次触发，
+   * 否则同一字体连续应用两次不会生效。
+   *
+   * 走 prop 而不是 imperative ref：编辑器的 view 保持私有，
+   * 工具栏只发语义化请求（与 onAction 同一套路）。
+   */
+  fontSpanRequest?: { stack: string; nonce: number } | null;
+  /** 请求移除选区字体（nonce 同上）。 */
+  clearFontNonce?: number;
+  /** App 侧的「清除选区字体」动作，供编辑器内的字体条调用。 */
+  onClearFont?: () => void;
+  /** 选区是否已有字体 —— 供工具栏按钮显示选中态。 */
+  onSelectionFontChange?: (hasFont: boolean) => void;
+  /** 编辑器内快速给选区设字体（点一下即写入）。 */
+  onQuickFont?: (stack: string) => void;
+  /** 是否显示编辑器内的快速字体条。 */
+  showFontBar?: boolean;
+  /** 当前设置里的字体，供快速条的「默认」项使用。 */
+  defaultLatinFont?: EditorLatinFont;
+  defaultCjkFont?: EditorCjkFont;
 }
 
 /** 让 CodeMirror 读取应用主题令牌，避免出现与外壳无关的配色。 */
@@ -135,11 +164,86 @@ function dispatchAction(view: EditorView, action: MarkdownActionId): void {
   view.focus();
 }
 
+/**
+ * 把「全文 + 选区」交给一个纯函数，再把结果写回编辑器。
+ *
+ * 与 `dispatchAction` 同一套路：文本变换都在可独立单测的纯函数里，
+ * 这里只负责落点。用于选区字体这类不属于 `MarkdownActionId` 的动作。
+ */
+function dispatchTextChange(
+  view: EditorView,
+  transform: (sel: { text: string; from: number; to: number }) => {
+    text: string;
+    from: number;
+    to: number;
+  },
+): void {
+  const { state } = view;
+  const main = state.selection.main;
+  const change = transform({
+    text: state.doc.toString(),
+    from: main.from,
+    to: main.to,
+  });
+
+  // 纯函数可能判定「无需改动」（如空选区、没有可移除的标签），
+  // 此时不要 dispatch —— 会产生一个空的撤销步骤，Ctrl+Z 白按一次。
+  if (change.text === state.doc.toString()) return;
+
+  view.dispatch({
+    changes: { from: 0, to: state.doc.length, insert: change.text },
+    selection: CmSelection.range(change.from, change.to),
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
 /** 取 1 基的行列号（状态栏用，UI §28）。 */
 function cursorPosition(state: EditorState): { line: number; column: number } {
   const head = state.selection.main.head;
   const line = state.doc.lineAt(head);
   return { line: line.number, column: head - line.from + 1 };
+}
+
+/**
+ * 让已在文件里的 `<span style="font-family:…">` 在**编辑状态**下也按其字体
+ * 显示内部文字。
+ *
+ * 没有它的话，用户给一段文字设了字体却只能在预览里看到效果，编辑时毫无
+ * 反馈 —— 看起来就像设置没生效。
+ *
+ * 用 ViewPlugin 而不是 MatchDecorator：后者只匹配开标签，装饰只会落在标签
+ * 自身上，内部文字不会变。这里需要按 findFontSpans 给出的**内部范围**装饰。
+ *
+ * 标签本身保持默认样式：它是可移植 Markdown 的一部分，不是语法错误，
+ * 不该被高亮成代码色而显得像异常。
+ */
+const fontSpanPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = buildFontDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged) {
+        this.decorations = buildFontDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
+function buildFontDecorations(view: EditorView): DecorationSet {
+  const ranges = findFontSpans(view.state.doc.toString()).map((s) =>
+    Decoration.mark({ attributes: { style: `font-family:${s.font}` } }).range(
+      s.textFrom,
+      s.textTo,
+    ),
+  );
+  // 必须有序，Decoration.set 会校验。
+  return Decoration.set(ranges, true);
 }
 
 export function MarkdownEditor({
@@ -151,16 +255,36 @@ export function MarkdownEditor({
   jumpTarget,
   findNonce,
   showToolbar = true,
+  fontSpanRequest,
+  clearFontNonce,
+  onSelectionFontChange,
+  onQuickFont,
+  onClearFont,
+  showFontBar = true,
+  defaultLatinFont,
+  defaultCjkFont,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // 选区状态：快速字体条据此决定按钮可用性与「清除」是否出现。
+  const [hasSelection, setHasSelection] = useState(false);
+  const [selectionHasFontState, setSelectionHasFontState] = useState(false);
   // 用 ref 持有最新回调，避免每次渲染都重建编辑器。
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const onCursorRef = useRef(onCursor);
+  const onSelectionFontRef = useRef(onSelectionFontChange);
+  // 选区状态（是否为空 / 是否已有字体）用 ref 汇总上报，避免每次渲染重建编辑器。
+  const onSelectionStateRef = useRef<
+    ((state: { hasSelection: boolean; hasFont: boolean }) => void) | null
+  >((state) => {
+    setHasSelection(state.hasSelection);
+    setSelectionHasFontState(state.hasFont);
+  });
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
   onCursorRef.current = onCursor;
+  onSelectionFontRef.current = onSelectionFontChange;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -178,6 +302,8 @@ export function MarkdownEditor({
           bracketMatching(),
           EditorView.lineWrapping,
           appTheme,
+          // 让文件里已有的 <span style="font-family:…"> 在编辑时也生效。
+          fontSpanPlugin,
           // CodeMirror 内置面板（查找/替换）默认英文，注入中文词表（UI §2.5）。
           EditorState.phrases.of(cmPhrases),
           keymap.of([
@@ -205,6 +331,20 @@ export function MarkdownEditor({
             if (update.selectionSet || update.docChanged) {
               const { line, column } = cursorPosition(update.state);
               onCursorRef.current?.(line, column);
+            }
+            // 选区是否已有字体、是否为空：决定快速条的按钮状态。
+            if (update.selectionSet || update.docChanged) {
+              const main = update.state.selection.main;
+              const hasFont = selectionHasFontSpan({
+                text: update.state.doc.toString(),
+                from: main.from,
+                to: main.to,
+              });
+              onSelectionFontRef.current?.(hasFont);
+              onSelectionStateRef.current?.({
+                hasSelection: main.from !== main.to,
+                hasFont,
+              });
             }
           }),
         ],
@@ -268,6 +408,23 @@ export function MarkdownEditor({
     });
   }, [findNonce]);
 
+  // 选区设字体。依赖 nonce：同一字体连点两次也要重新生效。
+  const fontNonce = fontSpanRequest?.nonce;
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !fontSpanRequest) return;
+    dispatchTextChange(view, (sel) => applyFontToSelection(sel, fontSpanRequest.stack));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontNonce]);
+
+  // 移除选区字体。
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !clearFontNonce) return;
+    dispatchTextChange(view, removeFontFromSelection);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearFontNonce]);
+
   const handleAction = (action: MarkdownActionId) => {
     const view = viewRef.current;
     if (view) dispatchAction(view, action);
@@ -276,6 +433,16 @@ export function MarkdownEditor({
   return (
     <div className="markdown-editor-root">
       {showToolbar && <EditorToolbar onAction={handleAction} />}
+      {showFontBar && onQuickFont && onClearFont && defaultLatinFont && defaultCjkFont && (
+        <EditorFontBar
+          onPick={onQuickFont}
+          onClear={onClearFont}
+          hasFont={selectionHasFontState}
+          hasSelection={hasSelection}
+          defaultLatin={defaultLatinFont}
+          defaultCjk={defaultCjkFont}
+        />
+      )}
       <div className="markdown-editor" ref={hostRef} data-testid="markdown-editor" />
     </div>
   );

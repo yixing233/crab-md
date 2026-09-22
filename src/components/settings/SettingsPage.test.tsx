@@ -74,8 +74,10 @@ function renderPage(over: Partial<Parameters<typeof SettingsPage>[0]> = {}) {
     onChangeViewMode: vi.fn(),
     fontSize: "md",
     onChangeFontSize: vi.fn(),
-    fontFamily: "system",
-    onChangeFontFamily: vi.fn(),
+    latinFont: "system",
+    onChangeLatinFont: vi.fn(),
+    cjkFont: "system",
+    onChangeCjkFont: vi.fn(),
     ...over,
   };
   render(<SettingsPage {...props} />);
@@ -93,8 +95,10 @@ const BASE_PROPS: Parameters<typeof SettingsPage>[0] = {
   onChangeViewMode: () => {},
   fontSize: "md",
   onChangeFontSize: () => {},
-  fontFamily: "system",
-  onChangeFontFamily: () => {},
+  latinFont: "system",
+  onChangeLatinFont: () => {},
+  cjkFont: "system",
+  onChangeCjkFont: () => {},
 };
 
 /** 切到某个分组（设置页是左侧导航 + 右侧内容）。 */
@@ -200,24 +204,46 @@ describe("SettingsPage (UI §34)", () => {
     expect(props.onChangeFontSize).toHaveBeenCalledWith("lg");
   });
 
-  it("reports the chosen font family to its owner", async () => {
+  it("reports the chosen Chinese font to its owner", async () => {
     setSettings();
     const props = renderPage();
     await goTo("编辑器");
 
     await userEvent.click(screen.getByRole("radio", { name: "宋体" }));
 
-    expect(props.onChangeFontFamily).toHaveBeenCalledWith("simsun");
+    expect(props.onChangeCjkFont).toHaveBeenCalledWith("simsun");
   });
 
-  it("offers the concrete fonts the user asked for", async () => {
+  it("reports the chosen Latin font to its owner, separately from Chinese", async () => {
+    setSettings();
+    const props = renderPage();
+    await goTo("编辑器");
+
+    await userEvent.click(screen.getByRole("radio", { name: "Times New Roman" }));
+
+    expect(props.onChangeLatinFont).toHaveBeenCalledWith("times");
+    // 关键：改西文**不应**动到中文。
+    expect(props.onChangeCjkFont).not.toHaveBeenCalled();
+  });
+
+  it("offers Chinese and Latin fonts as two separate groups", async () => {
     setSettings();
     renderPage();
     await goTo("编辑器");
 
-    // 按字体名列出，而不是「衬线/无衬线」这类抽象类别。
-    for (const name of ["微软雅黑", "黑体", "宋体", "楷体", "仿宋", "Times New Roman"]) {
-      expect(screen.getByRole("radio", { name })).toBeInTheDocument();
+    // 两组各有自己的可访问名，用户能分辨在改哪一侧。
+    expect(screen.getByRole("radiogroup", { name: "中文字体" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "西文字体" })).toBeInTheDocument();
+
+    // 中文字体在中文组里。
+    const cjkGroup = screen.getByRole("radiogroup", { name: "中文字体" });
+    for (const name of ["微软雅黑", "黑体", "宋体", "楷体", "仿宋"]) {
+      expect(within(cjkGroup).getByRole("radio", { name })).toBeInTheDocument();
+    }
+    // 西文字体在西文组里。
+    const latinGroup = screen.getByRole("radiogroup", { name: "西文字体" });
+    for (const name of ["Times New Roman", "Georgia", "Arial", "Calibri"]) {
+      expect(within(latinGroup).getByRole("radio", { name })).toBeInTheDocument();
     }
   });
 
@@ -232,9 +258,19 @@ describe("SettingsPage (UI §34)", () => {
     expect(nameEl.style.fontFamily).toContain("SimSun");
   });
 
-  it("marks the active font family as checked", async () => {
+  it("renders Latin options in their own font too", async () => {
     setSettings();
-    renderPage({ fontFamily: "kaiti" });
+    renderPage();
+    await goTo("编辑器");
+
+    const option = screen.getByRole("radio", { name: "Georgia" });
+    const nameEl = option.querySelector(".ui-font-picker__name") as HTMLElement;
+    expect(nameEl.style.fontFamily).toContain("Georgia");
+  });
+
+  it("marks the active fonts as checked, independently per group", async () => {
+    setSettings();
+    renderPage({ cjkFont: "kaiti", latinFont: "georgia" });
     await goTo("编辑器");
 
     expect(screen.getByRole("radio", { name: "楷体" })).toHaveAttribute(
@@ -245,17 +281,29 @@ describe("SettingsPage (UI §34)", () => {
       "aria-checked",
       "false",
     );
+    expect(screen.getByRole("radio", { name: "Georgia" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("radio", { name: "Arial" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
   });
 
-  it("renders the sample with the current size and family", async () => {
+  it("renders the sample with the current size and both fonts", async () => {
     setSettings();
-    renderPage({ fontSize: "lg", fontFamily: "simsun" });
+    renderPage({ fontSize: "lg", latinFont: "times", cjkFont: "simsun" });
     await goTo("编辑器");
 
-    // 两项目前互相影响，用真实值渲染示例才看得出合起来的效果。
+    // 三项互相影响，用真实值渲染示例才看得出合起来的效果。
     const sample = screen.getByTestId("font-sample");
     expect(sample).toHaveStyle({ fontSize: "16px" });
-    expect(sample.style.fontFamily).toContain("SimSun");
+    // 西文在前、中文在后 —— 顺序决定了汉字是否真的走中文字体。
+    const stack = sample.style.fontFamily;
+    expect(stack).toContain("Times New Roman");
+    expect(stack).toContain("SimSun");
+    expect(stack.indexOf("Times New Roman")).toBeLessThan(stack.indexOf("SimSun"));
   });
 
   it("offers the three view modes and reports the choice", async () => {

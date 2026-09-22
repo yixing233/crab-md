@@ -1,15 +1,25 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
-  applyFontFamily,
+  applyFontStack,
   applyFontSize,
-  DEFAULT_FONT_FAMILY,
+  CJK_FACES,
+  composeFontStack,
+  DEFAULT_CJK_FONT,
   DEFAULT_FONT_SIZE,
-  EDITOR_FONT_FAMILIES,
+  DEFAULT_LATIN_FONT,
+  EDITOR_CJK_FONTS,
+  EDITOR_FONT_FAMILY_IDS,
   EDITOR_FONT_SIZES,
-  FONT_FAMILY_STACK,
+  EDITOR_LATIN_FONTS,
   FONT_SIZE_PX,
-  readStoredFontFamily,
+  isCjkFontId,
+  isLatinFontId,
+  LATIN_FACES,
+  migrateLegacyFontPreset,
+  previewStack,
+  readStoredCjkFont,
   readStoredFontSize,
+  readStoredLatinFont,
 } from "./editorPrefs";
 
 describe("editor font size", () => {
@@ -17,164 +27,232 @@ describe("editor font size", () => {
     document.documentElement.style.removeProperty("--editor-font-size");
   });
 
-  it("defaults to medium", () => {
+  it("defaults to md", () => {
     expect(DEFAULT_FONT_SIZE).toBe("md");
   });
 
-  it("reads a valid stored size", () => {
-    expect(readStoredFontSize("sm")).toBe("sm");
-    expect(readStoredFontSize("md")).toBe("md");
-    expect(readStoredFontSize("lg")).toBe("lg");
-  });
-
-  it("falls back for missing or junk values", () => {
-    // 存档可能被旧版本或手工改过。
+  it("reads valid sizes and rejects junk", () => {
+    for (const size of EDITOR_FONT_SIZES) {
+      expect(readStoredFontSize(size)).toBe(size);
+    }
     expect(readStoredFontSize(null)).toBe(DEFAULT_FONT_SIZE);
-    expect(readStoredFontSize("")).toBe(DEFAULT_FONT_SIZE);
-    expect(readStoredFontSize("MD")).toBe(DEFAULT_FONT_SIZE);
     expect(readStoredFontSize("huge")).toBe(DEFAULT_FONT_SIZE);
   });
 
-  it("defines a pixel value for every size", () => {
-    // 新增档位时若忘了配像素值，这里会失败而不是渲染出 undefined。
-    for (const size of EDITOR_FONT_SIZES) {
-      expect(FONT_SIZE_PX[size]).toBeGreaterThan(0);
+  it("writes px to the CSS variable so the editor needs no rebuild", () => {
+    applyFontSize("xl");
+    expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe(
+      `${FONT_SIZE_PX.xl}px`,
+    );
+  });
+
+  it("has an increasing pixel value per step", () => {
+    const px = EDITOR_FONT_SIZES.map((s) => FONT_SIZE_PX[s]);
+    for (let i = 1; i < px.length; i += 1) {
+      expect(px[i]).toBeGreaterThan(px[i - 1]);
     }
   });
 
-  it("uses larger pixels for larger sizes", () => {
-    expect(FONT_SIZE_PX.sm).toBeLessThan(FONT_SIZE_PX.md);
-    expect(FONT_SIZE_PX.md).toBeLessThan(FONT_SIZE_PX.lg);
-  });
-
-  it("writes the size to a CSS variable so CodeMirror updates without rebuild", () => {
-    applyFontSize("lg");
-    expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("16px");
-
-    applyFontSize("sm");
-    expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("13px");
-  });
-
-  it("falls back to the default pixels when asked for a junk size at runtime", () => {
-    // 防御性：即便调用方传了非法值也不该写出 NaN。
+  it("never writes undefined for a junk value", () => {
     applyFontSize("nonsense" as never);
-    const value = document.documentElement.style.getPropertyValue("--editor-font-size");
-    expect(value).not.toContain("undefined");
-    expect(value).not.toContain("NaN");
+    const v = document.documentElement.style.getPropertyValue("--editor-font-size");
+    expect(v).not.toContain("undefined");
+    expect(v.length).toBeGreaterThan(0);
   });
 });
 
-describe("editor font family", () => {
+describe("composeFontStack (Chinese and Latin set separately)", () => {
+  it("puts the Latin face before the CJK face", () => {
+    // 顺序是关键：西文字体没有汉字字形，放前面时中文会自动落到后面的
+    // 中文字体上。反过来放，英文也会被中文字体自带的拉丁字形接管，
+    // 用户选的西文字体等于白设。
+    const stack = composeFontStack("times", "simsun");
+    expect(stack.indexOf("Times New Roman")).toBeLessThan(stack.indexOf("SimSun"));
+  });
+
+  it("includes both chosen faces", () => {
+    const stack = composeFontStack("georgia", "kaiti");
+    expect(stack).toContain("Georgia");
+    expect(stack).toContain("KaiTi");
+  });
+
+  it("ends with a generic family as last resort", () => {
+    for (const latin of EDITOR_LATIN_FONTS) {
+      for (const cjk of EDITOR_CJK_FONTS) {
+        expect(composeFontStack(latin, cjk)).toMatch(/(sans-serif|serif|monospace)\s*$/);
+      }
+    }
+  });
+
+  it("names an explicit CJK face in every combination (UI §34.6)", () => {
+    // 只写通用族时中文会落到系统默认字体，设置等于失效。
+    for (const latin of EDITOR_LATIN_FONTS) {
+      for (const cjk of EDITOR_CJK_FONTS) {
+        expect(composeFontStack(latin, cjk)).toMatch(
+          /YaHei|PingFang|Noto|Songti|SimSun|SimHei|KaiTi|FangSong|Han|Heiti/,
+        );
+      }
+    }
+  });
+
+  it("uses a serif generic when the CJK choice is a serif face", () => {
+    // 通用族跟着中文字体走，否则兜底时字形会突然从衬线跳到无衬线。
+    expect(composeFontStack("system", "simsun")).toMatch(/serif$/);
+    expect(composeFontStack("system", "kaiti")).toMatch(/serif$/);
+    expect(composeFontStack("system", "yahei")).toMatch(/sans-serif$/);
+  });
+
+  it("falls back to defaults for junk ids", () => {
+    const stack = composeFontStack("nope" as never, "nope" as never);
+    expect(stack).toBe(composeFontStack(DEFAULT_LATIN_FONT, DEFAULT_CJK_FONT));
+  });
+});
+
+describe("previewStack (font picker labels)", () => {
+  it("puts the CJK face first when previewing a CJK option", () => {
+    // 关键回归：标签文字是中文（「宋体」），若合成栈里西文排前面，
+    // 「系统默认」的 system-ui 自带汉字字形，会把六个中文选项全渲染成
+    // 同一种字体 —— 选择列表看起来毫无区别（实测缺陷）。
+    const stack = previewStack("system", "simsun", "cjk");
+    expect(stack.startsWith("SimSun")).toBe(true);
+  });
+
+  it("does not include the Latin face at all when previewing a CJK option", () => {
+    // CJK 预览刻意**不含**西文字形：标签是中文，混入西文只会干扰判断。
+    const stack = previewStack("times", "kaiti", "cjk");
+    expect(stack).not.toContain("Times New Roman");
+    expect(stack.startsWith("KaiTi")).toBe(true);
+  });
+
+  it("keeps the Latin face first when previewing a Latin option", () => {
+    const stack = previewStack("georgia", "simsun", "latin");
+    expect(stack.startsWith("Georgia")).toBe(true);
+  });
+
+  it("names an explicit CJK face in both modes", () => {
+    for (const cjk of EDITOR_CJK_FONTS) {
+      expect(previewStack("system", cjk, "cjk")).toMatch(
+        /YaHei|PingFang|Noto|Songti|SimSun|SimHei|KaiTi|FangSong|Heiti/,
+      );
+      expect(previewStack("system", cjk, "latin")).toMatch(
+        /YaHei|PingFang|Noto|Songti|SimSun|SimHei|KaiTi|FangSong|Heiti/,
+      );
+    }
+  });
+
+  it("keeps every CJK preview distinct", () => {
+    // 六个选项必须两两不同，否则列表无法区分。
+    const stacks = EDITOR_CJK_FONTS.map((c) => previewStack("system", c, "cjk"));
+    expect(new Set(stacks).size).toBe(EDITOR_CJK_FONTS.length);
+  });
+
+  it("ends with a generic family", () => {
+    expect(previewStack("system", "simsun", "cjk")).toMatch(/serif$/);
+    expect(previewStack("georgia", "simsun", "latin")).toMatch(/serif$/);
+  });
+});
+
+describe("font preferences", () => {
   beforeEach(() => {
     document.documentElement.style.removeProperty("--editor-font-family");
   });
 
-  it("defaults to the system font", () => {
-    expect(DEFAULT_FONT_FAMILY).toBe("system");
+  it("defaults both directions to system", () => {
+    expect(DEFAULT_LATIN_FONT).toBe("system");
+    expect(DEFAULT_CJK_FONT).toBe("system");
   });
 
-  it("reads a valid stored family", () => {
-    expect(readStoredFontFamily("system")).toBe("system");
-    expect(readStoredFontFamily("simsun")).toBe("simsun");
-    expect(readStoredFontFamily("mono")).toBe("mono");
+  it("accepts every font it advertises, per direction", () => {
+    for (const f of EDITOR_LATIN_FONTS) expect(readStoredLatinFont(f)).toBe(f);
+    for (const f of EDITOR_CJK_FONTS) expect(readStoredCjkFont(f)).toBe(f);
   });
 
-  it("accepts every family it advertises", () => {
-    // 选项列表与校验逻辑必须一致：漏一个会导致选中后立刻被重置。
-    for (const family of EDITOR_FONT_FAMILIES) {
-      expect(readStoredFontFamily(family)).toBe(family);
-    }
+  it("does not let one direction read the other's value", () => {
+    // 「宋体」不是西文项，读西文时必须回退 —— 否则两处会串。
+    expect(readStoredLatinFont("simsun")).toBe(DEFAULT_LATIN_FONT);
+    // 「Georgia」不是中文项。
+    expect(readStoredCjkFont("georgia")).toBe(DEFAULT_CJK_FONT);
   });
 
-  it("falls back for missing or junk values", () => {
-    expect(readStoredFontFamily(null)).toBe(DEFAULT_FONT_FAMILY);
-    expect(readStoredFontFamily("")).toBe(DEFAULT_FONT_FAMILY);
-    expect(readStoredFontFamily("Comic Sans")).toBe(DEFAULT_FONT_FAMILY);
+  it("falls back for null and junk", () => {
+    expect(readStoredLatinFont(null)).toBe(DEFAULT_LATIN_FONT);
+    expect(readStoredCjkFont(null)).toBe(DEFAULT_CJK_FONT);
+    expect(readStoredLatinFont("Comic Sans")).toBe(DEFAULT_LATIN_FONT);
+    expect(readStoredCjkFont("Comic Sans")).toBe(DEFAULT_CJK_FONT);
   });
 
-  it("migrates the old abstract categories instead of resetting them", () => {
-    // 旧版本存的是 sans/serif/mono。不做迁移的话老用户重启后
-    // 会发现字体被重置 —— 体感就是「我的设置丢了」。
-    expect(readStoredFontFamily("serif")).toBe("simsun");
-    expect(readStoredFontFamily("sans")).toBe("system");
-    // mono 在新旧模型里同名，保持原值。
-    expect(readStoredFontFamily("mono")).toBe("mono");
-  });
-
-  it("defines a font stack for every family", () => {
-    for (const family of EDITOR_FONT_FAMILIES) {
-      expect(FONT_FAMILY_STACK[family]?.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("names an explicit CJK font in every stack", () => {
-    // §34.6：只写通用族（serif/sans-serif）时中文会落到系统默认字体，
-    // 中文的衬线差别也不像西文那样直观 —— 设置等于失效。
-    for (const family of EDITOR_FONT_FAMILIES) {
-      const stack = FONT_FAMILY_STACK[family];
-      expect(stack).toMatch(/YaHei|PingFang|Noto|Songti|SimSun|SimHei|KaiTi|FangSong|Han|Heiti/);
-    }
-  });
-
-  it("keeps every stack distinct so switching actually changes rendering", () => {
-    const stacks = EDITOR_FONT_FAMILIES.map((f) => FONT_FAMILY_STACK[f]);
-    expect(new Set(stacks).size).toBe(EDITOR_FONT_FAMILIES.length);
-  });
-
-  it("ends each stack with a generic family as last resort", () => {
-    // 字体缺失时由 CSS 沿栈继续回退，这是浏览器原生行为，
-    // 比自己探测字体可用性可靠（实测 System.Drawing 会漏报 SimSun/SimHei）。
-    for (const family of EDITOR_FONT_FAMILIES) {
-      expect(FONT_FAMILY_STACK[family]).toMatch(/(sans-serif|serif|monospace)\s*$/);
-    }
-  });
-
-  it("puts the named CJK face first in the CJK-specific stacks", () => {
-    // 「宋体」这一项首先得真的是宋体，否则用户选了却看不出变化。
-    expect(FONT_FAMILY_STACK.simsun.startsWith("SimSun")).toBe(true);
-    expect(FONT_FAMILY_STACK.simhei.startsWith("SimHei")).toBe(true);
-    expect(FONT_FAMILY_STACK.kaiti.startsWith("KaiTi")).toBe(true);
-    expect(FONT_FAMILY_STACK.fangsong.startsWith("FangSong")).toBe(true);
-    // 微软雅黑的正式名是 "Microsoft YaHei UI"（Windows 上优先它）。
-    expect(FONT_FAMILY_STACK.yahei).toContain("Microsoft YaHei");
-  });
-
-  it("leads the Times New Roman stack with Times New Roman", () => {
-    expect(FONT_FAMILY_STACK.times.startsWith('"Times New Roman"')).toBe(true);
-  });
-
-  it("writes the stack to a CSS variable so the editor updates without rebuild", () => {
-    applyFontFamily("simsun");
+  it("writes the composed stack to one CSS variable", () => {
+    applyFontStack("times", "simsun");
     expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(
-      FONT_FAMILY_STACK.simsun,
-    );
-
-    applyFontFamily("mono");
-    expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(
-      FONT_FAMILY_STACK.mono,
+      composeFontStack("times", "simsun"),
     );
   });
 
-  it("never writes an undefined stack for a junk value", () => {
-    applyFontFamily("nonsense" as never);
-    const value = document.documentElement.style.getPropertyValue("--editor-font-family");
-    expect(value).not.toContain("undefined");
-    expect(value.length).toBeGreaterThan(0);
+  it("never writes undefined for junk", () => {
+    applyFontStack("nope" as never, "nope" as never);
+    const v = document.documentElement.style.getPropertyValue("--editor-font-family");
+    expect(v).not.toContain("undefined");
+    expect(v.length).toBeGreaterThan(0);
   });
 });
 
-describe("editor font size", () => {
-  it("accepts every size it advertises", () => {
-    for (const size of EDITOR_FONT_SIZES) {
-      expect(readStoredFontSize(size)).toBe(size);
+describe("legacy preset migration", () => {
+  it("splits the old single preset into (Latin, CJK)", () => {
+    // 老用户只存过一个值。不迁移的话升级后字体看起来被重置了。
+    expect(migrateLegacyFontPreset("serif")).toEqual(["times", "simsun"]);
+    expect(migrateLegacyFontPreset("sans")).toEqual(["system", "system"]);
+    expect(migrateLegacyFontPreset("mono")).toEqual(["mono", "system"]);
+  });
+
+  it("migrates the concrete presets from the previous round too", () => {
+    expect(migrateLegacyFontPreset("kaiti")).toEqual(["system", "kaiti"]);
+    expect(migrateLegacyFontPreset("yahei")).toEqual(["system", "yahei"]);
+    expect(migrateLegacyFontPreset("times")).toEqual(["times", "simsun"]);
+  });
+
+  it("produces values that the readers accept", () => {
+    // 迁移结果必须能通过校验，否则会被当成非法值再回退一次。
+    for (const preset of ["sans", "serif", "mono", "kaiti", "yahei", "simhei", "fangsong", "times", "system"]) {
+      const m = migrateLegacyFontPreset(preset);
+      expect(m).not.toBeNull();
+      expect(readStoredLatinFont(m![0])).toBe(m![0]);
+      expect(readStoredCjkFont(m![1])).toBe(m![1]);
     }
   });
 
-  it("has an increasing pixel value per step", () => {
-    // 档位必须单调递增，否则「特大」比「大」还小。
-    const px = EDITOR_FONT_SIZES.map((s) => FONT_SIZE_PX[s]);
-    for (let i = 1; i < px.length; i += 1) {
-      expect(px[i]).toBeGreaterThan(px[i - 1]);
+  it("returns null for null or unknown values", () => {
+    expect(migrateLegacyFontPreset(null)).toBeNull();
+    expect(migrateLegacyFontPreset("Comic Sans")).toBeNull();
+  });
+});
+
+describe("font id classification", () => {
+  it("classifies Latin and CJK ids correctly", () => {
+    expect(isLatinFontId("times")).toBe(true);
+    expect(isLatinFontId("mono")).toBe(true);
+    expect(isLatinFontId("simsun")).toBe(false);
+
+    expect(isCjkFontId("simsun")).toBe(true);
+    expect(isCjkFontId("kaiti")).toBe(true);
+    expect(isCjkFontId("georgia")).toBe(false);
+  });
+
+  it("treats 'system' as belonging to both directions", () => {
+    // 「系统默认」在两个方向上都合法，故两个判定都应为真；
+    // 派生类只需保证它总能被解析出栈即可。
+    expect(isLatinFontId("system")).toBe(true);
+    expect(isCjkFontId("system")).toBe(true);
+  });
+
+  it("covers every quick-bar id with a face definition", () => {
+    // 快速条用一维 id 列表；每个 id 必须能解析成某个具名字形，
+    // 否则点下去会得到空栈。
+    for (const id of EDITOR_FONT_FAMILY_IDS) {
+      const faces: string = isLatinFontId(id)
+        ? LATIN_FACES[id as keyof typeof LATIN_FACES]
+        : CJK_FACES[id as keyof typeof CJK_FACES];
+      expect(faces, `no face for id ${id}`).toBeTruthy();
+      expect(String(faces).length).toBeGreaterThan(0);
     }
   });
 });

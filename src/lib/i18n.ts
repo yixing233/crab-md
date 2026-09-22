@@ -81,6 +81,25 @@ export const zh = {
       math: "行内公式",
       mathBlock: "块级公式",
     },
+    /** 选区字体：给选中的文字单独指定字体（写入 .md 的内联 HTML）。 */
+    quickFont: "字体",
+    quickFontHint: "先选中文字，再点选字体。",
+    quickFontClear: "清除字体",
+    quickFontNoSelection: "请先选中文字",
+    /** 编辑器内快速选字体时展示的短名（完整名在设置页）。 */
+    quickFontOption: {
+      system: "默认",
+      yahei: "雅黑",
+      simhei: "黑体",
+      simsun: "宋体",
+      kaiti: "楷体",
+      fangsong: "仿宋",
+      times: "Times",
+      georgia: "Georgia",
+      arial: "Arial",
+      calibri: "Calibri",
+      mono: "等宽",
+    },
   },
 
   statusBar: {
@@ -150,20 +169,28 @@ export const zh = {
         lg: "大",
         xl: "特大",
       },
-      fontFamily: "字体",
-      fontFamilyHint: "选择正文使用的字体，编辑区与预览区同时生效。",
+      cjkFont: "中文字体",
+      cjkFontHint: "设置汉字使用的字体。",
+      latinFont: "西文字体",
+      latinFontHint: "设置英文、数字与符号使用的字体，与中文字体各自独立。",
       /**
        * 用**字体自己的名字**，而不是「衬线/无衬线」这类抽象类别 ——
        * 用户想的是「我要用宋体」，中文的衬线差别也不像西文那样直观。
        */
-      fontFamilyOption: {
+      cjkFontOption: {
         system: "系统默认",
         yahei: "微软雅黑",
         simhei: "黑体",
         simsun: "宋体",
         kaiti: "楷体",
         fangsong: "仿宋",
+      },
+      latinFontOption: {
+        system: "系统默认",
         times: "Times New Roman",
+        georgia: "Georgia",
+        arial: "Arial",
+        calibri: "Calibri",
         mono: "等宽",
       },
       previewLabel: "预览",

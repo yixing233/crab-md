@@ -19,12 +19,15 @@ import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { zh } from "../../lib/i18n";
 import { api } from "../../lib/api";
 import {
-  EDITOR_FONT_FAMILIES,
+  composeFontStack,
+  EDITOR_CJK_FONTS,
   EDITOR_FONT_SIZES,
-  FONT_FAMILY_STACK,
+  EDITOR_LATIN_FONTS,
   FONT_SIZE_PX,
-  type EditorFontFamily,
+  previewStack,
+  type EditorCjkFont,
   type EditorFontSize,
+  type EditorLatinFont,
 } from "../../lib/editorPrefs";
 import type { ViewMode } from "../../lib/viewMode";
 import type { ThemePreference } from "../../lib/theme";
@@ -83,9 +86,11 @@ export interface SettingsPageProps {
    */
   fontSize: EditorFontSize;
   onChangeFontSize: (size: EditorFontSize) => void;
-  /** 字体族同样由 App 持有（启动即生效，理由同字号）。 */
-  fontFamily: EditorFontFamily;
-  onChangeFontFamily: (family: EditorFontFamily) => void;
+  /** 字体（西文 / 中文各一项）同样由 App 持有（启动即生效，理由同字号）。 */
+  latinFont: EditorLatinFont;
+  onChangeLatinFont: (font: EditorLatinFont) => void;
+  cjkFont: EditorCjkFont;
+  onChangeCjkFont: (font: EditorCjkFont) => void;
   /**
    * 打开时要落到哪个分组（如工具栏的更新入口直达「关于」）。
    * null 表示保持上次/默认分组。
@@ -116,8 +121,10 @@ export function SettingsPage({
   onChangeViewMode,
   fontSize,
   onChangeFontSize,
-  fontFamily,
-  onChangeFontFamily,
+  latinFont,
+  onChangeLatinFont,
+  cjkFont,
+  onChangeCjkFont,
   initialSection = null,
 }: SettingsPageProps) {
   const settings = useWorkspaceStore((s) => s.settings);
@@ -259,13 +266,27 @@ export function SettingsPage({
     }),
   );
 
-  const fontFamilyOptions: readonly FontPickerOption<EditorFontFamily>[] =
-    EDITOR_FONT_FAMILIES.map((family) => ({
-      value: family,
-      label: zh.settings.editor.fontFamilyOption[family],
-      // 每个选项用该字体自身渲染，用户能直接看到效果（§34.6）。
-      stack: FONT_FAMILY_STACK[family],
+  /**
+   * 两个字体列表。**每个选项用它自己的字体渲染名字**（§34.6）。
+   *
+   * 注意预览栈与最终生效栈不同：标签文字是中文（「宋体」「黑体」），
+   * 若用合成栈，最前面的西文（尤其 `system-ui`，自带汉字字形）会把中文
+   * 吃掉，六个选项看起来一模一样。故预览时让该选项自己的字形排第一。
+   */
+  const latinFontOptions: readonly FontPickerOption<EditorLatinFont>[] =
+    EDITOR_LATIN_FONTS.map((font) => ({
+      value: font,
+      label: zh.settings.editor.latinFontOption[font],
+      stack: previewStack(font, cjkFont, "latin"),
     }));
+
+  const cjkFontOptions: readonly FontPickerOption<EditorCjkFont>[] = EDITOR_CJK_FONTS.map(
+    (font) => ({
+      value: font,
+      label: zh.settings.editor.cjkFontOption[font],
+      stack: previewStack(latinFont, font, "cjk"),
+    }),
+  );
 
   const viewModeOptions: readonly SegmentedOption<ViewMode>[] = (
     ["edit", "split", "preview"] as const
@@ -362,25 +383,41 @@ export function SettingsPage({
                   <div className="settings-field">
                     <span className="settings-field__label">
                       <Type size={14} aria-hidden />
-                      {zh.settings.editor.fontFamily}
+                      {zh.settings.editor.cjkFont}
                     </span>
                     <p className="settings-field__description">
-                      {zh.settings.editor.fontFamilyHint}
+                      {zh.settings.editor.cjkFontHint}
                     </p>
                     <FontPicker
-                      value={fontFamily}
-                      options={fontFamilyOptions}
-                      onChange={onChangeFontFamily}
-                      ariaLabel={zh.settings.editor.fontFamily}
+                      value={cjkFont}
+                      options={cjkFontOptions}
+                      onChange={onChangeCjkFont}
+                      ariaLabel={zh.settings.editor.cjkFont}
                     />
-                    {/* 用真实的字号 + 字体族渲染示例：两项目前互相影响，
+                  </div>
+
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Type size={14} aria-hidden />
+                      {zh.settings.editor.latinFont}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.editor.latinFontHint}
+                    </p>
+                    <FontPicker
+                      value={latinFont}
+                      options={latinFontOptions}
+                      onChange={onChangeLatinFont}
+                      ariaLabel={zh.settings.editor.latinFont}
+                    />
+                    {/* 用真实的字号 + 两个字体渲染示例：三项目前互相影响，
                         分开看不出来它们合起来是什么效果。 */}
                     <p
                       className="settings-sample"
                       data-testid="font-sample"
                       style={{
                         fontSize: FONT_SIZE_PX[fontSize],
-                        fontFamily: FONT_FAMILY_STACK[fontFamily],
+                        fontFamily: composeFontStack(latinFont, cjkFont),
                       }}
                     >
                       示例文本 Sample 123

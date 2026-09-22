@@ -1141,6 +1141,23 @@ Rules:
   even though both are installed.
 - A stored preference from an older scheme MUST be migrated, not silently
   reset. A reset reads to the user as "my setting was lost".
+- Chinese and Latin fonts MUST be settable **independently** (Word does the
+  same). Implement it with one CSS stack, Latin face first: Latin faces carry
+  no CJK glyphs, so Chinese falls through to the CJK face automatically.
+  Reversing the order lets a CJK face's own Latin glyphs win, silently
+  discarding the user's Latin choice.
+- A font-picker label MUST be rendered with the stack that shows **that
+  option's own** face, not the composed stack. The labels are Chinese, and a
+  composed stack may lead with a Latin face that itself carries CJK glyphs
+  (`system-ui`), which makes every option look identical — the picker's whole
+  purpose. Measured: all six CJK options rendered as `system-ui` before this
+  was split out.
+- Assigning a font to a selection MUST be visible **while editing**, not only
+  in the preview. A stored `<span style="font-family:…">` has to be decorated
+  in the editor, otherwise the setting appears not to work.
+- Per-selection font MUST be per selection, never a silent whole-document
+  change, and an empty selection MUST be a no-op rather than inserting an
+  empty span.
 - The caret MUST be driven by a theme token (`--caret`). CodeMirror's base
   theme hard-codes the caret to black (`&light .cm-content { caretColor: black }`,
   `.cm-cursor { border-left: 1.2px solid black }`) and only overrides it under

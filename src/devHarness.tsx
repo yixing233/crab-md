@@ -22,14 +22,17 @@ import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { useUpdateStore } from "./stores/useUpdateStore";
 import { applyTheme, resolveTheme, systemPrefersDark, type ThemePreference } from "./lib/theme";
 import {
-  applyFontFamily,
   applyFontSize,
-  FONT_FAMILY_KEY,
+  applyFontStack,
+  FONT_CJK_KEY,
+  FONT_LATIN_KEY,
   FONT_SIZE_KEY,
-  readStoredFontFamily,
+  readStoredCjkFont,
   readStoredFontSize,
-  type EditorFontFamily,
+  readStoredLatinFont,
+  type EditorCjkFont,
   type EditorFontSize,
+  type EditorLatinFont,
 } from "./lib/editorPrefs";
 import "./styles/globals.css";
 
@@ -59,8 +62,11 @@ function Harness() {
   const [fontSize, setFontSize] = useState<EditorFontSize>(() =>
     readStoredFontSize(localStorage.getItem(FONT_SIZE_KEY)),
   );
-  const [fontFamily, setFontFamily] = useState<EditorFontFamily>(() =>
-    readStoredFontFamily(localStorage.getItem(FONT_FAMILY_KEY)),
+  const [latinFont, setLatinFont] = useState<EditorLatinFont>(() =>
+    readStoredLatinFont(localStorage.getItem(FONT_LATIN_KEY)),
+  );
+  const [cjkFont, setCjkFont] = useState<EditorCjkFont>(() =>
+    readStoredCjkFont(localStorage.getItem(FONT_CJK_KEY)),
   );
 
   // 复刻 App.tsx 的接线，才能在 harness 里看到暗色对比度与字体效果。
@@ -73,8 +79,8 @@ function Harness() {
   }, [fontSize]);
 
   useEffect(() => {
-    applyFontFamily(fontFamily);
-  }, [fontFamily]);
+    applyFontStack(latinFont, cjkFont);
+  }, [latinFont, cjkFont]);
 
   return (
     <>
@@ -125,14 +131,19 @@ function Harness() {
         <Breadcrumb virtualPath="/笔记/" title="示例文档.md" />
       </DocumentBar>
 
-      {/* 真实 CodeMirror 编辑器：用来核对光标颜色是否跟随主题（§34.6）。
-          CodeMirror 基础主题把光标写死成黑色，必须验证覆盖真的生效。 */}
-      <div style={{ height: 160, border: "1px solid #888", margin: 16 }}>
+      {/* 真实 CodeMirror 编辑器：用来核对光标颜色与选区字体的实际渲染。
+          两者都只靠单测证明不了 —— 光标颜色由 CodeMirror 基础主题写死，
+          选区字体靠 ViewPlugin 注入装饰，必须看浏览器的计算样式。 */}
+      <div style={{ height: 200, border: "1px solid #888", margin: 16 }}>
         <MarkdownEditor
           documentId="harness"
-          value={"# 光标验证\n\n把光标放到这行文字上。"}
+          value={'# 光标验证\n\n普通文字\n\n<span style="font-family:KaiTi, serif">这段应是楷体</span>\n\n结束'}
           onChange={() => {}}
           showToolbar={false}
+          onQuickFont={() => {}}
+          onClearFont={() => {}}
+          defaultLatinFont={latinFont}
+          defaultCjkFont={cjkFont}
         />
       </div>
 
@@ -164,8 +175,10 @@ function Harness() {
         onChangeViewMode={setViewMode}
         fontSize={fontSize}
         onChangeFontSize={setFontSize}
-        fontFamily={fontFamily}
-        onChangeFontFamily={setFontFamily}
+        latinFont={latinFont}
+        onChangeLatinFont={setLatinFont}
+        cjkFont={cjkFont}
+        onChangeCjkFont={setCjkFont}
       />
     </>
   );

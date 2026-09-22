@@ -30,14 +30,19 @@ import {
   type ThemePreference,
 } from "./lib/theme";
 import {
-  applyFontFamily,
   applyFontSize,
-  FONT_FAMILY_KEY,
+  applyFontStack,
+  FONT_CJK_KEY,
+  FONT_LATIN_KEY,
   FONT_SIZE_KEY,
-  readStoredFontFamily,
+  LEGACY_FONT_FAMILY_KEY,
+  migrateLegacyFontPreset,
+  readStoredCjkFont,
   readStoredFontSize,
-  type EditorFontFamily,
+  readStoredLatinFont,
+  type EditorCjkFont,
   type EditorFontSize,
+  type EditorLatinFont,
 } from "./lib/editorPrefs";
 import {
   nextViewMode,
@@ -117,9 +122,42 @@ export default function App() {
   const [fontSize, setFontSize] = useState<EditorFontSize>(() =>
     readStoredFontSize(typeof localStorage === "undefined" ? null : localStorage.getItem(FONT_SIZE_KEY)),
   );
-  const [fontFamily, setFontFamily] = useState<EditorFontFamily>(() =>
-    readStoredFontFamily(typeof localStorage === "undefined" ? null : localStorage.getItem(FONT_FAMILY_KEY)),
+
+  /**
+   * 字体分西文与中文两项（Word 也是分开的）。
+   *
+   * 初始化时处理**旧版本的单一预设**：老用户只存过 `crab-md.editor-font-family`，
+   * 直接读新 key 会得到默认值，体感是「我的设置丢了」。故先在旧 key 上做一次
+   * 迁移，把预设拆成（西文, 中文）两个值。
+   */
+  const [latinFont, setLatinFont] = useState<EditorLatinFont>(() => {
+    if (typeof localStorage === "undefined") return readStoredLatinFont(null);
+    const stored = localStorage.getItem(FONT_LATIN_KEY);
+    if (stored !== null) return readStoredLatinFont(stored);
+    const legacy = migrateLegacyFontPreset(localStorage.getItem(LEGACY_FONT_FAMILY_KEY));
+    return legacy ? legacy[0] : readStoredLatinFont(null);
+  });
+  const [cjkFont, setCjkFont] = useState<EditorCjkFont>(() => {
+    if (typeof localStorage === "undefined") return readStoredCjkFont(null);
+    const stored = localStorage.getItem(FONT_CJK_KEY);
+    if (stored !== null) return readStoredCjkFont(stored);
+    const legacy = migrateLegacyFontPreset(localStorage.getItem(LEGACY_FONT_FAMILY_KEY));
+    return legacy ? legacy[1] : readStoredCjkFont(null);
+  });
+
+  /**
+   * 选区字体请求。用 nonce 让「同一字体连点两次」也能重新触发 ——
+   * 与 jumpTarget / findNonce 同一套路（UI §34.6）。
+   */
+  const [fontSpanRequest, setFontSpanRequest] = useState<{ stack: string; nonce: number } | null>(
+    null,
   );
+  const [clearFontNonce, setClearFontNonce] = useState(0);
+
+  /** 编辑器内快速改字体：把选中的文字设成指定字体栈。 */
+  const handleQuickFont = useCallback((stack: string) => {
+    setFontSpanRequest({ stack, nonce: Date.now() });
+  }, []);
 
   // 字号：写 CSS 变量（CodeMirror theme 读它），并持久化。
   // 用变量而非重建编辑器：重建会丢光标位置与撤销历史。
@@ -130,13 +168,15 @@ export default function App() {
     }
   }, [fontSize]);
 
-  // 字体族同上，同样走 CSS 变量。
+  // 两个字体合成一条 CSS 栈（西文在前、中文在后，靠逐字符回退分流），
+  // 同时持久化。改动只写变量，不重建编辑器。
   useEffect(() => {
-    applyFontFamily(fontFamily);
+    applyFontStack(latinFont, cjkFont);
     if (typeof localStorage !== "undefined") {
-      localStorage.setItem(FONT_FAMILY_KEY, fontFamily);
+      localStorage.setItem(FONT_LATIN_KEY, latinFont);
+      localStorage.setItem(FONT_CJK_KEY, cjkFont);
     }
-  }, [fontFamily]);
+  }, [latinFont, cjkFont]);
 
   // 主题：写入 <html data-theme>，CSS 变量随之切换（UI_DESIGN_SYSTEM.md §4.1）。
   // 偏好为 system 时还要监听系统变化，用户切换系统主题应当即时跟随。
@@ -431,6 +471,12 @@ export default function App() {
                       onCursor={(line, column) => setCursor({ line, column })}
                       jumpTarget={jumpTarget}
                       findNonce={findNonce}
+                      fontSpanRequest={fontSpanRequest}
+                      clearFontNonce={clearFontNonce}
+                      onQuickFont={handleQuickFont}
+                      onClearFont={() => setClearFontNonce((n) => n + 1)}
+                      defaultLatinFont={latinFont}
+                      defaultCjkFont={cjkFont}
                     />
                   </div>
                 )}
@@ -529,8 +575,10 @@ export default function App() {
         onChangeViewMode={setViewMode}
         fontSize={fontSize}
         onChangeFontSize={setFontSize}
-        fontFamily={fontFamily}
-        onChangeFontFamily={setFontFamily}
+        latinFont={latinFont}
+        onChangeLatinFont={setLatinFont}
+        cjkFont={cjkFont}
+        onChangeCjkFont={setCjkFont}
         initialSection={settingsSection}
       />
     </div>
