@@ -17,20 +17,28 @@ const md = new MarkdownIt({
   typographer: false,
 });
 
-// 数学公式（$...$ 与 $$...$$）。
-//
-// throwOnError: false —— 公式写错时渲染成红色错误文本而不是抛异常。
-// 渲染一份笔记不该因为一个手误的公式而整页失败。
-//
-// 解析插件形状：该包是 CommonJS（module.exports = { default: fn }）。
-// vitest 下拿到的是函数本身，浏览器里经 Vite 的 CJS 互操作拿到的是
-// { default: fn } —— 直接 md.use(import 值) 在浏览器会抛
-// "plugin.apply is not a function"（单测全绿但实际打不开预览）。
-// 两种形状都兼容，避免这类只在真实环境暴露的缺陷。
-const katexPlugin =
-  (katex as unknown as { default?: typeof katex }).default ?? katex;
+/**
+ * 取出 KaTeX 插件函数，兼容两种模块形状。
+ *
+ * 该包是 CommonJS（`module.exports = { default: fn }`）：
+ * - vitest 下 import 直接得到函数；
+ * - 浏览器里经 Vite 的 CJS 互操作得到 `{ default: fn }`。
+ *
+ * 若不处理，浏览器会抛 `plugin.apply is not a function` ——
+ * 而单元测试全绿，因为测试环境恰好是前一种形状。
+ * 这个只在真实运行环境暴露的差异，是本函数存在的唯一理由。
+ */
+export function resolveKatexPlugin(mod: unknown): unknown {
+  if (typeof mod === "function") return mod;
+  if (mod && typeof (mod as { default?: unknown }).default === "function") {
+    return (mod as { default: unknown }).default;
+  }
+  return mod;
+}
 
-md.use(katexPlugin, {
+md.use(resolveKatexPlugin(katex) as typeof katex, {
+  // 公式写错时渲染成错误文本而非抛异常：一个手误的公式
+  // 不该让整页笔记渲染失败。
   throwOnError: false,
   // 输出同时包含 MathML（无障碍朗读）与 HTML（视觉排版）。
   output: "htmlAndMathml",

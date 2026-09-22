@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown, resolveKatexPlugin } from "./markdown";
 
 describe("renderMarkdown", () => {
   it("renders basic markdown structure", () => {
@@ -142,6 +142,37 @@ describe("renderMarkdown math (KaTeX)", () => {
     const html = renderMarkdown("# 标题\n\n$\\frac{1}{$\n\n正文仍在");
     expect(html).toContain("标题");
     expect(html).toContain("正文仍在");
+  });
+});
+
+/**
+ * KaTeX 插件是 CommonJS 包，在 vitest 与浏览器里拿到的形状不同。
+ *
+ * 真实事故：`md.use(import 值)` 在 vitest 下正常（直接是函数），
+ * 在浏览器里抛 `plugin.apply is not a function`，预览整块空白 ——
+ * 而全部单测依然全绿。这组用例把那次的形状差异固定下来。
+ */
+describe("resolveKatexPlugin", () => {
+  it("accepts the function shape used by vitest", () => {
+    const fn = () => {};
+    expect(resolveKatexPlugin(fn)).toBe(fn);
+  });
+
+  it("unwraps the { default } shape produced in the browser bundle", () => {
+    // 这才是真实浏览器里到达的形状；不处理就会 plugin.apply 报错。
+    const fn = () => {};
+    expect(resolveKatexPlugin({ default: fn })).toBe(fn);
+  });
+
+  it("passes through anything that is neither, rather than throwing", () => {
+    // 形状异常时不应在模块加载期就崩掉整个应用。
+    expect(resolveKatexPlugin(undefined)).toBeUndefined();
+    expect(resolveKatexPlugin(null)).toBeNull();
+  });
+
+  it("does not pick up a non-function default", () => {
+    const mod = { default: "not a function" };
+    expect(resolveKatexPlugin(mod)).toBe(mod);
   });
 });
 
