@@ -8,10 +8,6 @@ function props(over: Partial<Parameters<typeof AppToolbar>[0]> = {}) {
     onNewDocument: vi.fn(),
     onToggleSidebar: vi.fn(),
     sidebarVisible: true,
-    outlineVisible: false,
-    onToggleOutline: vi.fn(),
-    viewMode: "split" as const,
-    onChangeViewMode: vi.fn(),
     onOpenSettings: vi.fn(),
     pendingVersion: null,
     onOpenUpdate: vi.fn(),
@@ -53,5 +49,14 @@ describe("AppToolbar update entry", () => {
     // 两个入口语义不同：一个进设置，一个直接去安装。
     expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /有新版本/ })).toBeInTheDocument();
+  });
+
+  it("no longer hosts the document view controls", () => {
+    render(<AppToolbar {...props()} />);
+
+    // 视图模式与大纲属于「当前文档怎么看」，已移到文档栏。
+    // 留在这里会让工具栏混入文档级控制，层次不清（§2.1）。
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "大纲" })).not.toBeInTheDocument();
   });
 });

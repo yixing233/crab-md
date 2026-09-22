@@ -1,22 +1,14 @@
-import { Download, ListTree, Moon, PanelLeft, Plus, Search, Settings, Sun, SunMoon } from "lucide-react";
+import { Download, Moon, PanelLeft, Plus, Search, Settings, Sun, SunMoon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
 import { Tooltip } from "../ui/Tooltip";
-import { ViewModeSwitch } from "../ui/ViewModeSwitch";
 import { zh } from "../../lib/i18n";
-import type { ViewMode } from "../../lib/viewMode";
 import "./workspace.css";
 
 export interface AppToolbarProps {
   onNewDocument: () => void;
   onToggleSidebar: () => void;
   sidebarVisible: boolean;
-  /** 是否显示文档大纲（UI §23）。 */
-  outlineVisible: boolean;
-  onToggleOutline: () => void;
-  /** 视图模式：仅编辑 / 分栏 / 仅阅读（UI §11）。 */
-  viewMode: ViewMode;
-  onChangeViewMode: (mode: ViewMode) => void;
   /** 打开设置页（UI §34，快捷键 Ctrl+,）。 */
   onOpenSettings: () => void;
   /**
@@ -33,15 +25,16 @@ export interface AppToolbarProps {
 
 const THEME_ICON = { light: Sun, dark: Moon, system: SunMoon } as const;
 
-/** 顶部工具栏。视觉安静，不与编辑器争主体（UI §2.1）。 */
+/**
+ * 顶部工具栏。视觉安静，不与编辑器争主体（UI §2.1）。
+ *
+ * 视图模式与大纲切换**不在这里** —— 它们属于「当前这篇文档怎么看」，
+ * 已移到文档栏（文件名右侧）。工具栏只保留全局工具。
+ */
 export function AppToolbar({
   onNewDocument,
   onToggleSidebar,
   sidebarVisible,
-  outlineVisible,
-  onToggleOutline,
-  viewMode,
-  onChangeViewMode,
   onOpenSettings,
   pendingVersion,
   onOpenUpdate,
@@ -69,22 +62,6 @@ export function AppToolbar({
       <span className="app-toolbar__title">{zh.app.name}</span>
 
       <span className="app-toolbar__spacer" />
-
-      {/* 视图模式：仅编辑 / 分栏 / 仅阅读。放最右侧常用区之前。 */}
-      <ViewModeSwitch value={viewMode} onChange={onChangeViewMode} />
-
-      <Tooltip content={`${zh.toolbar.toggleOutline}　Ctrl+Shift+O`}>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          onClick={onToggleOutline}
-          aria-pressed={outlineVisible}
-          aria-label={zh.toolbar.toggleOutline}
-        >
-          <ListTree size={16} aria-hidden />
-        </Button>
-      </Tooltip>
 
       <Tooltip content={`${themeLabel}　Ctrl+Shift+L`}>
         <Button

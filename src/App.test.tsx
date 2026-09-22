@@ -442,11 +442,21 @@ describe("App panes and shortcuts", () => {
     );
   });
 
-  it("toggles the outline pane from the toolbar", async () => {
-    render(<App />);
-    await screen.findByRole("banner");
+  it("toggles the outline pane from the document bar", async () => {
+    const doc = {
+      id: "d1", title: "甲", virtualPath: "/", revision: 1,
+      contentHash: "sha256:x", createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z", size: 0,
+    };
+    const { api } = await import("./lib/api");
+    listDocuments.mockResolvedValue([doc]);
+    (api.readDocument as ReturnType<typeof vi.fn>).mockResolvedValue({ ...doc, content: "# 标题" });
 
-    const toggle = screen.getByRole("button", { name: "大纲" });
+    render(<App />);
+    // 大纲开关属于「当前文档怎么看」，只在打开文档后出现于文档栏。
+    await userEvent.click(await screen.findByText("甲"));
+
+    const toggle = await screen.findByRole("button", { name: "大纲" });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
 
     await userEvent.click(toggle);
@@ -454,9 +464,18 @@ describe("App panes and shortcuts", () => {
   });
 
   it("toggles the outline with Ctrl+Shift+O", async () => {
+    const doc = {
+      id: "d1", title: "甲", virtualPath: "/", revision: 1,
+      contentHash: "sha256:x", createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z", size: 0,
+    };
+    const { api } = await import("./lib/api");
+    listDocuments.mockResolvedValue([doc]);
+    (api.readDocument as ReturnType<typeof vi.fn>).mockResolvedValue({ ...doc, content: "# 标题" });
+
     render(<App />);
-    await screen.findByRole("banner");
-    const toggle = screen.getByRole("button", { name: "大纲" });
+    await userEvent.click(await screen.findByText("甲"));
+    const toggle = await screen.findByRole("button", { name: "大纲" });
 
     await userEvent.keyboard("{Control>}{Shift>}o{/Shift}{/Control}");
     expect(toggle).toHaveAttribute("aria-pressed", "true");

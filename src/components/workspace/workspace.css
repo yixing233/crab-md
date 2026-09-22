@@ -90,8 +90,35 @@
    Breadcrumb（UI §17）
    --------------------------------------------------------------------------- */
 
-/* 面包屑是编辑区顶部的一条「带」：用壳色与纸面区分，
-   下沿结构性边框，避免与正文粘连。 */
+/* ---------------------------------------------------------------------------
+   文档栏：编辑区顶部一行，左侧面包屑 + 右侧文档视图控制。
+   --------------------------------------------------------------------------- */
+
+.document-bar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  /* 与面包屑同一层「壳」：这条带子整体是一个容器。 */
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.document-bar__spacer { flex: 1; }
+
+/* 面包屑在文档栏内部：容器已提供底色与下边框，
+   自身不再重复（否则会出现双层背景与双线）。 */
+.document-bar .breadcrumb {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border-bottom: none;
+  flex-wrap: nowrap;
+}
+
+/* 面包屑是编辑区顶部的一条「带」。
+   独立使用时（无文档栏）自带底色与下边框。 */
 .breadcrumb {
   display: flex;
   flex-wrap: wrap;

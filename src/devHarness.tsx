@@ -12,6 +12,8 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { AppToolbar } from "./components/workspace/AppToolbar";
+import { Breadcrumb } from "./components/workspace/Breadcrumb";
+import { DocumentBar } from "./components/workspace/DocumentBar";
 import { UpdateBar } from "./components/workspace/UpdateBar";
 import { Button } from "./components/ui/Button";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
@@ -106,16 +108,20 @@ function Harness() {
         onNewDocument={() => {}}
         onToggleSidebar={() => {}}
         sidebarVisible
-        outlineVisible={false}
-        onToggleOutline={() => {}}
-        viewMode={viewMode}
-        onChangeViewMode={setViewMode}
         onOpenSettings={() => {}}
         pendingVersion="1.2.3"
         onOpenUpdate={() => {}}
         themePreference={theme}
         onCycleTheme={() => {}}
       />
+      <DocumentBar
+        viewMode={viewMode}
+        onChangeViewMode={setViewMode}
+        outlineVisible={false}
+        onToggleOutline={() => {}}
+      >
+        <Breadcrumb virtualPath="/笔记/" title="示例文档.md" />
+      </DocumentBar>
 
       <SettingsPage
         open

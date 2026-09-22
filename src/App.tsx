@@ -7,6 +7,7 @@ import { AppToolbar } from "./components/workspace/AppToolbar";
 import { Sidebar } from "./components/workspace/Sidebar";
 import { UpdateBar } from "./components/workspace/UpdateBar";
 import { Breadcrumb } from "./components/workspace/Breadcrumb";
+import { DocumentBar } from "./components/workspace/DocumentBar";
 import { Splitter } from "./components/workspace/Splitter";
 import { SettingsPage, type SettingsSection } from "./components/settings/SettingsPage";
 import { EmptyState } from "./components/ui/EmptyState";
@@ -343,10 +344,6 @@ export default function App() {
         onNewDocument={handleNewDocument}
         onToggleSidebar={() => setSidebarVisible((v) => !v)}
         sidebarVisible={sidebarVisible}
-        outlineVisible={outlineVisible}
-        onToggleOutline={() => setOutlineVisible((v) => !v)}
-        viewMode={viewMode}
-        onChangeViewMode={setViewMode}
         onOpenSettings={() => setSettingsOpen(true)}
         pendingVersion={pendingUpdateVersion}
         onOpenUpdate={() => {
@@ -398,11 +395,18 @@ export default function App() {
 
           {activeId ? (
             <>
-              {/* 面包屑：让用户知道当前文档在哪个目录下（UI §17）。 */}
-              <Breadcrumb
-                virtualPath={activeDoc?.virtualPath ?? "/"}
-                title={activeTitle}
-              />
+              {/* 文档栏：左侧文件名（面包屑），右侧这篇文档的视图控制。 */}
+              <DocumentBar
+                viewMode={viewMode}
+                onChangeViewMode={setViewMode}
+                outlineVisible={outlineVisible}
+                onToggleOutline={() => setOutlineVisible((v) => !v)}
+              >
+                <Breadcrumb
+                  virtualPath={activeDoc?.virtualPath ?? "/"}
+                  title={activeTitle}
+                />
+              </DocumentBar>
               <div
                 className="app-panes"
                 data-view={viewMode}
