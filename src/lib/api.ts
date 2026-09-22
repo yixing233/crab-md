@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppErrorShape,
+  AppSettingsView,
   DocumentPayload,
   DocumentSummary,
   SearchHit,
@@ -54,4 +55,18 @@ export const api = {
 
   searchDocuments: (query: string, limit = 50) =>
     call<SearchHit[]>("search_documents", { query, limit }),
+
+  // ---- 设置（UI_DESIGN_SYSTEM.md §34）----
+
+  getSettings: () => call<AppSettingsView>("get_settings"),
+
+  /** 指定新的数据目录并立即切换。 */
+  setWorkspaceRoot: (path: string) =>
+    call<AppSettingsView>("set_workspace_root", { path }),
+
+  /** 回到平台默认数据目录。 */
+  resetWorkspaceRoot: () => call<AppSettingsView>("reset_workspace_root"),
+
+  /** 平台默认数据目录，用于「恢复默认」时展示目标位置。 */
+  defaultWorkspaceRoot: () => call<string>("default_workspace_root"),
 };

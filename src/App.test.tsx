@@ -12,6 +12,17 @@ vi.mock("./lib/api", () => ({
     renameDocument: vi.fn(),
     deleteDocument: vi.fn(),
     duplicateDocument: vi.fn(),
+    // 设置相关：SettingsPage 会用到，工厂必须一并提供（整体替换模块）。
+    getSettings: vi.fn().mockResolvedValue({
+      workspaceRoot: null,
+      effectiveWorkspaceRoot: "E:/default/workspace",
+      workspaceRootIsFromEnv: false,
+      configPath: "E:/config/settings.json",
+      version: 1,
+    }),
+    setWorkspaceRoot: vi.fn(),
+    resetWorkspaceRoot: vi.fn(),
+    defaultWorkspaceRoot: vi.fn().mockResolvedValue("E:/default/workspace"),
   },
   toAppError: (raw: unknown) =>
     raw && typeof raw === "object" && "code" in raw
@@ -245,6 +256,37 @@ describe("App panes and shortcuts", () => {
     // 仅编辑 -> 分栏（回到起点）
     await userEvent.keyboard("{Control>}\\{/Control}");
     expect(panes()).toHaveAttribute("data-view", "split");
+  });
+
+  it("opens settings from the toolbar button", async () => {
+    render(<App />);
+    await screen.findByRole("banner");
+
+    await userEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    expect(await screen.findByTestId("effective-workspace-root")).toBeInTheDocument();
+  });
+
+  it("opens settings with Ctrl+comma (UI §29)", async () => {
+    render(<App />);
+    await screen.findByRole("banner");
+
+    await userEvent.keyboard("{Control>},{/Control}");
+
+    expect(await screen.findByTestId("effective-workspace-root")).toBeInTheDocument();
+  });
+
+  it("closes settings again", async () => {
+    render(<App />);
+    await screen.findByRole("banner");
+    await userEvent.click(screen.getByRole("button", { name: "设置" }));
+    await screen.findByTestId("effective-workspace-root");
+
+    await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("effective-workspace-root")).not.toBeInTheDocument(),
+    );
   });
 
   it("toggles the outline pane from the toolbar", async () => {

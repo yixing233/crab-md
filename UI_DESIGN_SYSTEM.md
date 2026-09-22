@@ -992,6 +992,21 @@ About
 
 Do not expose internal database or API configuration in normal settings unless there is a real user need.
 
+### 34.1 Data directory
+
+The local data directory MUST be viewable and changeable from settings.
+
+Rules:
+
+- Show the **currently effective** directory, not merely the configured value.
+- Changing it MUST be confirmed first, and the confirmation MUST state that
+  content in the previous directory is **not deleted** and can be switched back to.
+- If the directory is overridden by an environment variable, settings MUST say so
+  and MUST NOT pretend the change took effect.
+- A failed switch MUST leave the current directory fully usable.
+- The settings file MUST NOT live inside the data directory it configures;
+  it belongs in the platform application-config directory.
+
 ---
 
 ## 35. Login UI

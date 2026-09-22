@@ -1,4 +1,4 @@
-import { ListTree, Moon, PanelLeft, Plus, Search, Sun, SunMoon } from "lucide-react";
+import { ListTree, Moon, PanelLeft, Plus, Search, Settings, Sun, SunMoon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Tooltip } from "../ui/Tooltip";
 import { ViewModeSwitch } from "../ui/ViewModeSwitch";
@@ -16,6 +16,8 @@ export interface AppToolbarProps {
   /** 视图模式：仅编辑 / 分栏 / 仅阅读（UI §11）。 */
   viewMode: ViewMode;
   onChangeViewMode: (mode: ViewMode) => void;
+  /** 打开设置页（UI §34，快捷键 Ctrl+,）。 */
+  onOpenSettings: () => void;
   /** 当前主题偏好（UI_DESIGN_SYSTEM.md §4.1 要求 Light/Dark/Follow system）。 */
   themePreference: "light" | "dark" | "system";
   onCycleTheme: () => void;
@@ -32,6 +34,7 @@ export function AppToolbar({
   onToggleOutline,
   viewMode,
   onChangeViewMode,
+  onOpenSettings,
   themePreference,
   onCycleTheme,
 }: AppToolbarProps) {
@@ -94,6 +97,18 @@ export function AppToolbar({
           disabled
         >
           <Search size={16} aria-hidden />
+        </Button>
+      </Tooltip>
+
+      <Tooltip content={`${zh.toolbar.settings}　Ctrl+,`}>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          onClick={onOpenSettings}
+          aria-label={zh.toolbar.settings}
+        >
+          <Settings size={16} aria-hidden />
         </Button>
       </Tooltip>
 

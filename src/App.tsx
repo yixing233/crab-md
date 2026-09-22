@@ -7,6 +7,7 @@ import { AppToolbar } from "./components/workspace/AppToolbar";
 import { Sidebar } from "./components/workspace/Sidebar";
 import { Breadcrumb } from "./components/workspace/Breadcrumb";
 import { Splitter } from "./components/workspace/Splitter";
+import { SettingsPage } from "./components/settings/SettingsPage";
 import { EmptyState } from "./components/ui/EmptyState";
 import { Button } from "./components/ui/Button";
 import { Dialog } from "./components/ui/Dialog";
@@ -79,6 +80,8 @@ export default function App() {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   // Ctrl+F 的触发计数；递增即请求编辑器打开查找面板。
   const [findNonce, setFindNonce] = useState(0);
+  // 设置页开关（UI §34）。
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // 待删除的文档；非空时显示确认对话框（UI §14.4 要求破坏性操作先确认）。
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
@@ -220,6 +223,10 @@ export default function App() {
         // Ctrl+F：文档内查找。编辑器未聚焦时 searchKeymap 不生效，故在此兜住。
         e.preventDefault();
         setFindNonce((n) => n + 1);
+      } else if (e.key === ",") {
+        // Ctrl+, 打开设置（UI §29 约定的平台习惯）。
+        e.preventDefault();
+        setSettingsOpen(true);
       } else if (e.key === "\\") {
         // Ctrl+\：在三档视图之间循环（规范 §29 未占用该组合）。
         e.preventDefault();
@@ -249,6 +256,7 @@ export default function App() {
         onToggleOutline={() => setOutlineVisible((v) => !v)}
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
+        onOpenSettings={() => setSettingsOpen(true)}
         themePreference={themePreference}
         onCycleTheme={cycleTheme}
       />
@@ -394,6 +402,12 @@ export default function App() {
         message={toast?.message ?? null}
         tone={toast?.tone}
         onDismiss={() => setToast(null)}
+      />
+
+      <SettingsPage
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onChanged={(message) => setToast({ message, tone: "success" })}
       />
     </div>
   );

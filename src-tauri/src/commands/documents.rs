@@ -1,38 +1,92 @@
 use crate::db::{self, documents as docs, search};
 use crate::error::{AppError, AppResult};
 use crate::model::{CreateDocumentRequest, DocumentPayload, DocumentSummary};
+use crate::settings;
 use crate::workspace;
 use rusqlite::Connection;
-use std::path::PathBuf;
+use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+
+/// 设置页读取的视图（只读投影，避免把内部结构直接暴露给前端）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettingsView {
+    /// 用户设置的自定义路径；None 表示用默认位置。
+    pub workspace_root: Option<String>,
+    /// 实际生效的工作区根（可能是默认值，也可能被环境变量覆盖）。
+    pub effective_workspace_root: String,
+    /// 生效路径是否来自 `CRAB_MD_WORKSPACE` 环境变量。
+    /// 若是，界面上改了设置也不会立刻生效，必须如实告知用户。
+    pub workspace_root_is_from_env: bool,
+    /// 设置文件位置，方便用户备份或排查。
+    pub config_path: String,
+    pub version: u32,
+}
 
 /// 文档服务：持有工作区根路径与数据库连接。
 ///
 /// 业务逻辑集中在此，不依赖 Tauri 运行时，因此可被 cargo test 直接驱动。
+///
+/// root 与 conn 放在**同一个锁**下：切换工作区时两者必须一起换，
+/// 分成两把锁就会出现「新路径配旧连接」的中间态。
 pub struct DocumentService {
+    state: Mutex<ServiceState>,
+}
+
+struct ServiceState {
     root: PathBuf,
-    conn: Mutex<Connection>,
+    conn: Connection,
 }
 
 impl DocumentService {
     /// 打开（必要时创建）工作区。
     pub fn new(root: PathBuf) -> AppResult<Self> {
-        workspace::ensure_layout(&root)?;
-        let conn = db::open(&workspace::db_path(&root))?;
-        Ok(Self { root, conn: Mutex::new(conn) })
+        let state = Self::open_state(&root)?;
+        Ok(Self { state: Mutex::new(state) })
+    }
+    /// 打开一个工作区：建目录结构 + 开库。不修改 self，供「先验证后交换」使用。
+    fn open_state(root: &Path) -> AppResult<ServiceState> {
+        workspace::ensure_layout(root)?;
+        let conn = db::open(&workspace::db_path(root))?;
+        Ok(ServiceState { root: root.to_path_buf(), conn })
     }
 
-    pub fn root(&self) -> &std::path::Path {
-        &self.root
+    fn lock(&self) -> AppResult<std::sync::MutexGuard<'_, ServiceState>> {
+        self.state
+            .lock()
+            .map_err(|_| AppError::InvalidInput("db lock poisoned".into()))
     }
 
-    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
-        self.conn.lock().map_err(|_| AppError::InvalidInput("db lock poisoned".into()))
+    pub fn root(&self) -> AppResult<PathBuf> {
+        Ok(self.lock()?.root.clone())
+    }
+
+    /// 切换到另一个工作区根目录。
+    ///
+    /// **先验证、后交换**：先把新工作区完整打开（建目录、开库），只有成功
+    /// 才替换当前状态。因此失败时当前工作区分毫未动，无需回滚 ——
+    /// 也不会出现「配置已改但数据库连不上」的半死状态。
+    pub fn switch_workspace(&self, new_root: PathBuf) -> AppResult<PathBuf> {
+        // 已经是同一个目录就没必要折腾（比较规范化后的路径）。
+        let current = self.lock()?.root.clone();
+        if current == new_root {
+            return Ok(current);
+        }
+
+        // 这一步可能失败；失败时直接返回，self 未被触碰。
+        let fresh = Self::open_state(&new_root)?;
+
+        let mut guard = self.lock()?;
+        // 替换时旧的 Connection 随之 drop（关闭 SQLite 句柄）。
+        guard.root = fresh.root;
+        guard.conn = fresh.conn;
+        Ok(guard.root.clone())
     }
 
     pub fn list(&self) -> AppResult<Vec<DocumentSummary>> {
-        let conn = self.conn()?;
-        docs::list(&conn)
+        let st = self.lock()?;
+        docs::list(&st.conn)
     }
 
     /// 新建文档：先在库里登记元数据，再落一个空文件。
@@ -47,61 +101,54 @@ impl DocumentService {
         let id = workspace::new_document_id();
         let empty_hash = workspace::content_hash("");
 
-        let conn = self.conn()?;
-        docs::insert(&conn, &id, title, virtual_path, &empty_hash, &now, 0)?;
-        drop(conn);
+        // 全程持锁：root 与 conn 必须来自同一份状态，否则切换工作区时
+        // 可能出现「把文件写进旧目录、元数据记进新库」。
+        // std::sync::Mutex 不可重入，故此处不得调用其它会加锁的方法。
+        let st = self.lock()?;
 
-        if let Err(e) = workspace::atomic_write(&workspace::note_path(&self.root, &id)?, b"") {
-            let conn = self.conn()?;
-            let _ = docs::soft_delete(&conn, &id, &workspace::now_iso8601());
+        docs::insert(&st.conn, &id, title, virtual_path, &empty_hash, &now, 0)?;
+
+        if let Err(e) = workspace::atomic_write(&workspace::note_path(&st.root, &id)?, b"") {
+            let _ = docs::soft_delete(&st.conn, &id, &workspace::now_iso8601());
             return Err(e);
         }
 
-        let conn = self.conn()?;
-        let summary = docs::get(&conn, &id)?.ok_or_else(|| AppError::NotFound(id.clone()))?;
-        drop(conn);
-
-        let conn = self.conn()?;
-        search::reindex(&conn, &id, title, "")?;
+        let summary = docs::get(&st.conn, &id)?.ok_or_else(|| AppError::NotFound(id.clone()))?;
+        search::reindex(&st.conn, &id, title, "")?;
         Ok(summary)
     }
 
     /// 读取元数据 + 正文。正文从文件读，元数据从库读。
     pub fn read(&self, id: &str) -> AppResult<DocumentPayload> {
+        let st = self.lock()?;
+
         // 先做 id 校验：非法 id 应报 INVALID_ID，而不是被查库的 NOT_FOUND 掩盖。
-        let _ = workspace::note_path(&self.root, id)?;
+        let _ = workspace::note_path(&st.root, id)?;
 
-        let conn = self.conn()?;
-        let summary = docs::get(&conn, id)?.ok_or_else(|| AppError::NotFound(id.to_string()))?;
-        drop(conn);
-
-        let content = workspace::read_note(&self.root, id)?;
+        let summary = docs::get(&st.conn, id)?.ok_or_else(|| AppError::NotFound(id.to_string()))?;
+        let content = workspace::read_note(&st.root, id)?;
         Ok(DocumentPayload { summary, content })
     }
 
     /// 保存正文：先原子写文件，成功后再更新元数据与索引。
     /// 顺序很重要 —— 文件写失败时元数据保持旧值，不会出现「库里有哈希但文件没内容」。
     pub fn save(&self, id: &str, content: &str) -> AppResult<DocumentSummary> {
+        let st = self.lock()?;
+
         // 先做 id 校验：非法 id 应报 INVALID_ID，而不是被查库的 NOT_FOUND 掩盖。
-        let _ = workspace::note_path(&self.root, id)?;
+        let _ = workspace::note_path(&st.root, id)?;
 
-        let conn = self.conn()?;
-        let summary = docs::get(&conn, id)?.ok_or_else(|| AppError::NotFound(id.to_string()))?;
-        drop(conn);
+        let summary = docs::get(&st.conn, id)?.ok_or_else(|| AppError::NotFound(id.to_string()))?;
 
-        workspace::atomic_write(&workspace::note_path(&self.root, id)?, content.as_bytes())?;
+        workspace::atomic_write(&workspace::note_path(&st.root, id)?, content.as_bytes())?;
 
         let now = workspace::now_iso8601();
         let hash = workspace::content_hash(content);
         let size = content.len() as i64;
 
-        let conn = self.conn()?;
-        docs::update_content(&conn, id, &hash, &now, size)?;
-        let updated = docs::get(&conn, id)?.ok_or_else(|| AppError::NotFound(id.to_string()))?;
-        drop(conn);
-
-        let conn = self.conn()?;
-        search::reindex(&conn, id, &summary.title, content)?;
+        docs::update_content(&st.conn, id, &hash, &now, size)?;
+        let updated = docs::get(&st.conn, id)?.ok_or_else(|| AppError::NotFound(id.to_string()))?;
+        search::reindex(&st.conn, id, &summary.title, content)?;
         Ok(updated)
     }
 
@@ -113,36 +160,33 @@ impl DocumentService {
         }
 
         let now = workspace::now_iso8601();
-        // 先做 id 校验：非法 id 应报 INVALID_ID，而不是被查库的 NOT_FOUND 掩盖。
-        let _ = workspace::note_path(&self.root, id)?;
+        let st = self.lock()?;
 
-        let conn = self.conn()?;
-        if docs::rename(&conn, id, title, &now)? == 0 {
+        // 先做 id 校验：非法 id 应报 INVALID_ID，而不是被查库的 NOT_FOUND 掩盖。
+        let _ = workspace::note_path(&st.root, id)?;
+
+        if docs::rename(&st.conn, id, title, &now)? == 0 {
             return Err(AppError::NotFound(id.to_string()));
         }
-        let updated = docs::get(&conn, id)?.ok_or_else(|| AppError::NotFound(id.to_string()))?;
-        drop(conn);
+        let updated = docs::get(&st.conn, id)?.ok_or_else(|| AppError::NotFound(id.to_string()))?;
 
-        let content = workspace::read_note(&self.root, id)?;
-        let conn = self.conn()?;
-        search::reindex(&conn, id, title, &content)?;
+        let content = workspace::read_note(&st.root, id)?;
+        search::reindex(&st.conn, id, title, &content)?;
         Ok(updated)
     }
 
     /// 删除：软删除元数据 + 移出索引。正文文件保留，供 Phase 3 同步与恢复。
     pub fn delete(&self, id: &str) -> AppResult<()> {
-        // 先做 id 校验，非法 id 直接拒绝而不是静默返回成功。
-        let _ = workspace::note_path(&self.root, id)?;
-
         let now = workspace::now_iso8601();
-        let conn = self.conn()?;
-        if docs::soft_delete(&conn, id, &now)? == 0 {
+        let st = self.lock()?;
+
+        // 先做 id 校验，非法 id 直接拒绝而不是静默返回成功。
+        let _ = workspace::note_path(&st.root, id)?;
+
+        if docs::soft_delete(&st.conn, id, &now)? == 0 {
             return Err(AppError::NotFound(id.to_string()));
         }
-        drop(conn);
-
-        let conn = self.conn()?;
-        search::unindex(&conn, id)?;
+        search::unindex(&st.conn, id)?;
         Ok(())
     }
 
@@ -160,6 +204,7 @@ impl DocumentService {
         }
 
         // 先取原文与元数据；失败的写操作一律不做，避免留下半成品。
+        // read() 内部会加锁，故此处不能已持锁（Mutex 不可重入）。
         let original = self.read(id)?;
         let new_id = workspace::new_document_id();
         let now = workspace::now_iso8601();
@@ -167,32 +212,27 @@ impl DocumentService {
         let hash = workspace::content_hash(&content);
         let virtual_path = original.summary.virtual_path;
 
-        let conn = self.conn()?;
-        docs::insert(&conn, &new_id, title, &virtual_path, &hash, &now, content.len() as i64)?;
-        drop(conn);
+        let st = self.lock()?;
+
+        docs::insert(&st.conn, &new_id, title, &virtual_path, &hash, &now, content.len() as i64)?;
 
         // 落盘失败时回滚元数据，不留下一篇读不出内容的空文档。
         if let Err(e) = workspace::atomic_write(
-            &workspace::note_path(&self.root, &new_id)?,
+            &workspace::note_path(&st.root, &new_id)?,
             content.as_bytes(),
         ) {
-            let conn = self.conn()?;
-            let _ = docs::soft_delete(&conn, &new_id, &workspace::now_iso8601());
+            let _ = docs::soft_delete(&st.conn, &new_id, &workspace::now_iso8601());
             return Err(e);
         }
 
-        let conn = self.conn()?;
-        let created = docs::get(&conn, &new_id)?.ok_or_else(|| AppError::NotFound(new_id.clone()))?;
-        drop(conn);
-
-        let conn = self.conn()?;
-        search::reindex(&conn, &new_id, title, &content)?;
+        let created = docs::get(&st.conn, &new_id)?.ok_or_else(|| AppError::NotFound(new_id.clone()))?;
+        search::reindex(&st.conn, &new_id, title, &content)?;
         Ok(created)
     }
 
     pub fn search(&self, query: &str, limit: i64) -> AppResult<Vec<search::SearchHit>> {
-        let conn = self.conn()?;
-        search::search(&conn, query, limit).map_err(AppError::from)
+        let st = self.lock()?;
+        search::search(&st.conn, query, limit).map_err(AppError::from)
     }
 }
 
@@ -255,6 +295,99 @@ pub fn search_documents(
     limit: Option<i64>,
 ) -> AppResult<Vec<search::SearchHit>> {
     svc.search(&query, limit.unwrap_or(50))
+}
+
+// ---- 应用设置（UI_DESIGN_SYSTEM.md §34）----
+//
+// 配置与应用状态的关系：
+// - 工作区根路径存在**应用配置目录**，而不是工作区里 —— 否则成鸡生蛋。
+// - 切换工作区走 DocumentService::switch_workspace 的「先验证后交换」。
+
+/// 「媒体/文档」等平台默认目录，作为设置页里「恢复默认」的落点。
+#[tauri::command]
+pub fn default_workspace_root(app: tauri::AppHandle) -> AppResult<String> {
+    use tauri::Manager;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::InvalidInput(format!("cannot resolve app data dir: {e}")))?;
+    Ok(base.join("workspace").to_string_lossy().into_owned())
+}
+
+/// 读取当前设置 + 实际生效的工作区根（含默认值与来源）。
+#[tauri::command]
+pub fn get_settings(
+    app: tauri::AppHandle,
+    svc: tauri::State<'_, DocumentService>,
+) -> AppResult<AppSettingsView> {
+    let (settings, config_dir) = read_settings(&app)?;
+    let effective = svc.root()?;
+    Ok(AppSettingsView {
+        workspace_root: settings.workspace_root,
+        effective_workspace_root: effective.to_string_lossy().into_owned(),
+        // 环境变量优先于设置文件，界面要能如实说明来源。
+        workspace_root_is_from_env: std::env::var("CRAB_MD_WORKSPACE")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false),
+        config_path: settings::settings_path(&config_dir).to_string_lossy().into_owned(),
+        version: settings.version,
+    })
+}
+
+/// 指定新的工作区根并立即切换。
+#[tauri::command]
+pub fn set_workspace_root(
+    app: tauri::AppHandle,
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+) -> AppResult<AppSettingsView> {
+    let validated = settings::validate_workspace_root(&path)?;
+    let (mut settings, config_dir) = read_settings(&app)?;
+
+    // 先切换服务（内部会真正打开新工作区，失败则原状态毫发无损），
+    // 只有切换成功才落盘配置 —— 顺序反了会出现「配置指向打不开的目录」。
+    svc.switch_workspace(validated.clone())?;
+
+    settings.workspace_root = Some(validated.to_string_lossy().into_owned());
+    settings::save(&config_dir, &settings)?;
+
+    get_settings(app, svc)
+}
+
+/// 清除自定义路径，回到平台默认位置。
+#[tauri::command]
+pub fn reset_workspace_root(
+    app: tauri::AppHandle,
+    svc: tauri::State<'_, DocumentService>,
+) -> AppResult<AppSettingsView> {
+    let (mut settings, config_dir) = read_settings(&app)?;
+    settings.workspace_root = None;
+
+    // 默认位置来自 app_data_dir；用与启动相同的规则推出来。
+    let default_root = {
+        use tauri::Manager;
+        let base = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| AppError::InvalidInput(format!("cannot resolve app data dir: {e}")))?;
+        base.join("workspace")
+    };
+    svc.switch_workspace(default_root)?;
+
+    settings::save(&config_dir, &settings)?;
+    get_settings(app, svc)
+}
+
+/// 读取设置文件与其所在目录。配置目录取不到时返回默认设置 +
+/// 应用数据目录作为兜底，保证设置页仍能打开而不是整页报错。
+fn read_settings(app: &tauri::AppHandle) -> AppResult<(settings::Settings, PathBuf)> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_config_dir()
+        .or_else(|_| app.path().app_data_dir())
+        .map_err(|e| AppError::InvalidInput(format!("cannot resolve config dir: {e}")))?;
+    Ok((settings::load(&dir), dir))
 }
 
 #[cfg(test)]
@@ -559,5 +692,128 @@ mod tests {
         let svc2 = DocumentService::new(root).unwrap();
         assert_eq!(svc2.read(&copy_id).unwrap().content, "# 要保留的内容");
         assert_eq!(svc2.list().unwrap().len(), 2);
+    }
+
+    // ---- 切换工作区（数据目录可配置）----
+
+    #[test]
+    fn switch_workspace_moves_to_the_new_root() {
+        let (d, svc) = svc();
+        let other = d.path().join("other");
+
+        let landed = svc.switch_workspace(other.clone()).unwrap();
+
+        assert_eq!(landed, other);
+        assert_eq!(svc.root().unwrap(), other);
+    }
+
+    #[test]
+    fn switch_workspace_shows_the_other_workspaces_documents() {
+        let (d, svc) = svc();
+        svc.create("旧工作区的笔记", "/").unwrap();
+
+        let other = d.path().join("other");
+        svc.switch_workspace(other.clone()).unwrap();
+
+        // 新工作区是空的，看不到旧工作区的文档。
+        assert!(svc.list().unwrap().is_empty());
+
+        // 在新工作区建的文档，切回去看不到。
+        svc.create("新工作区的笔记", "/").unwrap();
+        assert_eq!(svc.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn switching_back_restores_the_original_documents() {
+        let (d, svc) = svc();
+        let first_root = d.path().join("first");
+        let second_root = d.path().join("second");
+
+        svc.switch_workspace(first_root.clone()).unwrap();
+        let saved = svc.create("留在 first 的笔记", "/").unwrap();
+        svc.save(&saved.id, "正文").unwrap();
+
+        svc.switch_workspace(second_root).unwrap();
+        assert!(svc.list().unwrap().is_empty(), "second 应独立为空");
+
+        svc.switch_workspace(first_root).unwrap();
+        let list = svc.list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, saved.id);
+        assert_eq!(svc.read(&saved.id).unwrap().content, "正文");
+    }
+
+    #[test]
+    fn switching_to_a_new_directory_creates_the_workspace_layout() {
+        let (d, svc) = svc();
+        let fresh = d.path().join("brand-new");
+
+        svc.switch_workspace(fresh.clone()).unwrap();
+
+        assert!(fresh.join("notes").is_dir());
+        assert!(fresh.join("attachments").is_dir());
+        assert!(fresh.join(".app").is_dir());
+    }
+
+    #[test]
+    fn switching_to_the_same_root_is_a_no_op() {
+        let (d, svc) = svc();
+        let root = d.path().join("same");
+
+        svc.switch_workspace(root.clone()).unwrap();
+        let doc = svc.create("保留我", "/").unwrap();
+
+        // 再切到同一目录不应清空或重建任何东西。
+        svc.switch_workspace(root).unwrap();
+        assert_eq!(svc.list().unwrap().len(), 1);
+        assert_eq!(svc.list().unwrap()[0].id, doc.id);
+    }
+
+    #[test]
+    fn a_failed_switch_leaves_the_current_workspace_untouched() {
+        // 用一个**文件**充当工作区根：建目录会失败，切换必须整体失败。
+        let (d, svc) = svc();
+        let keeper = d.path().join("keeper");
+        svc.switch_workspace(keeper.clone()).unwrap();
+        let doc = svc.create("不能丢", "/").unwrap();
+
+        let blocker = d.path().join("blocker");
+        std::fs::write(&blocker, b"i am a file").unwrap();
+
+        let result = svc.switch_workspace(blocker);
+
+        assert!(result.is_err(), "在文件上建工作区必须失败");
+        // 关键：失败后当前工作区仍然可用，文档还在。
+        assert_eq!(svc.root().unwrap(), keeper);
+        assert_eq!(svc.list().unwrap().len(), 1);
+        assert_eq!(svc.read(&doc.id).unwrap().summary.title, "不能丢");
+    }
+
+    #[test]
+    fn documents_written_after_a_switch_land_in_the_new_root() {
+        let (d, svc) = svc();
+        let other = d.path().join("other");
+        svc.switch_workspace(other.clone()).unwrap();
+
+        let doc = svc.create("新文档", "/").unwrap();
+        svc.save(&doc.id, "内容").unwrap();
+
+        // 文件必须落在新工作区，而不是旧工作区。
+        let path = workspace::note_path(&other, &doc.id).unwrap();
+        assert!(path.is_file(), "expected {} to exist", path.display());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "内容");
+    }
+
+    #[test]
+    fn search_works_against_the_switched_workspace() {
+        let (d, svc) = svc();
+        let other = d.path().join("other");
+        svc.switch_workspace(other).unwrap();
+
+        let doc = svc.create("检索目标", "/").unwrap();
+        svc.save(&doc.id, "并发编程与信道").unwrap();
+
+        // 新工作区的索引必须可用（不是沿用旧库的索引）。
+        assert_eq!(svc.search("并发", 10).unwrap().len(), 1);
     }
 }

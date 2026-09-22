@@ -29,3 +29,5 @@ src-tauri/gen/
 
 # Local workspace used for manual verification (see T1.14)
 .manual-workspace/
+# Ad-hoc data directories created while verifying the configurable workspace root
+.manual-workspace-custom/

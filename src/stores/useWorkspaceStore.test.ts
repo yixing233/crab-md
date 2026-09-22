@@ -7,6 +7,9 @@ const saveDocument = vi.fn();
 const renameDocument = vi.fn();
 const deleteDocument = vi.fn();
 const duplicateDocument = vi.fn();
+const getSettings = vi.fn();
+const setWorkspaceRootApi = vi.fn();
+const resetWorkspaceRootApi = vi.fn();
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -17,6 +20,9 @@ vi.mock("../lib/api", () => ({
     renameDocument: (...a: unknown[]) => renameDocument(...a),
     deleteDocument: (...a: unknown[]) => deleteDocument(...a),
     duplicateDocument: (...a: unknown[]) => duplicateDocument(...a),
+    getSettings: (...a: unknown[]) => getSettings(...a),
+    setWorkspaceRoot: (...a: unknown[]) => setWorkspaceRootApi(...a),
+    resetWorkspaceRoot: (...a: unknown[]) => resetWorkspaceRootApi(...a),
   },
   toAppError: (raw: unknown) =>
     raw && typeof raw === "object" && "code" in raw
@@ -347,5 +353,128 @@ describe("useWorkspaceStore duplicateDocument", () => {
     await useWorkspaceStore.getState().duplicateDocument("orig", "副本");
 
     expect(useWorkspaceStore.getState().documents).toHaveLength(2);
+  });
+});
+
+/** 数据目录设置（UI §34）。 */
+describe("useWorkspaceStore settings", () => {
+  const view = (over: Record<string, unknown> = {}) => ({
+    workspaceRoot: null,
+    effectiveWorkspaceRoot: "E:/default/workspace",
+    workspaceRootIsFromEnv: false,
+    configPath: "E:/config/settings.json",
+    version: 1,
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __setAutosaveDelay(60_000);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useWorkspaceStore.setState({
+      documents: [], activeId: null, activeContent: "",
+      loading: false, error: null, dirty: false, settings: null,
+    });
+  });
+
+  it("loads settings", async () => {
+    getSettings.mockResolvedValue(view());
+    await useWorkspaceStore.getState().loadSettings();
+    expect(useWorkspaceStore.getState().settings?.effectiveWorkspaceRoot)
+      .toBe("E:/default/workspace");
+  });
+
+  it("a failed settings read does not break the rest of the app", async () => {
+    getSettings.mockRejectedValue({ code: "IO_ERROR", message: "boom" });
+    await useWorkspaceStore.getState().loadSettings();
+    // 设置读不出来不该让整个界面报错。
+    expect(useWorkspaceStore.getState().settings).toBeNull();
+    expect(useWorkspaceStore.getState().error).toBeNull();
+  });
+
+  it("switches the workspace root and reloads documents", async () => {
+    setWorkspaceRootApi.mockResolvedValue(view({ workspaceRoot: "E:/notes" }));
+    listDocuments.mockResolvedValue([summary("new", "新目录的笔记")]);
+
+    const ok = await useWorkspaceStore.getState().setWorkspaceRoot("E:/notes");
+
+    expect(ok).toBe(true);
+    expect(setWorkspaceRootApi).toHaveBeenCalledWith("E:/notes");
+    expect(useWorkspaceStore.getState().settings?.workspaceRoot).toBe("E:/notes");
+    expect(useWorkspaceStore.getState().documents).toHaveLength(1);
+  });
+
+  it("clears the open document after switching, since it belongs to the old root", async () => {
+    readDocument.mockResolvedValue({ ...summary("old", "旧目录的笔记"), content: "旧内容" });
+    listDocuments.mockResolvedValue([summary("old", "旧目录的笔记")]);
+    await useWorkspaceStore.getState().openDocument("old");
+    expect(useWorkspaceStore.getState().activeId).toBe("old");
+
+    setWorkspaceRootApi.mockResolvedValue(view({ workspaceRoot: "E:/notes" }));
+    listDocuments.mockResolvedValue([]);
+    await useWorkspaceStore.getState().setWorkspaceRoot("E:/notes");
+
+    const s = useWorkspaceStore.getState();
+    expect(s.activeId).toBeNull();
+    expect(s.activeContent).toBe("");
+  });
+
+  it("keeps the current documents when switching fails", async () => {
+    // 后端是「先验证后交换」：失败时旧工作区完好，界面不该表现成空。
+    listDocuments.mockResolvedValue([summary("keep", "还在的笔记")]);
+    await useWorkspaceStore.getState().loadDocuments();
+
+    setWorkspaceRootApi.mockRejectedValue({ code: "IO_ERROR", message: "nope" });
+    const ok = await useWorkspaceStore.getState().setWorkspaceRoot("E:/broken");
+
+    expect(ok).toBe(false);
+    expect(useWorkspaceStore.getState().error).toBe("IO_ERROR");
+    expect(useWorkspaceStore.getState().documents).toHaveLength(1);
+  });
+
+  it("flushes unsaved edits before switching directories", async () => {
+    readDocument.mockResolvedValue({ ...summary("d1", "甲"), content: "old" });
+    saveDocument.mockResolvedValue(summary("d1", "甲"));
+    listDocuments.mockResolvedValue([summary("d1", "甲")]);
+    await useWorkspaceStore.getState().openDocument("d1");
+    useWorkspaceStore.getState().setContent("未保存的编辑");
+
+    setWorkspaceRootApi.mockResolvedValue(view({ workspaceRoot: "E:/notes" }));
+    await useWorkspaceStore.getState().setWorkspaceRoot("E:/notes");
+
+    // 换目录前必须先落盘，否则这份编辑会跟着旧工作区一起被换掉。
+    expect(saveDocument).toHaveBeenCalledWith("d1", "未保存的编辑");
+  });
+
+  it("does not switch when the flush fails", async () => {
+    readDocument.mockResolvedValue({ ...summary("d1", "甲"), content: "old" });
+    saveDocument.mockRejectedValue({ code: "IO_ERROR", message: "disk full" });
+    listDocuments.mockResolvedValue([summary("d1", "甲")]);
+    await useWorkspaceStore.getState().openDocument("d1");
+    useWorkspaceStore.getState().setContent("重要内容");
+
+    const ok = await useWorkspaceStore.getState().setWorkspaceRoot("E:/notes");
+
+    expect(ok).toBe(false);
+    expect(setWorkspaceRootApi).not.toHaveBeenCalled();
+    // 内容仍在编辑器里。
+    expect(useWorkspaceStore.getState().activeContent).toBe("重要内容");
+  });
+
+  it("resets back to the platform default directory", async () => {
+    resetWorkspaceRootApi.mockResolvedValue(view());
+    listDocuments.mockResolvedValue([]);
+
+    const ok = await useWorkspaceStore.getState().resetWorkspaceRoot();
+
+    expect(ok).toBe(true);
+    expect(useWorkspaceStore.getState().settings?.workspaceRoot).toBeNull();
+  });
+
+  it("records an error when the reset fails", async () => {
+    resetWorkspaceRootApi.mockRejectedValue({ code: "IO_ERROR", message: "nope" });
+    const ok = await useWorkspaceStore.getState().resetWorkspaceRoot();
+    expect(ok).toBe(false);
+    expect(useWorkspaceStore.getState().error).toBe("IO_ERROR");
   });
 });

@@ -27,3 +27,19 @@ export interface AppErrorShape {
   code: string;
   message: string;
 }
+
+/** 与 Rust `AppSettingsView` 对应（设置页只读视图）。 */
+export interface AppSettingsView {
+  /** 用户设置的自定义数据目录；null 表示用默认位置。 */
+  workspaceRoot: string | null;
+  /** 实际生效的数据目录。 */
+  effectiveWorkspaceRoot: string;
+  /**
+   * 生效路径是否来自 `CRAB_MD_WORKSPACE` 环境变量。
+   * 若为 true，界面上改设置也不会立刻生效 —— 必须如实告知用户。
+   */
+  workspaceRootIsFromEnv: boolean;
+  /** 设置文件位置，便于备份或排查。 */
+  configPath: string;
+  version: number;
+}

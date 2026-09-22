@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api, toAppError } from "../lib/api";
 import { logFailure } from "../lib/log";
-import type { DocumentSummary } from "../types/document";
+import type { AppSettingsView, DocumentSummary } from "../types/document";
 
 /**
  * 自动保存去抖时长。编辑停止后才落盘，避免每个按键都写文件。
@@ -33,6 +33,8 @@ export interface WorkspaceState {
   loading: boolean;
   /** 稳定错误码，供 UI 分支显示；null 表示无错误。 */
   error: string | null;
+  /** 设置视图（数据目录等）。加载失败时为 null，设置页据此显示错误。 */
+  settings: AppSettingsView | null;
 
   loadDocuments: () => Promise<void>;
   openDocument: (id: string) => Promise<void>;
@@ -41,6 +43,18 @@ export interface WorkspaceState {
   deleteDocument: (id: string) => Promise<void>;
   /** 另存为副本；成功后打开新副本，符合「另存为后我就在编辑它」的预期。 */
   duplicateDocument: (id: string, title: string) => Promise<void>;
+
+  /** 读取设置（数据目录等）。 */
+  loadSettings: () => Promise<void>;
+  /**
+   * 切换数据目录并重新载入文档列表。
+   *
+   * 失败时**不清空当前文档**：后端的切换是「先验证后交换」，
+   * 失败意味着旧工作区仍完好，界面就不该表现成"什么都没有了"。
+   */
+  setWorkspaceRoot: (path: string) => Promise<boolean>;
+  /** 回到平台默认数据目录。 */
+  resetWorkspaceRoot: () => Promise<boolean>;
   saveActive: () => Promise<void>;
   /**
    * 立即落盘未保存内容（取消防抖等待）。
@@ -59,6 +73,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   dirty: false,
   loading: false,
   error: null,
+  settings: null,
 
   loadDocuments: async () => {
     set({ loading: true, error: null });
@@ -188,4 +203,51 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  loadSettings: async () => {
+    try {
+      set({ settings: await api.getSettings() });
+    } catch (raw) {
+      // 设置读不出来不该让整个界面报错；设置页会显示它自己的失败态。
+      const code = toAppError(raw).code;
+      logFailure({ op: "getSettings", code }, raw);
+    }
+  },
+
+  setWorkspaceRoot: async (path) => {
+    // 切换前先把当前编辑落盘，否则会跟着旧工作区一起被换掉。
+    if (!(await get().flushActive())) return false;
+
+    set({ error: null });
+    try {
+      const settings = await api.setWorkspaceRoot(path);
+      // 换目录等于换了一整套文档：清空编辑器，重新拉列表。
+      set({ settings, activeId: null, activeContent: "", dirty: false });
+      await get().loadDocuments();
+      return true;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "setWorkspaceRoot", code }, raw);
+      // 只设错误，不动 documents/activeId —— 后端已保证旧工作区完好。
+      set({ error: code });
+      return false;
+    }
+  },
+
+  resetWorkspaceRoot: async () => {
+    if (!(await get().flushActive())) return false;
+
+    set({ error: null });
+    try {
+      const settings = await api.resetWorkspaceRoot();
+      set({ settings, activeId: null, activeContent: "", dirty: false });
+      await get().loadDocuments();
+      return true;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "resetWorkspaceRoot", code }, raw);
+      set({ error: code });
+      return false;
+    }
+  },
 }));
