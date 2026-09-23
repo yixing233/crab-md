@@ -98,4 +98,11 @@ describe("MarkdownEditor highlighting and cursor", () => {
     render(<MarkdownEditor documentId="d1" value={"(unclosed"} onChange={() => {}} />);
     expect(screen.getByTestId("markdown-editor").querySelector(".cm-editor")).toBeTruthy();
   });
+
+  it("mounts editor with scroller and content containers", () => {
+    render(<MarkdownEditor documentId="d1" value={"content"} onChange={() => {}} />);
+    const editor = screen.getByTestId("markdown-editor");
+    expect(editor.querySelector(".cm-scroller")).toBeTruthy();
+    expect(editor.querySelector(".cm-content")).toBeTruthy();
+  });
 });

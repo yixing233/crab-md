@@ -51,10 +51,17 @@ const appTheme = EditorView.theme({
     // 字体族同样走变量，与字号一样无需重建编辑器。
     fontFamily: "var(--editor-font-family, var(--font-mono))",
     lineHeight: "var(--leading-prose)",
-    padding: "var(--space-4) 0",
+    // 舒适的编辑边距：顶部 24px 避开工具栏下沿，左右 32px 保持呼吸空间与预览区完全对齐，
+    // 底部 48px 留出滚动余量，避免最后一行贴死状态栏。
+    padding: "var(--space-6) var(--space-8) var(--space-12)",
     // 文字插入光标。CodeMirror 基础主题写死了 `&light { caretColor: black }`，
     // 不覆盖的话深色背景下光标是黑的。
     caretColor: "var(--caret)",
+  },
+  "@media (max-width: 599px)": {
+    ".cm-content": {
+      padding: "var(--space-4) var(--space-4) var(--space-8)",
+    },
   },
   // 竖线光标同理：基础主题是 `.cm-cursor { border-left: 1.2px solid black }`，
   // 亮色覆盖只写在 `&dark` 分支里。这里按令牌重设，明暗都正确。

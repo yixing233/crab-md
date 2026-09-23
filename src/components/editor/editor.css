@@ -125,13 +125,19 @@
 .markdown-preview {
   flex: 1;
   min-height: 0;
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-6) var(--space-8) var(--space-12);
   overflow-y: auto;
   line-height: var(--leading-prose);
   color: var(--text-primary);
   /* 正文是基准：其余元素各自覆盖。 */
   font-family: var(--preview-font-body, var(--font-ui));
   font-size: var(--preview-size-body, 16px);
+}
+
+@media (max-width: 599px) {
+  .markdown-preview {
+    padding: var(--space-4) var(--space-4) var(--space-8);
+  }
 }
 
 /* 长文可读性：限制内容宽度（UI §22）。 */
