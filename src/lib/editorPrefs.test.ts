@@ -62,12 +62,34 @@ describe("editor font size", () => {
 });
 
 describe("composeFontStack (Chinese and Latin set separately)", () => {
-  it("puts the Latin face before the CJK face", () => {
-    // 顺序是关键：西文字体没有汉字字形，放前面时中文会自动落到后面的
-    // 中文字体上。反过来放，英文也会被中文字体自带的拉丁字形接管，
-    // 用户选的西文字体等于白设。
+  it("puts a explicitly chosen Latin face before the CJK face", () => {
+    // 用户显式选过西文字体时，西文排前 —— 中文字形仍会沿栈回退。
     const stack = composeFontStack("times", "simsun");
     expect(stack.indexOf("Times New Roman")).toBeLessThan(stack.indexOf("SimSun"));
+  });
+
+  it("puts the CJK face first when the Latin choice is still the default", () => {
+    // 关键回归（实测缺陷）：西文为「系统默认」时栈首是 system-ui，
+    // 它在 Windows 上是微软雅黑，**自带完整拉丁字形**，会把整个栈吃掉 ——
+    // 像素比对证实选「楷体」后中文/数字/混排三种内容渲染结果与 system-ui
+    // 完全一致，用户选的字体一个字符都没生效。故此时必须让中文排前。
+    const stack = composeFontStack("system", "kaiti");
+    expect(stack.indexOf("KaiTi")).toBeLessThan(stack.indexOf("system-ui"));
+  });
+
+  it("makes the chosen CJK font actually win when Latin is default", () => {
+    // 上面那条的实质要求：中文字形必须在任何西文/系统字形之前，
+    // 否则「选了却没变化」。这里断言所有中文字体都满足。
+    for (const cjk of EDITOR_CJK_FONTS) {
+      const stack = composeFontStack("system", cjk);
+      const generic = /, (sans-serif|serif|monospace)$/.exec(stack);
+      const body = generic ? stack.slice(0, generic.index) : stack;
+      // 第一个出现的具名字形必须来自 CJK 表。
+      const firstCjkAt = body.indexOf(CJK_FACES[cjk].split(",")[0].trim());
+      const firstLatinAt = body.indexOf(LATIN_FACES.system.split(",")[0].trim());
+      expect(firstCjkAt, `CJK face not leading for ${cjk}`).toBe(0);
+      expect(firstLatinAt).toBeGreaterThan(0);
+    }
   });
 
   it("includes both chosen faces", () => {

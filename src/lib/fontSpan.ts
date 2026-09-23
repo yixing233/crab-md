@@ -130,6 +130,71 @@ export function removeFontFromSelection(sel: FontSpanSelection): FontSpanChange 
   return { text, from, to };
 }
 
+/**
+ * 空选区时「为后续输入预设字体」。
+ *
+ * 做法是插入一对紧邻的 span 并把光标放在中间：接下来敲的字符自然落在
+ * span 内部，装饰器随即按该字体渲染。这比「记住待用字体、在每次输入时
+ * 再包一层」简单得多 —— 后者逐字符输入会套出很多个 span。
+ *
+ * 光标已经在一个**空的** font span 里时，改写它的值而不是再插一层，
+ * 这样反复换字体只会得到一对标签。
+ */
+export function insertFontSpan(sel: FontSpanSelection, fontStack: string): FontSpanChange {
+  const { text, from } = sel;
+  if (from !== sel.to) {
+    // 有选区时不该走这条路；按普通选区处理，避免调用方拿到意外结果。
+    return applyFontToSelection(sel, fontStack);
+  }
+
+  const escaped = escapeAttr(fontStack);
+  const tag = `<span style="font-family:${escaped}">`;
+
+  // 光标处是否正好是一个空的 font span？是则替换掉它。
+  const existing = findFontSpansWithBounds(text).find(
+    (s) => s.textFrom === s.textTo && s.textFrom === from,
+  );
+  if (existing) {
+    const out =
+      text.slice(0, existing.spanStart) + tag + "</span>" + text.slice(existing.spanEnd);
+    const caret = existing.spanStart + tag.length;
+    return { text: out, from: caret, to: caret };
+  }
+
+  const inserted = tag + "</span>";
+  const out = text.slice(0, from) + inserted + text.slice(from);
+  const caret = from + tag.length;
+  return { text: out, from: caret, to: caret };
+}
+
+/**
+ * 清掉**空的** font span（用于「预设了字体却没输入」的收尾）。
+ *
+ * 光标所在的那个空 span 会保留 —— 它正是待生效的预设。
+ * 光标一旦离开，它就没有意义了，留着只会在文件里堆积无用标签。
+ *
+ * 返回新的全文与（可能被平移的）光标位置；无变化时原样返回。
+ */
+export function cleanupEmptyFontSpans(
+  text: string,
+  cursor: number,
+): { text: string; cursor: number } {
+  const empties = findFontSpansWithBounds(text).filter((s) => s.textFrom === s.textTo);
+  if (empties.length === 0) return { text, cursor };
+
+  let out = text;
+  let caret = cursor;
+  // 从后往前删，前面的下标才不会被移动影响。
+  for (const span of [...empties].reverse()) {
+    if (span.textFrom === cursor) continue;
+
+    out = out.slice(0, span.spanStart) + out.slice(span.spanEnd);
+    if (caret > span.spanEnd) caret -= span.spanEnd - span.spanStart;
+    else if (caret > span.spanStart) caret = span.spanStart;
+  }
+  return { text: out, cursor: caret };
+}
+
 /** 选区当前是否处于一段 font span 内（用于按钮的选中态）。 */
 export function selectionHasFontSpan(sel: FontSpanSelection): boolean {
   const { text, from, to } = sel;
@@ -164,6 +229,31 @@ export function findFontSpans(text: string): FontSpanRange[] {
   while ((m = SPAN_GLOBAL.exec(text)) !== null) {
     const tagLength = m[0].length - m[2].length - "</span>".length;
     out.push({
+      textFrom: m.index + tagLength,
+      textTo: m.index + tagLength + m[2].length,
+      font: unescapeAttr(m[1]),
+    });
+  }
+  return out;
+}
+
+/** 与 FontSpanRange 相同，但额外带上整段标签的边界（供删除/改写用）。 */
+interface FontSpanBounds extends FontSpanRange {
+  /** 开始标签的起点。 */
+  spanStart: number;
+  /** 结束标签的终点。 */
+  spanEnd: number;
+}
+
+function findFontSpansWithBounds(text: string): FontSpanBounds[] {
+  const out: FontSpanBounds[] = [];
+  SPAN_GLOBAL.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = SPAN_GLOBAL.exec(text)) !== null) {
+    const tagLength = m[0].length - m[2].length - "</span>".length;
+    out.push({
+      spanStart: m.index,
+      spanEnd: m.index + m[0].length,
       textFrom: m.index + tagLength,
       textTo: m.index + tagLength + m[2].length,
       font: unescapeAttr(m[1]),

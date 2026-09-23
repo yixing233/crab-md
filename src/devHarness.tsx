@@ -68,6 +68,11 @@ function Harness() {
   const [cjkFont, setCjkFont] = useState<EditorCjkFont>(() =>
     readStoredCjkFont(localStorage.getItem(FONT_CJK_KEY)),
   );
+  // 与 App.tsx 一致的选区字体请求接线：nonce 每次刷新才能重复触发。
+  const [fontSpanRequest, setFontSpanRequest] = useState<{ stack: string; nonce: number } | null>(
+    null,
+  );
+  const [clearFontNonce, setClearFontNonce] = useState(0);
 
   // 复刻 App.tsx 的接线，才能在 harness 里看到暗色对比度与字体效果。
   useEffect(() => {
@@ -134,20 +139,27 @@ function Harness() {
       {/* 真实 CodeMirror 编辑器：用来核对光标颜色、选区字体与字体下拉。
           这些都只靠单测证明不了 —— 光标颜色由 CodeMirror 基础主题写死，
           选区字体靠 ViewPlugin 注入装饰，下拉位置由 portal 计算，
-          必须看浏览器里的真实计算样式与坐标。 */}
+          必须看浏览器里的真实计算样式与坐标。
+
+          onQuickFont 按 App.tsx 的真实接线方式刷 nonce：只传固定值的话，
+          第二次点同一字体会因为 nonce 未变而不再触发，测不出真实行为。 */}
       <div style={{ height: 220, border: "1px solid #888", margin: 16 }}>
         <MarkdownEditor
           documentId="harness"
           value={'# 光标验证\n\n普通文字\n\n<span style="font-family:KaiTi, serif">这段应是楷体</span>\n\n结束'}
           onChange={() => {}}
-          onQuickFont={() => {}}
-          onClearFont={() => {}}
+          onQuickFont={(stack) => setFontSpanRequest({ stack, nonce: Date.now() })}
+          onClearFont={() => setClearFontNonce((n) => n + 1)}
+          fontSpanRequest={fontSpanRequest}
+          clearFontNonce={clearFontNonce}
           defaultLatinFont={latinFont}
           defaultCjkFont={cjkFont}
         />
       </div>
 
-      {/* 表格与公式的真实渲染效果（含真实 KaTeX 样式与字体）。 */}
+      {/* 表格与公式的真实渲染效果（含真实 KaTeX 样式与字体）。
+          最后一组复刻用户报告的原文：**带 font-family 的 span 包着公式** ——
+          插件原本遇到带属性的行内标签就放弃识别，公式会退化成原文。 */}
       <div style={{ padding: 16, maxWidth: 720 }}>
         <MarkdownPreview
           source={[
@@ -161,6 +173,10 @@ function Harness() {
             "$$",
             "\\int_0^1 x^2 \\, dx = \\frac{1}{3}",
             "$$",
+            "",
+            '<span style="font-family:KaiTi, serif">$m=G/g$</span>',
+            "",
+            '<span style="font-family:KaiTi, serif">文字 $a^2$ 结束</span>',
           ].join("\n")}
         />
       </div>

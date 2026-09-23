@@ -1142,16 +1142,34 @@ Rules:
 - A stored preference from an older scheme MUST be migrated, not silently
   reset. A reset reads to the user as "my setting was lost".
 - Chinese and Latin fonts MUST be settable **independently** (Word does the
-  same). Implement it with one CSS stack, Latin face first: Latin faces carry
-  no CJK glyphs, so Chinese falls through to the CJK face automatically.
-  Reversing the order lets a CJK face's own Latin glyphs win, silently
-  discarding the user's Latin choice.
+  same). Implement it with one CSS stack, and put the **CJK face first** while
+  the Latin choice is still the default. The tempting rule — "Latin first,
+  because Latin faces carry no CJK glyphs" — is wrong in practice: the default
+  Latin entry is `system-ui`, which on Windows is Microsoft YaHei and **carries
+  full Latin glyphs**, so it takes over the whole stack. Pixel comparison
+  measured that choosing 楷体 changed *nothing* — Chinese, digits and mixed text
+  all rendered identically to `system-ui`. Only when the user has explicitly
+  picked a Latin face may it lead.
+- Font behaviour MUST be judged by rendered glyphs, not by the declared stack.
+  `getComputedStyle().fontFamily` only echoes the declaration, and CJK advance
+  widths are uniformly `1em`, so width comparison cannot tell faces apart.
+  Verify with a canvas pixel hash against each candidate face.
 - A font-picker label MUST be rendered with the stack that shows **that
   option's own** face, not the composed stack. The labels are Chinese, and a
   composed stack may lead with a Latin face that itself carries CJK glyphs
   (`system-ui`), which makes every option look identical — the picker's whole
   purpose. Measured: all six CJK options rendered as `system-ui` before this
   was split out.
+- Setting a font with **no selection** MUST apply to what the user types next
+  (insert a collapsed `<span>` pair at the caret). It MUST NOT be a no-op, and
+  the entry MUST NOT be disabled for lack of a selection.
+- An empty font span the caret has left MUST be cleaned up, so a preset that is
+  never used does not accumulate junk in the file.
+- A formula inside a styled span MUST still render. `@vscode/markdown-it-katex`
+  skips inline math when the preceding token is an **attributed** inline HTML
+  tag (`/^<\w+.+[^/]>$/`) — exactly the `<span style="font-family:…">` this
+  feature writes — so an extra inline rule is required; keep the plugin's
+  word-boundary rules so `$5 and $10` stays currency.
 - Assigning a font to a selection MUST be visible **while editing**, not only
   in the preview. A stored `<span style="font-family:…">` has to be decorated
   in the editor, otherwise the setting appears not to work.
@@ -1165,8 +1183,7 @@ Rules:
   press MUST NOT count as an outside click, or the button cannot close its own
   menu.
 - Per-selection font MUST be per selection, never a silent whole-document
-  change, and an empty selection MUST be a no-op rather than inserting an
-  empty span.
+  change.
 - The caret MUST be driven by a theme token (`--caret`). CodeMirror's base
   theme hard-codes the caret to black (`&light .cm-content { caretColor: black }`,
   `.cm-cursor { border-left: 1.2px solid black }`) and only overrides it under

@@ -10,8 +10,9 @@ import { useEffect, useRef, useState } from "react";
 import { applyMarkdownAction, type MarkdownActionId } from "../../lib/markdownActions";
 import type { EditorCjkFont, EditorLatinFont } from "../../lib/editorPrefs";
 import {
-  applyFontToSelection,
+  cleanupEmptyFontSpans,
   findFontSpans,
+  insertFontSpan,
   removeFontFromSelection,
   selectionHasFontSpan,
 } from "../../lib/fontSpan";
@@ -266,19 +267,19 @@ export function MarkdownEditor({
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  // 选区状态：快速字体条据此决定按钮可用性与「清除」是否出现。
-  const [hasSelection, setHasSelection] = useState(false);
+  // 选区是否已有字体：决定下拉里「清除」是否出现。
+  // 不再跟踪「选区是否为空」—— 无选区时改字体作用于接下来输入的内容，
+  // 因此入口按钮永不因缺选区而禁用。
   const [selectionHasFontState, setSelectionHasFontState] = useState(false);
   // 用 ref 持有最新回调，避免每次渲染都重建编辑器。
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const onCursorRef = useRef(onCursor);
   const onSelectionFontRef = useRef(onSelectionFontChange);
-  // 选区状态（是否为空 / 是否已有字体）用 ref 汇总上报，避免每次渲染重建编辑器。
+  // 选区是否已有字体用 ref 上报，避免每次渲染重建编辑器。
   const onSelectionStateRef = useRef<
     ((state: { hasSelection: boolean; hasFont: boolean }) => void) | null
   >((state) => {
-    setHasSelection(state.hasSelection);
     setSelectionHasFontState(state.hasFont);
   });
   onChangeRef.current = onChange;
@@ -332,7 +333,7 @@ export function MarkdownEditor({
               const { line, column } = cursorPosition(update.state);
               onCursorRef.current?.(line, column);
             }
-            // 选区是否已有字体、是否为空：决定快速条的按钮状态。
+            // 选区是否已有字体、是否为空：决定字体入口的状态。
             if (update.selectionSet || update.docChanged) {
               const main = update.state.selection.main;
               const hasFont = selectionHasFontSpan({
@@ -345,6 +346,20 @@ export function MarkdownEditor({
                 hasSelection: main.from !== main.to,
                 hasFont,
               });
+            }
+            // 光标离开后，之前为「待输入」插入的空 span 就没意义了。
+            // 只在**光标移动**时清理，不在输入过程中 —— 否则刚插入的
+            // 那个空 span 会在第一次输入前就被删掉，预设直接失效。
+            if (update.selectionSet && !update.docChanged) {
+              const text = update.state.doc.toString();
+              const caret = update.state.selection.main.from;
+              const cleaned = cleanupEmptyFontSpans(text, caret);
+              if (cleaned.text !== text) {
+                update.view.dispatch({
+                  changes: { from: 0, to: text.length, insert: cleaned.text },
+                  selection: CmSelection.cursor(cleaned.cursor),
+                });
+              }
             }
           }),
         ],
@@ -408,12 +423,15 @@ export function MarkdownEditor({
     });
   }, [findNonce]);
 
-  // 选区设字体。依赖 nonce：同一字体连点两次也要重新生效。
+  // 设置字体。依赖 nonce：同一字体连点两次也要重新生效。
+  //
+  // 有选区时包住选区；**没有选区时插入一对空 span 并把光标放进去**，
+  // 于是接下来输入的内容自动带上该字体（用户明确要求的行为）。
   const fontNonce = fontSpanRequest?.nonce;
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !fontSpanRequest) return;
-    dispatchTextChange(view, (sel) => applyFontToSelection(sel, fontSpanRequest.stack));
+    dispatchTextChange(view, (sel) => insertFontSpan(sel, fontSpanRequest.stack));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fontNonce]);
 
@@ -421,7 +439,29 @@ export function MarkdownEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !clearFontNonce) return;
-    dispatchTextChange(view, removeFontFromSelection);
+    const change = removeFontFromSelection({
+      text: view.state.doc.toString(),
+      from: view.state.selection.main.from,
+      to: view.state.selection.main.to,
+    });
+    // 选区外层没有 font span 时，「清除」还要能撤掉光标处那个**待输入的
+    // 空 span**（用户点了字体却还没打字，然后又点清除）。
+    const r =
+      change.text === view.state.doc.toString()
+        ? cleanupEmptyFontSpans(
+            view.state.doc.toString(),
+            view.state.selection.main.from,
+          )
+        : { text: change.text, cursor: change.from };
+
+    if (r.text !== view.state.doc.toString()) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: r.text },
+        selection: CmSelection.cursor(r.cursor),
+        scrollIntoView: true,
+      });
+    }
+    view.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearFontNonce]);
 
@@ -443,7 +483,7 @@ export function MarkdownEditor({
                 onPick={onQuickFont}
                 onClear={onClearFont}
                 hasFont={selectionHasFontState}
-                hasSelection={hasSelection}
+                // 无选区时也能改字体：作用于**接下来输入的内容**（见 insertFontSpan）。
                 defaultLatin={defaultLatinFont}
                 defaultCjk={defaultCjkFont}
               />

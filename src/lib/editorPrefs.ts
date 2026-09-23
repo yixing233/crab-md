@@ -151,29 +151,59 @@ const CJK_GENERIC: Record<EditorCjkFont, string> = {
 /**
  * 把「西文 + 中文」两个选择合成一条 CSS 字体栈。
  *
- * 顺序固定为**西文在前、中文在后**：西文字体没有汉字字形，浏览器逐字符
- * 查栈时中文会自动跳过它落到中文字体上。反过来放则西文也会被中文字体
- * 自带的拉丁字形接管（宋体自带英文），用户选的西文字体就白设了。
+ * 顺序是**中文字体在前、西文字体在后**。这与直觉相反，但是实测结论：
  *
- * 另外：某个方向选 `system` 时它的具名字形仍在栈里（system-ui / 系统中文），
- * 这不是多余 —— 它保证了「只改一侧」时另一侧仍然是明确的字体选择。
+ * 先前把西文放最前，理由是「西文字体没有汉字字形，中文会自动跳过它」。
+ * 这对 Times / Georgia 成立，但**对「系统默认」不成立** —— 那个栈首是
+ * `system-ui`，在 Windows 上即微软雅黑，**它自带完整的拉丁字形**，于是
+ * 整个栈被它独占：像素比对证实选「楷体」后中文、数字、混排三种内容的
+ * 渲染结果与 system-ui 完全一致，用户选的字体一个字符都没生效。
+ *
+ * 反过来把中文字体放前也有代价：中文字体自带的拉丁字形会接管西文
+ * （宋体的英文是衬线）。但两者不可兼得时按**用户实际在意的东西**取舍 ——
+ * 中文用户换字体，看的是汉字，拉丁字形差异是次要的。
+ *
+ * 若确实需要独立控制西文，用户可以在设置页单独指定西文字体，
+ * 此时西文项会排在中文项之前（见 buildFontStack）。
  */
 export function composeFontStack(latin: EditorLatinFont, cjk: EditorCjkFont): string {
-  const latinFaces = LATIN_FACES[latin] ?? LATIN_FACES.system;
-  const cjkFaces = CJK_FACES[cjk] ?? CJK_FACES.system;
-  const generic = CJK_GENERIC[cjk] ?? "sans-serif";
-  return `${latinFaces}, ${cjkFaces}, ${generic}`;
+  return buildFontStack(latin, cjk);
+}
+
+/**
+ * 合成字体栈。
+ *
+ * 两种顺序，取决于用户是否**显式**选过西文字体：
+ *
+ * - 西文仍是默认（`system`）：把中文放前。此时西文没有明确偏好，
+ *   让中文优先才能真正生效（否则 system-ui 会吃掉一切，实测确认）。
+ * - 西文被显式选过：把西文放前。用户明确要求了西文字形，应当尊重；
+ *   中文仍会沿栈回退到后面的中文字体。
+ */
+export function buildFontStack(latin: EditorLatinFont, cjk: EditorCjkFont): string {
+  // 先把非法值归一到默认值，再决定顺序 —— 否则一个拼错的 id 会拿到
+  // 默认的字形却走了「显式西文」的分支，与真正默认的结果不一致。
+  const safeLatin = isIn(EDITOR_LATIN_FONTS, latin) ? latin : DEFAULT_LATIN_FONT;
+  const safeCjk = isIn(EDITOR_CJK_FONTS, cjk) ? cjk : DEFAULT_CJK_FONT;
+
+  const latinFaces = LATIN_FACES[safeLatin];
+  const cjkFaces = CJK_FACES[safeCjk];
+  const generic = CJK_GENERIC[safeCjk] ?? "sans-serif";
+
+  // 西文是「系统默认」时它只是兜底，不该排在前面抢字形。
+  return safeLatin === DEFAULT_LATIN_FONT
+    ? `${cjkFaces}, ${latinFaces}, ${generic}`
+    : `${latinFaces}, ${cjkFaces}, ${generic}`;
 }
 
 /**
  * 只用一个方向自己的字形构栈，供**设置页预览标签**使用。
  *
- * 为什么不能直接用 `composeFontStack`：预览标签本身是中文
- * （「宋体」「黑体」），而合成栈把西文放在最前。当西文选「系统默认」时
- * 最前面是 `system-ui` —— 它**自带汉字字形**，于是六个中文选项全部渲染成
- * 同一种字体，选择列表看起来毫无区别（实测确认）。
+ * 为什么不直接用 `composeFontStack`：预览标签本身是中文（「宋体」「黑体」），
+ * 而某些组合（西文被显式选过时）会把西文放最前 —— 西文若是 `system-ui`，
+ * 它自带汉字字形，六个中文选项会全渲染成同一种字体，列表看不出区别。
  *
- * 所以预览标签必须让**该选项自己的字形排第一**。
+ * 所以预览标签一律让**该选项自己的字形排第一**。
  */
 export function previewStack(
   latin: EditorLatinFont,

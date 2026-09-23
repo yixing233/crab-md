@@ -81,9 +81,9 @@ export const zh = {
       math: "行内公式",
       mathBlock: "块级公式",
     },
-    /** 选区字体：给选中的文字单独指定字体（写入 .md 的内联 HTML）。 */
+    /** 字体入口：给选中的文字单独指定字体；没选中则作用于接下来输入的内容。 */
     quickFont: "字体",
-    quickFontHint: "先选中文字，再点选字体。",
+    quickFontHint: "选中文字后设置字体；未选中时，设置为接下来输入的字体。",
     quickFontClear: "清除字体",
     quickFontNoSelection: "请先选中文字",
     /** 编辑器内快速选字体时展示的短名（完整名在设置页）。 */

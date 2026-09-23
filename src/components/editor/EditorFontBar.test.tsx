@@ -146,19 +146,21 @@ describe("EditorFontBar (icon button + dropdown)", () => {
     expect(new Set(stacks).size).toBe(stacks.length);
   });
 
-  it("disables the entry when nothing is selected", async () => {
-    renderEntry({ hasSelection: false });
+  it("stays enabled with no selection, because it sets the font for what you type next", async () => {
+    // 行为要求：没有选中文字时也要能改字体 —— 作用于后续输入。
+    // 因此按钮**不能**禁用（早先版本禁用是错的）。
+    renderEntry();
     const btn = screen.getByRole("button", { name: "字体" });
-    expect(btn).toBeDisabled();
+    expect(btn).toBeEnabled();
 
     await userEvent.click(btn);
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "字体" })).toBeInTheDocument();
   });
 
-  it("explains the disabled state", async () => {
-    renderEntry({ hasSelection: false });
+  it("explains what setting a font without a selection does", async () => {
+    renderEntry();
     await userEvent.hover(screen.getByRole("button", { name: "字体" }));
-    expect(await screen.findByText(/请先选中文字/)).toBeInTheDocument();
+    expect(await screen.findByText(/接下来输入/)).toBeInTheDocument();
   });
 
   it("offers no clear item when the selection has no font", async () => {

@@ -143,6 +143,42 @@ describe("renderMarkdown math (KaTeX)", () => {
     expect(html).toContain("标题");
     expect(html).toContain("正文仍在");
   });
+
+  it("renders math that sits inside a styled span", () => {
+    // 关键回归：插件原本遇到「前面是带属性的行内标签」就放弃识别公式，
+    // 而「选区设字体」写出的正是 `<span style="font-family:…">$x$</span>`，
+    // 于是公式全变原文（用户实测报告）。
+    const html = renderMarkdown('<span style="font-family:KaiTi">$m=G/g$</span>');
+    expect(html).toContain("katex");
+    expect(html).not.toContain("$m=G/g$");
+  });
+
+  it("renders math alongside ordinary text inside a styled span", () => {
+    const html = renderMarkdown(
+      '<span style="font-family:KaiTi">文字 $a^2$ 结束</span>',
+    );
+    expect(html).toContain("katex");
+    expect(html).toContain("文字");
+    expect(html).toContain("结束");
+  });
+
+  it("still renders bare inline math", () => {
+    expect(renderMarkdown("$m=G/g$")).toContain("katex");
+  });
+
+  it("does not turn currency into a formula", () => {
+    // 放宽识别范围后必须守住这条：`$5 and $10` 不是公式。
+    const html = renderMarkdown("costs $5 and $10 today");
+    expect(html).not.toContain("katex");
+  });
+
+  it("does not treat a dollar glued to a word as math", () => {
+    expect(renderMarkdown("x$y$")).not.toContain("katex");
+  });
+
+  it("does not treat an escaped dollar as a delimiter", () => {
+    expect(renderMarkdown("\\$a\\$")).not.toContain("katex");
+  });
 });
 
 /**

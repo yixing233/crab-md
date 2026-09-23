@@ -17,14 +17,12 @@ import {
 import "./editor.css";
 
 export interface EditorFontBarProps {
-  /** 覆盖当前选区设置的字体栈。 */
+  /** 覆盖当前选区设置的字体栈；无选区时作用于接下来输入的内容。 */
   onPick: (stack: string) => void;
-  /** 移除选区已有的字体。 */
+  /** 移除字体（选区内的，或光标处尚未输入的空 span）。 */
   onClear: () => void;
   /** 选区是否已有字体。 */
   hasFont: boolean;
-  /** 选区是否为空 —— 空选区时按钮禁用并说明原因。 */
-  hasSelection: boolean;
   /** 当前设置里的西文 / 中文字体，「默认」项据此合成。 */
   defaultLatin: EditorLatinFont;
   defaultCjk: EditorCjkFont;
@@ -44,7 +42,6 @@ export function EditorFontBar({
   onPick,
   onClear,
   hasFont,
-  hasSelection,
   defaultLatin,
   defaultCjk,
 }: EditorFontBarProps) {
@@ -102,9 +99,8 @@ export function EditorFontBar({
     setOpen(true);
   }
 
-  const tip = hasSelection
-    ? zh.editor.quickFontHint
-    : `${zh.editor.quickFont}　${zh.editor.quickFontNoSelection}`;
+  // 没有选区也能用：此时作用于**接下来输入的内容**，所以按钮永不因缺选区禁用。
+  const tip = zh.editor.quickFontHint;
 
   return (
     <div className="editor-font-entry" ref={anchorRef}>
@@ -116,7 +112,6 @@ export function EditorFontBar({
           aria-label={zh.editor.quickFont}
           aria-haspopup="menu"
           aria-expanded={open}
-          disabled={!hasSelection}
           onClick={() => (open ? setOpen(false) : openMenu())}
         >
           {/* 图标 + 小箭头：让「点了会弹东西」这件事本身可预期。 */}

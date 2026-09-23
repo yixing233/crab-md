@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyFontToSelection,
+  cleanupEmptyFontSpans,
   escapeAttr,
   findFontSpans,
+  insertFontSpan,
   removeFontFromSelection,
   selectionHasFontSpan,
   unescapeAttr,
@@ -132,6 +134,96 @@ describe("selectionHasFontSpan", () => {
 
   it("is false for plain text", () => {
     expect(selectionHasFontSpan({ text: "中文", from: 0, to: 2 })).toBe(false);
+  });
+});
+
+describe("insertFontSpan (no selection -> font for what you type next)", () => {
+  it("inserts an empty span and puts the caret inside it", () => {
+    const r = insertFontSpan({ text: "前后", from: 1, to: 1 }, SERIF);
+    // 光标必须落在开始标签之后、结束标签之前，后续输入才会落进 span。
+    expect(r.text.slice(0, r.from)).toMatch(/<span style="font-family:[^"]*">$/);
+    expect(r.text.slice(r.to)).toMatch(/^<\/span>/);
+  });
+
+  it("wraps text typed at the caret", () => {
+    // 模拟用户接着输入三个字符。
+    const r = insertFontSpan({ text: "", from: 0, to: 0 }, SERIF);
+    const typed = r.text.slice(0, r.from) + "中文" + r.text.slice(r.to);
+    expect(typed).toBe(`<span style="font-family:${escapeAttr(SERIF)}">中文</span>`);
+  });
+
+  it("keeps the caret collapsed", () => {
+    const r = insertFontSpan({ text: "abc", from: 2, to: 2 }, SERIF);
+    expect(r.from).toBe(r.to);
+  });
+
+  it("rewrites an existing empty span instead of nesting", () => {
+    const first = insertFontSpan({ text: "", from: 0, to: 0 }, SERIF);
+    const second = insertFontSpan({ text: first.text, from: first.from, to: first.to }, KAI);
+    // 反复换字体只应留下一对标签。
+    expect((second.text.match(/<span/g) ?? []).length).toBe(1);
+    expect(second.text).toContain(escapeAttr(KAI));
+  });
+
+  it("falls back to wrapping when there is a selection", () => {
+    const r = insertFontSpan({ text: "中文", from: 0, to: 2 }, SERIF);
+    expect(r.text).toBe(`<span style="font-family:${escapeAttr(SERIF)}">中文</span>`);
+  });
+
+  it("leaves surrounding text untouched", () => {
+    const r = insertFontSpan({ text: "AB", from: 1, to: 1 }, SERIF);
+    expect(r.text.startsWith("A<")).toBe(true);
+    expect(r.text.endsWith(">B")).toBe(true);
+  });
+});
+
+describe("cleanupEmptyFontSpans", () => {
+  it("removes an empty span the caret has left", () => {
+    // 预设了字体但没输入就点走了，标签不该留在文件里。
+    const kept = insertFontSpan({ text: "abc", from: 3, to: 3 }, SERIF);
+    const moved = 0; // 光标移到了开头
+    const r = cleanupEmptyFontSpans(kept.text, moved);
+    expect(r.text).toBe("abc");
+    expect(r.cursor).toBe(0);
+  });
+
+  it("keeps the empty span the caret is still inside", () => {
+    // 光标还在里面，说明用户正准备输入，不能删。
+    const kept = insertFontSpan({ text: "abc", from: 3, to: 3 }, SERIF);
+    const r = cleanupEmptyFontSpans(kept.text, kept.from);
+    expect(r.text).toBe(kept.text);
+  });
+
+  it("removes several abandoned empty spans at once", () => {
+    const a = insertFontSpan({ text: "x", from: 1, to: 1 }, SERIF);
+    const b = insertFontSpan({ text: a.text, from: 0, to: 0 }, KAI);
+    // 光标放在全文开头 —— 那在**标签之外**，两段预设都已放弃，应全部清掉。
+    // （若要保留，光标必须落在标签内部，即 b.from。）
+    const r = cleanupEmptyFontSpans(b.text, 0);
+    expect(r.text).toBe("x");
+    expect((r.text.match(/<span/g) ?? []).length).toBe(0);
+  });
+
+  it("keeps only the span the caret sits inside", () => {
+    const a = insertFontSpan({ text: "x", from: 1, to: 1 }, SERIF);
+    const b = insertFontSpan({ text: a.text, from: 0, to: 0 }, KAI);
+    // b.from 落在后插入的那段标签内部，这一段是「待输入」的预设。
+    const r = cleanupEmptyFontSpans(b.text, b.from);
+    expect((r.text.match(/<span/g) ?? []).length).toBe(1);
+    expect(r.text).toContain(escapeAttr(KAI));
+  });
+
+  it("is a no-op when there are no empty spans", () => {
+    const text = `<span style="font-family:${escapeAttr(SERIF)}">中文</span>`;
+    expect(cleanupEmptyFontSpans(text, 0)).toEqual({ text, cursor: 0 });
+  });
+
+  it("shifts the caret when it sits after a removed span", () => {
+    const a = insertFontSpan({ text: "abc", from: 0, to: 0 }, SERIF);
+    const caretAtEnd = a.text.length;
+    const r = cleanupEmptyFontSpans(a.text, caretAtEnd);
+    expect(r.text).toBe("abc");
+    expect(r.cursor).toBe(3);
   });
 });
 

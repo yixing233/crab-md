@@ -1,5 +1,5 @@
 import DOMPurify from "dompurify";
-import MarkdownIt from "markdown-it";
+import MarkdownIt, { type StateInline } from "markdown-it";
 import katex from "@vscode/markdown-it-katex";
 
 const md = new MarkdownIt({
@@ -43,6 +43,73 @@ md.use(resolveKatexPlugin(katex) as typeof katex, {
   // 输出同时包含 MathML（无障碍朗读）与 HTML（视觉排版）。
   output: "htmlAndMathml",
 });
+
+/** 与插件一致：字母、数字、下划线都算「单词字符」。 */
+const WORD_CHAR = /[\w\d]/;
+
+/**
+ * 补一条内联公式规则，使公式在**带属性的行内标签内**也能渲染。
+ *
+ * 为什么必须有这条：`@vscode/markdown-it-katex` 的 inlineMath 开头有守卫 ——
+ * 若前一个 token 是形如 `<span style="…">` 的**带属性**行内 HTML，就直接
+ * 放弃识别（其本意是不在 HTML 属性里误认公式）。但「选区设字体」写出的正是
+ * `<span style="font-family:…">$x$</span>`，于是公式全部退化成原文。
+ *
+ * 实测：带属性标签内的公式一律不渲染；不带属性的 `<b>$x$</b>` 正常。
+ *
+ * 这条规则保留插件原有的边界判定（起止 `$` 不能紧邻单词字符），只去掉
+ * 「前面有带属性标签就放弃」这一条，因此不会把 `$5 and $10` 这类货币误判
+ * 成公式（已用测试锁定）。渲染仍复用插件注册的 `math_inline` 渲染器。
+ */
+function mathInlineAnywhere(state: StateInline, silent: boolean): boolean {
+  const start = state.pos;
+  if (state.src[start] !== "$") return false;
+  // `$$` 属于块级公式，交给插件的块级规则处理。
+  if (state.src[start + 1] === "$") return false;
+
+  // 与插件一致：起始 `$` 前紧邻单词字符时视为普通文本（避免 `x$y$`）。
+  const prev = state.src[start - 1];
+  if (prev !== undefined && WORD_CHAR.test(prev)) return false;
+
+  // 找闭合 `$`：跳过被转义的（`\$`），并要求其后不紧邻单词字符。
+  let search = start + 1;
+  let end = -1;
+  for (;;) {
+    const found = state.src.indexOf("$", search);
+    if (found === -1) break;
+
+    let back = found - 1;
+    let escapes = 0;
+    while (state.src[back] === "\\") {
+      escapes += 1;
+      back -= 1;
+    }
+    // 偶数个反斜杠表示这个 $ 未被转义，可作为闭合符。
+    if (escapes % 2 === 0) {
+      const next = state.src[found + 1];
+      if (next === undefined || !WORD_CHAR.test(next)) {
+        end = found;
+        break;
+      }
+    }
+    search = found + 1;
+  }
+
+  // 没有闭合符，或内容为空（`$$`）—— 不是公式。
+  if (end === -1 || end === start + 1) return false;
+
+  if (!silent) {
+    const token = state.push("math_inline", "math", 0);
+    token.content = state.src.slice(start + 1, end);
+    token.markup = "$";
+  }
+  state.pos = end + 1;
+  return true;
+}
+
+// 注册在插件规则**之前**：必须抢在它那条带守卫的规则前面拿到 `$`，
+// 否则守卫会先把这里当成普通文本消费掉。
+md.inline.ruler.before("math_inline", "math_inline_anywhere", mathInlineAnywhere);
 
 /**
  * KaTeX 允许保留的内联样式属性白名单。
