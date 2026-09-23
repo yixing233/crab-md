@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import {
   Bold,
   Code,
@@ -42,6 +42,14 @@ const ICONS: Record<MarkdownActionId, LucideIcon> = {
 export interface EditorToolbarProps {
   /** 点击某个格式化动作；由编辑器把这动作作用到当前选区。 */
   onAction: (action: MarkdownActionId) => void;
+  /**
+   * 行尾附加的控件（如字体下拉入口）。
+   *
+   * 用插槽而不是把字体逻辑写进工具栏：工具栏只关心格式动作，
+   * 字体是选区属性，两者职责不同，但视觉上都属于「编辑这篇文档」，
+   * 故共用一行而不是各占一条（§2.1 保持工具栏安静）。
+   */
+  trailing?: ReactNode;
 }
 
 /**
@@ -64,7 +72,7 @@ const GROUPS: ReadonlyArray<ReadonlyArray<MarkdownActionId>> = [
  * 由 `lib/markdownActions.ts` 的纯函数决定 —— 工具栏不碰文本。
  * 文案取自 `lib/i18n.ts`（§2.5：界面文案一律简体中文）。
  */
-export function EditorToolbar({ onAction }: EditorToolbarProps) {
+export function EditorToolbar({ onAction, trailing }: EditorToolbarProps) {
   const byId = new Map(EDITOR_ACTIONS.map((a) => [a.id, a]));
 
   return (
@@ -97,6 +105,14 @@ export function EditorToolbar({ onAction }: EditorToolbarProps) {
           })}
         </Fragment>
       ))}
+
+      {/* 行尾控件（字体入口）。用 spacer 把它推到最右，与格式动作拉开层次。 */}
+      {trailing && (
+        <>
+          <span className="editor-toolbar__spacer" aria-hidden />
+          {trailing}
+        </>
+      )}
     </div>
   );
 }

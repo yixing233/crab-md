@@ -131,15 +131,15 @@ function Harness() {
         <Breadcrumb virtualPath="/笔记/" title="示例文档.md" />
       </DocumentBar>
 
-      {/* 真实 CodeMirror 编辑器：用来核对光标颜色与选区字体的实际渲染。
-          两者都只靠单测证明不了 —— 光标颜色由 CodeMirror 基础主题写死，
-          选区字体靠 ViewPlugin 注入装饰，必须看浏览器的计算样式。 */}
-      <div style={{ height: 200, border: "1px solid #888", margin: 16 }}>
+      {/* 真实 CodeMirror 编辑器：用来核对光标颜色、选区字体与字体下拉。
+          这些都只靠单测证明不了 —— 光标颜色由 CodeMirror 基础主题写死，
+          选区字体靠 ViewPlugin 注入装饰，下拉位置由 portal 计算，
+          必须看浏览器里的真实计算样式与坐标。 */}
+      <div style={{ height: 220, border: "1px solid #888", margin: 16 }}>
         <MarkdownEditor
           documentId="harness"
           value={'# 光标验证\n\n普通文字\n\n<span style="font-family:KaiTi, serif">这段应是楷体</span>\n\n结束'}
           onChange={() => {}}
-          showToolbar={false}
           onQuickFont={() => {}}
           onClearFont={() => {}}
           defaultLatinFont={latinFont}

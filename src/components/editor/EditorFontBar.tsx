@@ -1,5 +1,7 @@
-import { X } from "lucide-react";
+import { useRef, useState } from "react";
+import { ALargeSmall, ChevronDown } from "lucide-react";
 import { Button } from "../ui/Button";
+import { ContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
 import { Tooltip } from "../ui/Tooltip";
 import { zh } from "../../lib/i18n";
 import {
@@ -8,7 +10,9 @@ import {
   isCjkFontId,
   isLatinFontId,
   previewStack,
+  type EditorCjkFont,
   type EditorFontFamilyId,
+  type EditorLatinFont,
 } from "../../lib/editorPrefs";
 import "./editor.css";
 
@@ -22,19 +26,19 @@ export interface EditorFontBarProps {
   /** 选区是否为空 —— 空选区时按钮禁用并说明原因。 */
   hasSelection: boolean;
   /** 当前设置里的西文 / 中文字体，「默认」项据此合成。 */
-  defaultLatin: Parameters<typeof composeFontStack>[0];
-  defaultCjk: Parameters<typeof composeFontStack>[1];
+  defaultLatin: EditorLatinFont;
+  defaultCjk: EditorCjkFont;
 }
 
 /**
- * 编辑器内的快速字体条（UI §34.6）。
+ * 编辑器内的字体入口（UI §34.6）。
  *
- * 为什么放在编辑器里而不是只留设置页：
- * 设置页改的是**全局默认字体**，而「这一段用宋体」是**就地决策** ——
- * 每次都要开设置页、改全局、再关掉，等于把局部需求当成全局配置。
- * 这里点一下就直接写进选区。
+ * 形态是**一个图标按钮 + 点击弹出下拉**，而不是常驻的一排字体按钮：
+ * 后者占掉一整条横向空间，且八个中文字形并排会把格式工具栏挤乱。
+ * 字体是低频操作，收进下拉既省空间也不喧宾夺主（§2.1）。
  *
- * 选项比设置页精简（用短名）：它是一条常驻的窄工具条，不是配置面板。
+ * 下拉复用 `ContextMenu` 原语而非自造：视口收敛、Escape、点击外部、
+ * 键盘上下导航都已经过测试，重写一遍只会多一处会坏的地方。
  */
 export function EditorFontBar({
   onPick,
@@ -44,6 +48,11 @@ export function EditorFontBar({
   defaultLatin,
   defaultCjk,
 }: EditorFontBarProps) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  // 打开时的坐标：锚点按钮的左下角，与工具栏下拉一致。
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
   /** 把一维 id 解析成完整字体栈；「默认」用当前设置的组合。 */
   function stackOf(id: EditorFontFamilyId): string {
     if (id === "system") return composeFontStack(defaultLatin, defaultCjk);
@@ -53,53 +62,78 @@ export function EditorFontBar({
   }
 
   /**
-   * 标签的**预览**字体。不能直接用 stackOf：标签是中文（「宋体」「黑体」），
-   * 而合成栈最前面是西文；当西文为「系统默认」（`system-ui`，自带汉字字形）
-   * 时会把中文吃掉，八个按钮看起来全一样。
+   * 下拉项的**预览**字体。
+   *
+   * 两个都必须用**该项自己**的字形，不能用当前的默认设置：
+   * - 标签是中文（「宋体」「等宽」），若让西文排最前，西文为
+   *   「系统默认」（`system-ui`，自带汉字字形）时会把中文吃掉，
+   *   所有项看起来一模一样（实测缺陷）。
+   * - 用 defaultLatin 渲染西文项也是错的：那样 Times 与等宽会都显示成
+   *   当前默认字体，用户看不出这两项是什么。
    */
   function previewStackOf(id: EditorFontFamilyId): string {
     if (isCjkFontId(id)) return previewStack(defaultLatin, id, "cjk");
+    if (isLatinFontId(id)) return previewStack(id, defaultCjk, "latin");
+    // 「默认」项：展示当前设置实际合成出来的样子。
     return previewStack(defaultLatin, defaultCjk, "latin");
   }
 
   const label = (id: EditorFontFamilyId) => zh.editor.quickFontOption[id];
-  const tip = (id: EditorFontFamilyId) =>
-    hasSelection ? label(id) : `${label(id)}　${zh.editor.quickFontNoSelection}`;
+
+  const items: ContextMenuItem[] = EDITOR_FONT_FAMILY_IDS.map((id) => ({
+    id,
+    label: label(id),
+    fontFamily: previewStackOf(id),
+    onSelect: () => onPick(stackOf(id)),
+  }));
+
+  // 「清除」只在选区确实有字体时才加，否则是个永远无效的项。
+  if (hasFont) {
+    items.push({
+      id: "clear",
+      label: zh.editor.quickFontClear,
+      onSelect: onClear,
+    });
+  }
+
+  function openMenu() {
+    const r = anchorRef.current?.getBoundingClientRect();
+    if (r) setPos({ x: r.left, y: r.bottom + 4 });
+    setOpen(true);
+  }
+
+  const tip = hasSelection
+    ? zh.editor.quickFontHint
+    : `${zh.editor.quickFont}　${zh.editor.quickFontNoSelection}`;
 
   return (
-    <div className="editor-font-bar" role="toolbar" aria-label={zh.editor.quickFont}>
-      <span className="editor-font-bar__label">{zh.editor.quickFont}</span>
+    <div className="editor-font-entry" ref={anchorRef}>
+      <Tooltip content={tip}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="editor-toolbar__button"
+          aria-label={zh.editor.quickFont}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          disabled={!hasSelection}
+          onClick={() => (open ? setOpen(false) : openMenu())}
+        >
+          {/* 图标 + 小箭头：让「点了会弹东西」这件事本身可预期。 */}
+          <ALargeSmall size={15} strokeWidth={2} aria-hidden />
+          <ChevronDown size={9} aria-hidden className="editor-font-entry__caret" />
+        </Button>
+      </Tooltip>
 
-      {EDITOR_FONT_FAMILY_IDS.map((id) => (
-        <Tooltip key={id} content={tip(id)}>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="editor-font-bar__item"
-            aria-label={label(id)}
-            disabled={!hasSelection}
-            onClick={() => onPick(stackOf(id))}
-          >
-            {/* 用该字体自身渲染短名，一眼看得出选的是什么。 */}
-            <span style={{ fontFamily: previewStackOf(id) }}>{label(id)}</span>
-          </Button>
-        </Tooltip>
-      ))}
-
-      {/* 只在选区确实有字体时才给「清除」，否则是个永远无效的按钮。 */}
-      {hasFont && (
-        <Tooltip content={zh.editor.quickFontClear}>
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            aria-label={zh.editor.quickFontClear}
-            onClick={onClear}
-          >
-            <X size={13} aria-hidden />
-          </Button>
-        </Tooltip>
-      )}
+      <ContextMenu
+        open={open}
+        x={pos.x}
+        y={pos.y}
+        items={items}
+        onClose={() => setOpen(false)}
+        ariaLabel={zh.editor.quickFont}
+        anchorRef={anchorRef}
+      />
     </div>
   );
 }

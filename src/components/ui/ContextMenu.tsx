@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import "./ui.css";
 
@@ -9,6 +16,14 @@ export interface ContextMenuItem {
   danger?: boolean;
   /** 快捷键提示，右对齐显示。 */
   shortcut?: string;
+  /**
+   * 用指定字体栈渲染 label。
+   *
+   * 供「选字体」这类菜单使用：读到「宋体」两个字本身就是宋体，
+   * 用户不必先选一次、看一眼、再换。只有这一个用途，故是可选字段，
+   * 不影响普通菜单的渲染。
+   */
+  fontFamily?: string;
   onSelect: () => void;
 }
 
@@ -21,6 +36,16 @@ export interface ContextMenuProps {
   onClose: () => void;
   /** 无障碍标签，说明这组操作针对什么。 */
   ariaLabel?: string;
+  /**
+   * 触发按钮所在的元素。
+   *
+   * 用于「点同一个按钮开/关」的菜单：按钮在菜单**外部**，所以点它会被
+   * 外部点击逻辑先关掉，紧接着按钮自己的 onClick 又把它打开 ——
+   * 表现为「怎么点都关不上」。
+   *
+   * 有了它，落在锚点内的按下不算「点到了外面」，开关交给按钮自己。
+   */
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -41,6 +66,7 @@ export function ContextMenu({
   items,
   onClose,
   ariaLabel,
+  anchorRef,
 }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -51,6 +77,9 @@ export function ContextMenu({
     const onDown = (e: MouseEvent) => {
       // 菜单内部的点击由各菜单项自行处理，这里只管外部。
       if (ref.current?.contains(e.target as Node)) return;
+      // 锚点（触发按钮）内的按下也不算外部：开关由按钮自己控制，
+      // 否则「再点一次关闭」会变成先关后开、看起来关不掉。
+      if (anchorRef?.current?.contains(e.target as Node)) return;
       onClose();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -66,7 +95,7 @@ export function ContextMenu({
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose]);
+  }, [open, onClose, anchorRef]);
 
   // 定位：先渲染再量尺寸，然后收进视口。
   useLayoutEffect(() => {
@@ -145,7 +174,13 @@ export function ContextMenu({
             onClose();
           }}
         >
-          <span className="ui-menu__label">{item.label}</span>
+          <span
+            className="ui-menu__label"
+            // 字体菜单用：标签以该字体自身渲染。
+            style={item.fontFamily ? { fontFamily: item.fontFamily } : undefined}
+          >
+            {item.label}
+          </span>
           {item.shortcut && (
             <span className="ui-menu__shortcut" aria-hidden>
               {item.shortcut}

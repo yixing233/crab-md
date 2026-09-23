@@ -29,32 +29,23 @@
 }
 
 /* ---------------------------------------------------------------------------
-   快速字体条（UI §34.6）：给选中的文字就地指定字体。
-   比格式工具栏更矮、更安静 —— 它是第二层工具，不该与主工具栏争注意力。
+   字体入口（UI §34.6）：工具栏行尾的一个图标按钮，点击弹出下拉。
+   不做成一排常驻字体按钮：八个中文字形并排会把格式工具栏挤乱。
    --------------------------------------------------------------------------- */
 
-.editor-font-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+.editor-font-entry {
+  display: inline-flex;
   align-items: center;
-  padding: var(--space-1) var(--space-3);
-  background: var(--bg-surface);
-  /* 用细线而非结构性边框：它从属于格式工具栏，不与正文分界。 */
-  border-bottom: 1px solid var(--border-subtle);
 }
 
-.editor-font-bar__label {
-  margin-right: var(--space-1);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
+/* 把字体入口推到最右：与格式动作拉开层次，也让行尾位置稳定。
+   工具栏本身 flex-wrap，故 spacer 结束后换行时入口会被带到下一行。 */
+.editor-toolbar__spacer { flex: 1 1 auto; }
 
-/* 字体项比图标按钮宽（要放字体名），但保持紧凑。 */
-.editor-font-bar__item {
-  height: 24px;
-  padding: 0 var(--space-2);
-  font-size: var(--text-xs);
+/* 小箭头：表示「点了会弹东西」。极小且低对比，不参与按钮的可访问名。 */
+.editor-font-entry__caret {
+  margin-left: 1px;
+  opacity: 0.6;
 }
 
 .editor-toolbar__button {

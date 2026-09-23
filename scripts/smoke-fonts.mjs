@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * 真实浏览器检查：字体设置的两组选项是否**各自用对应字体**渲染。
+ * 真实浏览器检查：编辑器字体入口是「图标按钮 + 点击弹下拉」，且下拉里的
+ * 字体项各自用对应字体渲染。
  *
- * 为什么必须查浏览器：字体是否真的生效只能看计算样式。单测能证明 style
- * 属性写对了，但证明不了「宋体」两个字真的以宋体显示 —— 而这正是选择列表
- * 的核心价值。实测曾出现六个中文选项全渲染成 system-ui 的缺陷（西文排在
- * 栈首把汉字吃掉了），单测完全看不出来。
+ * 为什么必须查浏览器：单测能证明菜单被渲染，但证明不了
+ *   ① 它是**点击后**才出现的（而不是常驻一排）；
+ *   ② 位置真的落在按钮下方（portal + fixed 定位，单测里量不到真实坐标）；
+ *   ③ 每个中文字体项真的以该字体显示。
+ * 这三点都曾出过问题（八个中文项一度全渲染成 system-ui）。
  *
  * 用法：先启动 harness（npx vite --config vite.harness.config.ts），再跑本脚本。
  */
@@ -16,7 +18,6 @@ import { join } from "node:path";
 
 const URL = process.env.HARNESS_URL ?? "http://localhost:5199/harness.html";
 
-/** 在项目内安装与 npx 缓存里寻找 playwright-cli 的入口脚本。 */
 function findCli() {
   const pkgs = [join(process.cwd(), "node_modules", "@playwright", "cli", "package.json")];
   const npxCache = join(process.env.LOCALAPPDATA ?? join(homedir(), ".npm"), "npm-cache", "_npx");
@@ -32,7 +33,7 @@ function findCli() {
       const bin = typeof parsed.bin === "string" ? parsed.bin : Object.values(parsed.bin ?? {})[0];
       if (typeof bin === "string") return join(pkg, "..", bin);
     } catch {
-      // 缓存里的包可能不完整，跳过继续找。
+      /* 缓存里的包可能不完整 */
     }
   }
   return null;
@@ -47,91 +48,131 @@ if (!CLI_BIN) {
 /** 不经过 shell：表达式里的空格/引号会被 shell 拆坏。 */
 function cli(args) {
   const r = spawnSync(process.execPath, [CLI_BIN, ...args], { encoding: "utf8" });
-  return { out: `${r.stdout ?? ""}${r.stderr ?? ""}`, error: r.error ? String(r.error) : null };
+  return `${r.stdout ?? ""}${r.stderr ?? ""}`;
+}
+
+/** 取 ### Result 之后的第一个非空行（playwright-cli 的返回格式）。 */
+function result(out) {
+  const lines = out.split(/\r?\n/);
+  const i = lines.findIndex((l) => l.trim() === "### Result");
+  if (i < 0) return null;
+  const line = lines.slice(i + 1).find((l) => l.trim() !== "");
+  return line === undefined ? null : line.trim().replace(/^"|"$/g, "");
 }
 
 cli(["open", URL, "--browser", "chromium"]);
 
-// 点「编辑器」分组后 React 需要一次渲染才挂上字体列表；
-// 立刻 eval 会读到空结果（实测拿到 ""）。先轮询等它出现。
-const waitExpr =
-  '() => { const ov=document.querySelector(".settings-overlay"); if(ov) ov.style.display="";' +
-  ' const bar=document.querySelector(".update-bar"); if(bar) bar.style.display="none";' +
-  ' for (const s of document.querySelectorAll(".settings-nav__item")) { if (s.textContent.includes("编辑器")) { s.click(); break; } }' +
-  ' return document.querySelectorAll(".ui-font-picker").length; }';
-
-let ready = 0;
-for (let i = 0; i < 20 && ready < 2; i += 1) {
-  const probe = cli(["eval", waitExpr]);
-  const m = probe.out.match(/### Result\r?\n(\d+)/);
-  ready = m ? Number(m[1]) : 0;
-  if (ready < 2) await new Promise((r) => setTimeout(r, 300));
+// 先选中一段文字：没有选区时字体按钮是禁用的（设计如此），
+// 直接点会得到 disabled 的按钮、测不到下拉。
+const focusEditor = '() => { const c=document.querySelector(".cm-content"); if(!c) return "no"; c.focus(); return "ok"; }';
+let focused = null;
+for (let i = 0; i < 25 && focused !== "ok"; i += 1) {
+  focused = result(cli(["eval", focusEditor]));
+  if (focused !== "ok") await new Promise((r) => setTimeout(r, 300));
 }
-
-if (ready < 2) {
-  console.error(`字体列表未渲染出来（只找到 ${ready} 组）。检查 harness 是否在运行。`);
+if (focused !== "ok") {
+  console.error("harness 里没有找到 CodeMirror 编辑器。检查 harness 是否在运行。");
   process.exit(1);
 }
+cli(["press", "Control+a"]);
 
-const expr =
-  '() => { const ov=document.querySelector(".settings-overlay"); if(ov) ov.style.display="";' +
-  ' const bar=document.querySelector(".update-bar"); if(bar) bar.style.display="none";' +
-  ' for (const s of document.querySelectorAll(".settings-nav__item")) { if (s.textContent.includes("编辑器")) { s.click(); break; } }' +
-  ' const out=[];' +
-  ' for (const g of document.querySelectorAll(".ui-font-picker")) {' +
-  '   const rows=[];' +
-  '   for (const n of g.querySelectorAll(".ui-font-picker__name")) {' +
-  '     rows.push(n.textContent.trim() + "|" + getComputedStyle(n).fontFamily.split(",")[0]);' +
-  '   }' +
-  '   out.push(g.getAttribute("aria-label") + "=" + rows.join(";"));' +
-  ' }' +
-  ' return out.join(" || "); }';
+// 等编辑器把选区状态回报给 React（按钮随之启用）。
+const findBtn =
+  '() => { const b=[...document.querySelectorAll("button")].find(x => x.getAttribute("aria-label")==="字体");' +
+  ' if(!b) return "no"; if(b.disabled) return "disabled"; return "yes"; }';
 
-const evaluated = cli(["eval", expr]);
-if (evaluated.error) {
-  console.error("执行 eval 失败：" + evaluated.error);
-  process.exit(1);
+let found = null;
+for (let i = 0; i < 25 && found !== "yes"; i += 1) {
+  found = result(cli(["eval", findBtn]));
+  if (found !== "yes") await new Promise((r) => setTimeout(r, 300));
 }
 
-// playwright-cli 输出形如：### Result\n"中文字体=..." 或 \n中文字体=...
-// 视内容而定可能带引号也可能不带，两种都接受。
-const line = evaluated.out
-  .split(/\r?\n/)
-  .map((l) => l.trim())
-  .find((l) => l.includes("字体="));
-
-if (!line) {
-  console.error("无法读取字体列表渲染结果。原始输出：\n" + evaluated.out);
+if (found === "disabled") {
+  console.error("字体按钮处于禁用态：选区没有生效，检查 smoke 脚本的先选中步骤。");
   process.exit(1);
 }
-
-const report = line.replace(/^"|"$/g, "");
-console.log("真实浏览器字体列表渲染：\n" + report);
+if (found !== "yes") {
+  console.error('编辑器里找不到 aria-label="字体" 的按钮。检查 harness 是否在运行。');
+  process.exit(1);
+}
 
 const failures = [];
 
-// 中文组的每个具名选项必须渲染成它自己的字体，而不是全都一样。
-for (const part of String(report).split(" || ")) {  const [group, itemsRaw] = part.split("=");
-  if (!itemsRaw) continue;
-  const items = itemsRaw.split(";").map((s) => s.split("|"));
-  if (group === "中文字体") {
-    const rendered = items.map(([, font]) => font);
-    const named = items.filter(([label]) => label !== "系统默认");
-    // 六个中文选项若全渲染成同一个字体，说明预览栈没让中文字形排第一。
-    if (new Set(rendered).size === 1) {
-      failures.push(`中文字体组的所有选项渲染成同一字体（${rendered[0]}），看不出差别`);
-    }
-    for (const [label, font] of named) {
-      if (/system-ui|-apple-system|Segoe UI/.test(font)) {
-        failures.push(`「${label}」被西文/系统字体接管（${font}）`);
-      }
+// ① 点击前：不应有菜单，也不应有常驻的字体按钮。
+const before =
+  '() => { const menus=document.querySelectorAll("[role=menu]").length;' +
+  ' const fontBtns=[...document.querySelectorAll("button")].filter(b => ["宋体","黑体","楷体","仿宋"].includes(b.getAttribute("aria-label"))).length;' +
+  ' return menus + "/" + fontBtns; }';
+const beforeVal = result(cli(["eval", before]));
+if (beforeVal !== "0/0") {
+  failures.push(`点击前就存在菜单或字体按钮（menu/fontButtons=${beforeVal}）`);
+}
+
+// ② 点击后：应出现菜单，且菜单在按钮下方。
+const clickAndMeasure =
+  '() => {' +
+  ' const b=[...document.querySelectorAll("button")].find(x => x.getAttribute("aria-label")==="字体");' +
+  ' b.click();' +
+  ' return "clicked"; }';
+cli(["eval", clickAndMeasure]);
+await new Promise((r) => setTimeout(r, 400));
+
+const after =
+  '() => {' +
+  ' const b=[...document.querySelectorAll("button")].find(x => x.getAttribute("aria-label")==="字体");' +
+  ' const m=document.querySelector("[role=menu]");' +
+  ' if(!m) return "NOMENU";' +
+  ' const rb=b.getBoundingClientRect(); const rm=m.getBoundingClientRect();' +
+  ' const items=[...m.querySelectorAll("[role=menuitem]")].map(i => {' +
+  '   const l=i.querySelector(".ui-menu__label");' +
+  '   return l.textContent.trim() + "|" + getComputedStyle(l).fontFamily.split(",")[0];' +
+  ' });' +
+  ' const expanded=b.getAttribute("aria-expanded");' +
+  ' return "expanded=" + expanded + " below=" + (rm.top >= rb.bottom - 2) + " inside=" + (rm.width>0 && rm.height>0)' +
+  '   + " :: " + items.join("; "); }';
+
+const afterVal = result(cli(["eval", after]));
+if (!afterVal || afterVal === "NOMENU") {
+  failures.push("点击后菜单没有出现");
+} else {
+  console.log("真实浏览器下拉测量：\n" + afterVal);
+
+  if (!/expanded=true/.test(afterVal)) failures.push("按钮未标记 aria-expanded=true");
+  if (!/below=true/.test(afterVal)) failures.push("下拉没有出现在按钮下方");
+  if (!/inside=true/.test(afterVal)) failures.push("下拉尺寸为零（不可见）");
+
+  // ③ 每个中文字体项必须用各自的字体渲染。
+  const itemsPart = afterVal.split(" :: ")[1] ?? "";
+  const items = itemsPart
+    .split("; ")
+    .map((s) => s.split("|"))
+    .filter((p) => p.length === 2);
+
+  const cjk = items.filter(([label]) => ["黑体", "宋体", "楷体", "仿宋", "雅黑"].includes(label));
+  if (cjk.length < 5) {
+    failures.push(`下拉里的中文字体项不足（只找到 ${cjk.length} 项）`);
+  }
+  for (const [label, font] of cjk) {
+    if (/system-ui|-apple-system|Segoe UI/.test(font)) {
+      failures.push(`「${label}」被系统/西文字体接管（${font}）`);
     }
   }
-  if (group === "西文字体") {
-    const georgia = items.find(([label]) => label === "Georgia");
-    if (georgia && !/Georgia/.test(georgia[1])) {
-      failures.push(`「Georgia」未用 Georgia 渲染（实际 ${georgia[1]}）`);
+  const rendered = cjk.map(([, f]) => f);
+  if (new Set(rendered).size !== rendered.length) {
+    failures.push(`中文字体项渲染重复，看不出差别：${rendered.join(", ")}`);
+  }
+
+  // 西文项也必须用**它自己**的字体，不能用当前默认设置 ——
+  // 否则 Times 与等宽会都显示成同一个字体（实测踩过）。
+  const latin = items.filter(([label]) => ["Times", "等宽"].includes(label));
+  for (const [label, font] of latin) {
+    if (/system-ui|-apple-system|Segoe UI/.test(font)) {
+      failures.push(`西文项「${label}」用的是系统默认字体而非自身字形（${font}）`);
     }
+  }
+  const latinRendered = latin.map(([, f]) => f);
+  if (new Set(latinRendered).size !== latinRendered.length) {
+    failures.push(`西文项渲染重复，看不出差别：${latinRendered.join(", ")}`);
   }
 }
 
@@ -141,4 +182,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("\n通过：中文与西文两组选项都各自用对应字体渲染。");
+console.log("\n通过：字体入口是点击弹出的下拉，位于按钮下方，且各字体项用各自字体渲染。");

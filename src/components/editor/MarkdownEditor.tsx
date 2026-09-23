@@ -432,15 +432,23 @@ export function MarkdownEditor({
 
   return (
     <div className="markdown-editor-root">
-      {showToolbar && <EditorToolbar onAction={handleAction} />}
-      {showFontBar && onQuickFont && onClearFont && defaultLatinFont && defaultCjkFont && (
-        <EditorFontBar
-          onPick={onQuickFont}
-          onClear={onClearFont}
-          hasFont={selectionHasFontState}
-          hasSelection={hasSelection}
-          defaultLatin={defaultLatinFont}
-          defaultCjk={defaultCjkFont}
+      {showToolbar && (
+        <EditorToolbar
+          onAction={handleAction}
+          // 字体入口作为工具栏的行尾控件，与格式动作共用一行 ——
+          // 一个图标按钮不值得单占一条横栏（§2.1）。
+          trailing={
+            showFontBar && onQuickFont && onClearFont && defaultLatinFont && defaultCjkFont ? (
+              <EditorFontBar
+                onPick={onQuickFont}
+                onClear={onClearFont}
+                hasFont={selectionHasFontState}
+                hasSelection={hasSelection}
+                defaultLatin={defaultLatinFont}
+                defaultCjk={defaultCjkFont}
+              />
+            ) : undefined
+          }
         />
       )}
       <div className="markdown-editor" ref={hostRef} data-testid="markdown-editor" />

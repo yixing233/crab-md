@@ -1,16 +1,20 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { EditorFontBar } from "./EditorFontBar";
 
 /** 收集 onPick 收到的字体栈。 */
 let picked: string[] = [];
+let cleared = 0;
 
-function renderBar(over: Partial<Parameters<typeof EditorFontBar>[0]> = {}) {
+function renderEntry(over: Partial<Parameters<typeof EditorFontBar>[0]> = {}) {
   picked = [];
+  cleared = 0;
   const props = {
     onPick: (stack: string) => picked.push(stack),
-    onClear: vi.fn(),
+    onClear: () => {
+      cleared += 1;
+    },
     hasFont: false,
     hasSelection: true,
     defaultLatin: "system" as const,
@@ -18,30 +22,69 @@ function renderBar(over: Partial<Parameters<typeof EditorFontBar>[0]> = {}) {
     ...over,
   };
   render(<EditorFontBar {...props} />);
-  return props;
 }
 
-describe("EditorFontBar", () => {
-  it("offers the quick font choices", () => {
-    renderBar();
-    const bar = screen.getByRole("toolbar", { name: "字体" });
+/** 打开下拉。 */
+async function openMenu() {
+  await userEvent.click(screen.getByRole("button", { name: "字体" }));
+}
+
+describe("EditorFontBar (icon button + dropdown)", () => {
+  it("renders a single icon button, not a row of font buttons", () => {
+    renderEntry();
+    // 形态要求：一个入口按钮；字体选项在点击之前不出现在页面上。
+    expect(screen.getByRole("button", { name: "字体" })).toBeInTheDocument();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "宋体" })).not.toBeInTheDocument();
+  });
+
+  it("opens a dropdown on click, listing the font choices", async () => {
+    renderEntry();
+    await openMenu();
+
+    const menu = screen.getByRole("menu", { name: "字体" });
     for (const name of ["默认", "雅黑", "黑体", "宋体", "楷体", "仿宋", "Times", "等宽"]) {
-      expect(within(bar).getByRole("button", { name })).toBeInTheDocument();
+      expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
     }
   });
 
-  it("reports the font stack when a choice is clicked", async () => {
-    renderBar();
-    await userEvent.click(screen.getByRole("button", { name: "宋体" }));
+  it("marks itself expanded while open", async () => {
+    renderEntry();
+    expect(screen.getByRole("button", { name: "字体" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    await openMenu();
+    expect(screen.getByRole("button", { name: "字体" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  it("closes when the same button is clicked again", async () => {
+    renderEntry();
+    await openMenu();
+    await userEvent.click(screen.getByRole("button", { name: "字体" }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("applies the chosen font and closes", async () => {
+    renderEntry();
+    await openMenu();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "宋体" }));
 
     expect(picked).toHaveLength(1);
-    // 传出去的是完整 CSS 栈，不是短名 —— 调用方不需要再查表。
     expect(picked[0]).toContain("SimSun");
+    // 选完即关，不需要再点一次。
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("composes the default option from the user's current settings", async () => {
-    renderBar({ defaultLatin: "times", defaultCjk: "kaiti" });
-    await userEvent.click(screen.getByRole("button", { name: "默认" }));
+    renderEntry({ defaultLatin: "times", defaultCjk: "kaiti" });
+    await openMenu();
+    await userEvent.click(screen.getByRole("menuitem", { name: "默认" }));
 
     expect(picked[0]).toContain("Times New Roman");
     expect(picked[0]).toContain("KaiTi");
@@ -49,62 +92,105 @@ describe("EditorFontBar", () => {
 
   it("keeps the other direction when a CJK font is picked", async () => {
     // 局部改中文字体不应把用户设置的西文字体也换掉。
-    renderBar({ defaultLatin: "georgia", defaultCjk: "system" });
-    await userEvent.click(screen.getByRole("button", { name: "宋体" }));
+    renderEntry({ defaultLatin: "georgia", defaultCjk: "system" });
+    await openMenu();
+    await userEvent.click(screen.getByRole("menuitem", { name: "宋体" }));
 
     expect(picked[0]).toContain("Georgia");
     expect(picked[0]).toContain("SimSun");
   });
 
   it("keeps the CJK font when a Latin font is picked", async () => {
-    renderBar({ defaultLatin: "system", defaultCjk: "simhei" });
-    await userEvent.click(screen.getByRole("button", { name: "Times" }));
+    renderEntry({ defaultLatin: "system", defaultCjk: "simhei" });
+    await openMenu();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Times" }));
 
     expect(picked[0]).toContain("Times New Roman");
     expect(picked[0]).toContain("SimHei");
   });
 
-  it("disables every font button when nothing is selected", async () => {
-    // 没有选中文字时设字体没有意义，按钮应禁用而不是静默无效。
-    renderBar({ hasSelection: false });
+  it("renders each option in its own font", async () => {
+    renderEntry();
+    await openMenu();
 
-    for (const name of ["默认", "宋体", "Times"]) {
-      expect(screen.getByRole("button", { name })).toBeDisabled();
-    }
-
-    await userEvent.click(screen.getByRole("button", { name: "宋体" }));
-    expect(picked).toHaveLength(0);
+    const item = screen.getByRole("menuitem", { name: "宋体" });
+    const labelEl = item.querySelector(".ui-menu__label") as HTMLElement;
+    expect(labelEl.style.fontFamily).toContain("SimSun");
   });
 
-  it("explains why the buttons are disabled", async () => {
-    renderBar({ hasSelection: false });
-    // 悬停提示里说明需要先选中文字，而不是让用户猜。
-    await userEvent.hover(screen.getByRole("button", { name: "宋体" }));
+  it("renders Latin options in their own font, not the current default", async () => {
+    // 关键回归：早先西文项一律用 defaultLatin 渲染，于是 Times 与等宽
+    // 都显示成同一个字体，用户看不出这两项是什么（实测缺陷）。
+    renderEntry({ defaultLatin: "system", defaultCjk: "system" });
+    await openMenu();
+
+    const times = screen.getByRole("menuitem", { name: "Times" }).querySelector(
+      ".ui-menu__label",
+    ) as HTMLElement;
+    const mono = screen.getByRole("menuitem", { name: "等宽" }).querySelector(
+      ".ui-menu__label",
+    ) as HTMLElement;
+
+    expect(times.style.fontFamily).toContain("Times New Roman");
+    expect(mono.style.fontFamily).toContain("Cascadia Mono");
+  });
+
+  it("keeps every option visually distinct", async () => {
+    renderEntry({ defaultLatin: "system", defaultCjk: "system" });
+    await openMenu();
+
+    const stacks = screen
+      .getAllByRole("menuitem")
+      .map((i) => (i.querySelector(".ui-menu__label") as HTMLElement).style.fontFamily);
+    // 每一项都得能看出差别，否则这个选择列表没有意义。
+    expect(new Set(stacks).size).toBe(stacks.length);
+  });
+
+  it("disables the entry when nothing is selected", async () => {
+    renderEntry({ hasSelection: false });
+    const btn = screen.getByRole("button", { name: "字体" });
+    expect(btn).toBeDisabled();
+
+    await userEvent.click(btn);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("explains the disabled state", async () => {
+    renderEntry({ hasSelection: false });
+    await userEvent.hover(screen.getByRole("button", { name: "字体" }));
     expect(await screen.findByText(/请先选中文字/)).toBeInTheDocument();
   });
 
-  it("renders each choice in its own font", () => {
-    renderBar();
-    const btn = screen.getByRole("button", { name: "宋体" });
-    // Button 会把 children 包进 .ui-button__label，故要往里找带 style 的 span。
-    const span = btn.querySelector("span[style]") as HTMLElement;
-    expect(span).not.toBeNull();
-    expect(span.style.fontFamily).toContain("SimSun");
+  it("offers no clear item when the selection has no font", async () => {
+    renderEntry({ hasFont: false });
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: "清除字体" })).not.toBeInTheDocument();
   });
 
-  it("hides the clear button when the selection has no font", () => {
-    renderBar({ hasFont: false });
-    expect(screen.queryByRole("button", { name: "清除字体" })).not.toBeInTheDocument();
+  it("offers a clear item when the selection already has a font", async () => {
+    renderEntry({ hasFont: true });
+    await openMenu();
+    expect(screen.getByRole("menuitem", { name: "清除字体" })).toBeInTheDocument();
   });
 
-  it("shows the clear button when the selection already has a font", () => {
-    renderBar({ hasFont: true });
-    expect(screen.getByRole("button", { name: "清除字体" })).toBeInTheDocument();
+  it("reports clear through the dropdown", async () => {
+    renderEntry({ hasFont: true });
+    await openMenu();
+    await userEvent.click(screen.getByRole("menuitem", { name: "清除字体" }));
+    expect(cleared).toBe(1);
   });
 
-  it("reports clear when the clear button is clicked", async () => {
-    const props = renderBar({ hasFont: true });
-    await userEvent.click(screen.getByRole("button", { name: "清除字体" }));
-    expect(props.onClear).toHaveBeenCalledOnce();
+  it("closes on Escape", async () => {
+    renderEntry();
+    await openMenu();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("closes when clicking outside", async () => {
+    renderEntry();
+    await openMenu();
+    await userEvent.click(document.body);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

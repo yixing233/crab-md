@@ -1155,6 +1155,15 @@ Rules:
 - Assigning a font to a selection MUST be visible **while editing**, not only
   in the preview. A stored `<span style="font-family:…">` has to be decorated
   in the editor, otherwise the setting appears not to work.
+- The in-editor font control MUST be a single icon button that opens a dropdown,
+  not a persistent row of font buttons. Eight CJK faces side by side crowd the
+  format toolbar and dominate it, while font choice is low-frequency; the entry
+  belongs at the trailing end of the same toolbar row rather than on its own bar.
+- A dropdown item that represents a font MUST be rendered in **that item's own**
+  face, never in the current default. Otherwise `Times` and `等宽` both display
+  as the default and the list cannot be read (measured). The trigger's
+  press MUST NOT count as an outside click, or the button cannot close its own
+  menu.
 - Per-selection font MUST be per selection, never a silent whole-document
   change, and an empty selection MUST be a no-op rather than inserting an
   empty span.
