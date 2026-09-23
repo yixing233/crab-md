@@ -86,6 +86,38 @@ pub fn ensure_layout(root: &Path) -> AppResult<()> {
     Ok(())
 }
 
+/// 导入/导出的单文件大小上限（10 MB）。
+///
+/// 不设上限就等于把「选中一个巨大文件」变成 OOM：
+/// `fs::read_to_string` 会一次性把整个文件读进内存。导出侧同理 ——
+/// 超大文档在导出前就该被拒绝，而不是写完再报错。
+pub const MAX_TRANSFER_BYTES: u64 = 10 * 1024 * 1024;
+
+/// 目标路径是否落在工作区的某个子目录内。
+///
+/// 用于阻止**导入导出**写到应用自己的数据区：`notes/<uuid>.md` 是文档身份的
+/// 载体（§11），`.app/metadata.db` 是元数据库，被外部写入会造成
+/// 「库里有记录但文件不是那份内容」。用户从对话框里完全可以导航到这里，
+/// 所以必须在写之前拦住，而不是指望用户不会点错。
+pub fn is_inside_workspace(root: &Path, target: &Path) -> bool {
+    // 两侧都规范化：调用方给的路径可能带 `..` 或不同的分隔符。
+    let Ok(root) = root.canonicalize() else {
+        return false;
+    };
+    // 目标可能还不存在（导出新文件），此时规范化它的父目录再拼上文件名。
+    let probe = match target.canonicalize() {
+        Ok(p) => p,
+        Err(_) => match target.parent() {
+            Some(p) => match p.canonicalize() {
+                Ok(p) => p.join(target.file_name().unwrap_or_default()),
+                Err(_) => return false,
+            },
+            None => return false,
+        },
+    };
+    probe.starts_with(&root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,5 +231,36 @@ mod tests {
     fn now_iso8601_is_parseable() {
         let s = now_iso8601();
         assert!(chrono::DateTime::parse_from_rfc3339(&s).is_ok(), "bad ts: {s}");
+    }
+
+    #[test]
+    fn detects_paths_inside_the_workspace() {
+        let (_d, root) = tmp_root();
+        // 工作区内的文件必须被认出，否则外部写入能破坏文档身份。
+        assert!(is_inside_workspace(&root, &root.join(NOTES_DIR).join("x.md")));
+        assert!(is_inside_workspace(&root, &root.join(APP_DIR).join(DB_FILE)));
+        assert!(is_inside_workspace(&root, &root.join("new-file.md")));
+    }
+
+    #[test]
+    fn allows_paths_outside_the_workspace() {
+        let (_d, root) = tmp_root();
+        let outside = tempfile::tempdir().unwrap();
+        assert!(!is_inside_workspace(&root, &outside.path().join("x.md")));
+    }
+
+    #[test]
+    fn rejects_parent_traversal_out_of_the_workspace() {
+        let (_d, root) = tmp_root();
+        // `notes/../../escape.md` 字面上在工作区内，规范化后必须判定为外部。
+        let escape = root.join(NOTES_DIR).join("..").join("..").join("escape.md");
+        assert!(!is_inside_workspace(&root, &escape));
+    }
+
+    #[test]
+    fn rejects_nonexistent_directory() {
+        // 目标目录不存在时无从判断归属，保守返回 false（拒绝）。
+        let (_d, root) = tmp_root();
+        assert!(!is_inside_workspace(&root, Path::new("no/such/dir/x.md")));
     }
 }

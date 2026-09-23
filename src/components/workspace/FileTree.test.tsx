@@ -23,6 +23,7 @@ function renderTree(over: Partial<Parameters<typeof FileTree>[0]> = {}) {
     onCreate: vi.fn(),
     onRename: vi.fn(),
     onDuplicate: vi.fn(),
+    onExport: vi.fn(),
     onRequestDelete: vi.fn(),
     ...over,
   };
@@ -199,5 +200,54 @@ describe("FileTree duplicate entry (另存为)", () => {
     await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
     const labels = screen.getAllByRole("menuitem").map((el) => el.textContent);
     expect(labels.indexOf("另存为副本")).toBeLessThan(labels.indexOf("删除"));
+  });
+});
+
+describe("FileTree export entry (导出)", () => {
+  it("offers 导出为 Markdown in the menu", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    expect(screen.getByRole("menuitem", { name: /导出为 Markdown/ })).toBeInTheDocument();
+  });
+
+  it("reports the id and title so the dialog can suggest a filename", async () => {
+    const props = renderTree({ documents: [doc("9", "要导出的")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /导出为 Markdown/ }));
+
+    expect(props.onExport).toHaveBeenCalledWith("9", "要导出的");
+  });
+
+  it("reaches export from right-click too", async () => {
+    const props = renderTree({ documents: [doc("3", "右键导出")] });
+    fireEvent.contextMenu(screen.getByRole("treeitem", { name: /右键导出/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /导出为 Markdown/ }));
+    expect(props.onExport).toHaveBeenCalledWith("3", "右键导出");
+  });
+
+  it("closes the menu after choosing export", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /导出为 Markdown/ }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("is not a destructive action", async () => {
+    // 导出只读，绝不该带 danger 语义。
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    expect(screen.getByRole("menuitem", { name: /导出为 Markdown/ })).not.toHaveAttribute(
+      "data-danger",
+    );
+  });
+
+  it("keeps export above delete", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    const labels = screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
+    const exportAt = labels.findIndex((l) => l.includes("导出"));
+    const deleteAt = labels.findIndex((l) => l.includes("删除"));
+    expect(exportAt).toBeGreaterThanOrEqual(0);
+    expect(exportAt).toBeLessThan(deleteAt);
   });
 });

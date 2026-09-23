@@ -52,6 +52,12 @@ import {
   VIEW_MODE_KEY,
   type ViewMode,
 } from "./lib/viewMode";
+import {
+  pickExportPath,
+  pickImportPath,
+  runExport,
+  runImport,
+} from "./lib/transfer";
 import "./App.css";
 
 /** 面板宽度持久化的存储键。 */
@@ -347,6 +353,39 @@ export default function App() {
     [duplicateDocument],
   );
 
+  /**
+   * 导出：弹系统「保存到…」，再由 Rust 写文件。
+   *
+   * 用户取消时**不提示** —— 那只是改了主意，不是错误。
+   */
+  const handleExport = useCallback(async (id: string, title: string) => {
+    const store = useWorkspaceStore.getState();
+    const outcome = await runExport(
+      { pickExport: pickExportPath, exportDocument: store.exportDocument },
+      id,
+      title,
+    );
+    if (outcome.kind === "ok") {
+      setToast({ message: zh.toast.exported, tone: "success" });
+    } else if (outcome.kind === "failed") {
+      setToast({ message: zh.toast.exportFailed, tone: "error" });
+    }
+  }, []);
+
+  /** 导入：弹系统「打开文件」，由 Rust 收进工作区并打开。取消时不提示。 */
+  const handleImport = useCallback(async () => {
+    const store = useWorkspaceStore.getState();
+    const outcome = await runImport({
+      pickImport: pickImportPath,
+      importDocument: store.importDocument,
+    });
+    if (outcome.kind === "ok") {
+      setToast({ message: zh.toast.imported(outcome.title), tone: "success" });
+    } else if (outcome.kind === "failed") {
+      setToast({ message: zh.toast.importFailed, tone: "error" });
+    }
+  }, []);
+
   // 全局快捷键（UI_DESIGN_SYSTEM.md §29）。集中在此处而非散落各页面。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -415,6 +454,8 @@ export default function App() {
               onCreate={handleNewDocument}
               onRename={(id, title) => void renameDocument(id, title)}
               onDuplicate={(id, title) => void handleDuplicate(id, title)}
+              onExport={(id, title) => void handleExport(id, title)}
+              onImport={() => void handleImport()}
               onRequestDelete={(id, title) => setPendingDelete({ id, title })}
               width={sidebarWidth}
             />

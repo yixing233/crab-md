@@ -234,6 +234,110 @@ impl DocumentService {
         let st = self.lock()?;
         search::search(&st.conn, query, limit).map_err(AppError::from)
     }
+
+    /// 把一篇文档的正文导出到工作区**之外**的任意路径。
+    ///
+    /// 导出的是**纯正文**，不含任何应用私有元数据：磁盘上的 `.md` 本来就是
+    /// 可移植的标准 Markdown（ARCHITECTURE.md §24），导出只是把它复制出去。
+    /// 因此用户在别的编辑器里打开导出文件，看到的就是他写的东西。
+    ///
+    /// 为什么要在 Rust 里做，而不是前端拿内容再调 fs 插件：
+    /// ARCHITECTURE.md §7.1 要求所有文件系统访问经由应用层。对话框只负责
+    /// **选路径**，读写始终在这里。
+    pub fn export(&self, id: &str, target: &Path) -> AppResult<u64> {
+        let payload = self.read(id)?;
+
+        // 拒绝导出到工作区内部：那会把一份文档写到应用自己的数据区，
+        // 绕过 UUID 命名规则，制造出库与磁盘不一致的孤儿文件。
+        let root = self.root()?;
+        if workspace::is_inside_workspace(&root, target) {
+            return Err(AppError::InvalidInput(
+                "target must be outside the workspace".into(),
+            ));
+        }
+
+        let bytes = payload.content.as_bytes();
+        check_transfer_size(bytes.len() as u64)?;
+        workspace::atomic_write(target, bytes)?;
+        Ok(bytes.len() as u64)
+    }
+
+    /// 从工作区外的任意路径导入一个 Markdown 文件为**新文档**。
+    ///
+    /// 新文档拿到全新的 UUID，与来源文件无关（§11：身份由 UUID 承载，
+    /// 不依赖路径或文件名）。因此重复导入同一文件会得到多篇文档，
+    /// 而不是覆盖已有文档 —— 这是有意的：导入不该悄悄改掉既有内容。
+    #[allow(clippy::too_many_arguments)]
+    pub fn import(
+        &self,
+        source: &Path,
+        title: Option<&str>,
+        virtual_path: &str,
+    ) -> AppResult<DocumentSummary> {
+        let root = self.root()?;
+        if workspace::is_inside_workspace(&root, source) {
+            return Err(AppError::InvalidInput(
+                "source must be outside the workspace".into(),
+            ));
+        }
+
+        let meta = std::fs::metadata(source)?;
+        if !meta.is_file() {
+            return Err(AppError::InvalidInput("source is not a file".into()));
+        }
+        // 先看大小再读，避免把超大文件整个读进内存。
+        check_transfer_size(meta.len())?;
+
+        let content = std::fs::read_to_string(source)?;
+
+        // 标题优先用调用方给的（界面上可编辑）；否则退回归档文件名（去扩展名）。
+        // 文件名可能为空或全是空白，故仍要做一次兜底。
+        let fallback = source
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let title = title.map(str::trim).filter(|t| !t.is_empty()).unwrap_or(&fallback);
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(AppError::InvalidInput("title must not be empty".into()));
+        }
+
+        let now = workspace::now_iso8601();
+        let new_id = workspace::new_document_id();
+        let hash = workspace::content_hash(&content);
+        let size = content.len() as i64;
+
+        let st = self.lock()?;
+        docs::insert(&st.conn, &new_id, title, virtual_path, &hash, &now, size)?;
+
+        // 与 create/duplicate 同一套路：落盘失败就回滚元数据，
+        // 不让库里留下一篇读不出内容的文档。
+        if let Err(e) = workspace::atomic_write(
+            &workspace::note_path(&st.root, &new_id)?,
+            content.as_bytes(),
+        ) {
+            let _ = docs::soft_delete(&st.conn, &new_id, &workspace::now_iso8601());
+            return Err(e);
+        }
+
+        let created =
+            docs::get(&st.conn, &new_id)?.ok_or_else(|| AppError::NotFound(new_id.clone()))?;
+        search::reindex(&st.conn, &new_id, title, &content)?;
+        Ok(created)
+    }
+}
+
+/// 导入/导出的体积校验。
+///
+/// 单独抽出来是为了让两侧共用同一条规则，也便于直接单测边界值。
+fn check_transfer_size(bytes: u64) -> AppResult<()> {
+    if bytes > workspace::MAX_TRANSFER_BYTES {
+        return Err(AppError::InvalidInput(format!(
+            "file is too large: {bytes} bytes (limit {} bytes)",
+            workspace::MAX_TRANSFER_BYTES
+        )));
+    }
+    Ok(())
 }
 
 // ---- Tauri 命令层：只做参数转发与错误转换 ----
@@ -295,6 +399,38 @@ pub fn search_documents(
     limit: Option<i64>,
 ) -> AppResult<Vec<search::SearchHit>> {
     svc.search(&query, limit.unwrap_or(50))
+}
+
+// ---- 导入 / 导出（ARCHITECTURE.md §24 可移植 Markdown）----
+//
+// 路径由前端用系统文件对话框取得（tauri-plugin-dialog 只返回路径字符串），
+// 真正的读写始终发生在这里 —— §7.1 要求所有文件系统访问经由应用层，
+// 前端不持有 fs 权限。
+
+/// 导出：把一篇文档的正文写到用户选定的路径，返回写入字节数。
+#[tauri::command]
+pub fn export_document(
+    svc: tauri::State<'_, DocumentService>,
+    id: String,
+    target_path: String,
+) -> AppResult<u64> {
+    svc.export(&id, Path::new(&target_path))
+}
+
+/// 导入：把用户选定的 Markdown 文件作为**新文档**收进工作区。
+/// title 为 None 时用文件名（去扩展名）作为标题。
+#[tauri::command]
+pub fn import_document(
+    svc: tauri::State<'_, DocumentService>,
+    source_path: String,
+    title: Option<String>,
+    virtual_path: Option<String>,
+) -> AppResult<DocumentSummary> {
+    svc.import(
+        Path::new(&source_path),
+        title.as_deref(),
+        virtual_path.as_deref().unwrap_or("/"),
+    )
 }
 
 // ---- 应用设置（UI_DESIGN_SYSTEM.md §34）----
@@ -393,6 +529,12 @@ fn read_settings(app: &tauri::AppHandle) -> AppResult<(settings::Settings, PathB
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 工作区外的独立临时目录，用于放置导入来源/导出目标。
+    /// 被测的工作区本身是另一个 tempdir —— 混用会让「在工作区外」的守卫误判。
+    fn outside() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
+    }
 
     fn svc() -> (tempfile::TempDir, DocumentService) {
         let dir = tempfile::tempdir().unwrap();
@@ -815,5 +957,193 @@ mod tests {
 
         // 新工作区的索引必须可用（不是沿用旧库的索引）。
         assert_eq!(svc.search("并发", 10).unwrap().len(), 1);
+    }
+
+    // ---- 导入 / 导出 ----
+
+    #[test]
+    fn export_writes_the_exact_document_body() {
+        let (d, svc) = svc();
+        let doc = svc.create("导出的文档", "/").unwrap();
+        let body = "# 标题\n\n并发编程与信道 🦀\n";
+        svc.save(&doc.id, body).unwrap();
+
+        let out = outside();
+        let target = out.path().join("out.md");
+        let written = svc.export(&doc.id, &target).unwrap();
+
+        assert_eq!(written, body.len() as u64);
+        // 导出的必须是**纯正文**：不带任何应用私有元数据。
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), body);
+    }
+
+    #[test]
+    fn export_refuses_a_target_inside_the_workspace() {
+        // 写进工作区会绕过 UUID 命名规则，制造库与磁盘不一致的孤儿文件。
+        let (d, svc) = svc();
+        let doc = svc.create("x", "/").unwrap();
+        let inside = d.path().join(workspace::NOTES_DIR).join("sneaky.md");
+
+        let err = svc.export(&doc.id, &inside).unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+        assert!(!inside.exists(), "must not have written anything");
+    }
+
+    #[test]
+    fn export_reports_not_found_for_unknown_id() {
+        let (d, svc) = svc();
+        let out = outside();
+        let target = out.path().join("out.md");
+        let err = svc
+            .export("01993ab2-0000-7000-8000-000000000000", &target)
+            .unwrap_err();
+        assert_eq!(err.code(), "NOT_FOUND");
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn export_rejects_an_invalid_document_id() {
+        let (d, svc) = svc();
+        let err = svc
+            .export("../../etc/passwd", &outside().path().join("out.md"))
+            .unwrap_err();
+        assert_eq!(err.code(), "INVALID_ID");
+    }
+
+    #[test]
+    fn import_creates_a_new_document_with_the_file_body() {
+        let (d, svc) = svc();
+        let src = outside();
+        let source = src.path().join("incoming.md");
+        std::fs::write(&source, "# 导入的笔记\n\n正文").unwrap();
+
+        let created = svc.import(&source, None, "/").unwrap();
+
+        assert_eq!(created.title, "incoming");
+        assert_eq!(created.revision, 1);
+        assert_eq!(created.size, "# 导入的笔记\n\n正文".len() as i64);
+        assert_eq!(svc.read(&created.id).unwrap().content, "# 导入的笔记\n\n正文");
+        // 索引也要更新，否则导入的内容搜不到。
+        assert_eq!(svc.search("导入", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn import_uses_the_explicit_title_when_given() {
+        let (d, svc) = svc();
+        let src = outside();
+        let source = src.path().join("whatever.md");
+        std::fs::write(&source, "x").unwrap();
+
+        let created = svc.import(&source, Some("我的标题"), "/").unwrap();
+        assert_eq!(created.title, "我的标题");
+    }
+
+    #[test]
+    fn import_falls_back_to_filename_when_title_is_blank() {
+        // 空白标题必须回退，否则会建出一篇没有标题的文档。
+        let (d, svc) = svc();
+        let src = outside();
+        let source = src.path().join("note.md");
+        std::fs::write(&source, "x").unwrap();
+
+        let created = svc.import(&source, Some("   "), "/").unwrap();
+        assert_eq!(created.title, "note");
+    }
+
+    #[test]
+    fn import_gets_a_fresh_identity_detached_from_the_source_file() {
+        // §11：身份由 UUID 承载，不依赖来源路径或文件名。
+        let (d, svc) = svc();
+        let src = outside();
+        let source = src.path().join("same.md");
+        std::fs::write(&source, "内容").unwrap();
+
+        let first = svc.import(&source, None, "/").unwrap();
+        let second = svc.import(&source, None, "/").unwrap();
+
+        assert_ne!(first.id, second.id, "each import is an independent document");
+        // 重复导入不该覆盖既有文档。
+        assert_eq!(svc.list().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn import_refuses_a_source_inside_the_workspace() {
+        let (d, svc) = svc();
+        let source = d.path().join(workspace::NOTES_DIR).join("already.md");
+        std::fs::write(&source, "x").unwrap();
+
+        let err = svc.import(&source, None, "/").unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+    }
+
+    #[test]
+    fn import_rejects_a_directory() {
+        let (d, svc) = svc();
+        let src = outside();
+        let dir = src.path().join("a-directory");
+        std::fs::create_dir(&dir).unwrap();
+
+        let err = svc.import(&dir, None, "/").unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+    }
+
+    #[test]
+    fn import_reports_io_error_for_a_missing_file() {
+        let (d, svc) = svc();
+        let src = outside();
+        let err = svc.import(&src.path().join("nope.md"), None, "/").unwrap_err();
+        assert_eq!(err.code(), "IO_ERROR");
+    }
+
+    #[test]
+    fn transfer_size_limit_accepts_the_boundary_and_rejects_beyond() {
+        // 边界必须精确：正好等于上限可通过，多一字节就拒绝。
+        assert!(check_transfer_size(workspace::MAX_TRANSFER_BYTES).is_ok());
+        let err = check_transfer_size(workspace::MAX_TRANSFER_BYTES + 1).unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+    }
+
+    #[test]
+    fn import_rejects_a_file_over_the_size_limit() {
+        // 不先看大小就 read_to_string，等于把「选中一个巨大文件」变成 OOM。
+        let (d, svc) = svc();
+        let src = outside();
+        let source = src.path().join("huge.md");
+        let big = vec![b'a'; (workspace::MAX_TRANSFER_BYTES + 1) as usize];
+        std::fs::write(&source, &big).unwrap();
+
+        let err = svc.import(&source, None, "/").unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+        assert!(svc.list().unwrap().is_empty(), "nothing may be recorded");
+    }
+
+    #[test]
+    fn export_rejects_a_document_over_the_size_limit() {
+        let (d, svc) = svc();
+        let doc = svc.create("大文档", "/").unwrap();
+        // 直接写文件绕过 save（save 无大小限制，只有导入导出才有）。
+        let big = "a".repeat((workspace::MAX_TRANSFER_BYTES + 1) as usize);
+        workspace::atomic_write(&workspace::note_path(d.path(), &doc.id).unwrap(), big.as_bytes())
+            .unwrap();
+
+        let out = outside();
+        let target = out.path().join("out.md");
+        let err = svc.export(&doc.id, &target).unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+        assert!(!target.exists(), "must not leave a partial file");
+    }
+
+    #[test]
+    fn imported_document_survives_reopening_the_workspace() {
+        // 导入的正文必须真正落到 notes/ 下的 UUID 文件里，
+        // 而不是只存在内存或数据库里。
+        let (d, svc) = svc();
+        let src = outside();
+        let source = src.path().join("persist.md");
+        std::fs::write(&source, "持久化内容").unwrap();
+        let created = svc.import(&source, None, "/").unwrap();
+
+        let reopened = DocumentService::new(d.path().to_path_buf()).unwrap();
+        assert_eq!(reopened.read(&created.id).unwrap().content, "持久化内容");
     }
 }

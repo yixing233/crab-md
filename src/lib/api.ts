@@ -56,6 +56,24 @@ export const api = {
   searchDocuments: (query: string, limit = 50) =>
     call<SearchHit[]>("search_documents", { query, limit }),
 
+  // ---- 导入 / 导出 ----
+  //
+  // 路径由系统文件对话框得到（前端只拿字符串），真正的读写都在 Rust 侧：
+  // ARCHITECTURE.md §7.1 要求所有文件系统访问经由应用层，
+  // 因此前端不安装 fs 插件、也不持有任何写盘权限。
+
+  /** 把一篇文档的正文导出到指定路径，返回写入的字节数。 */
+  exportDocument: (id: string, targetPath: string) =>
+    call<number>("export_document", { id, targetPath }),
+
+  /** 把指定 Markdown 文件导入为**新文档**（新 UUID，不覆盖既有文档）。 */
+  importDocument: (sourcePath: string, title?: string, virtualPath = "/") =>
+    call<DocumentSummary>("import_document", {
+      sourcePath,
+      title: title ?? null,
+      virtualPath,
+    }),
+
   // ---- 设置（UI_DESIGN_SYSTEM.md §34）----
 
   getSettings: () => call<AppSettingsView>("get_settings"),

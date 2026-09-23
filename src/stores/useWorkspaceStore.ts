@@ -44,6 +44,11 @@ export interface WorkspaceState {
   /** 另存为副本；成功后打开新副本，符合「另存为后我就在编辑它」的预期。 */
   duplicateDocument: (id: string, title: string) => Promise<void>;
 
+  /** 导出到指定路径（由系统对话框取得）。返回是否成功。 */
+  exportDocument: (id: string, targetPath: string) => Promise<boolean>;
+  /** 导入文件为新文档并打开；失败返回 null。 */
+  importDocument: (sourcePath: string) => Promise<DocumentSummary | null>;
+
   /** 读取设置（数据目录等）。 */
   loadSettings: () => Promise<void>;
   /**
@@ -161,6 +166,47 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const code = toAppError(raw).code;
       logFailure({ op: "duplicateDocument", code, documentId: id }, raw);
       set({ error: code });
+    }
+  },
+
+  /**
+   * 导出到指定路径。返回是否成功 —— 调用方据此决定要不要提示「已导出」。
+   *
+   * 导出前先 flush：交给别人的文件必须是磁盘上最新那份内容，
+   * 否则会导出上一次保存的旧版本（用户刚改的部分丢失）。
+   */
+  exportDocument: async (id, targetPath) => {
+    if (!(await get().flushActive())) return false;
+    set({ error: null });
+    try {
+      await api.exportDocument(id, targetPath);
+      return true;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "exportDocument", code, documentId: id }, raw);
+      set({ error: code });
+      return false;
+    }
+  },
+
+  /**
+   * 导入文件为**新文档**并打开它。
+   *
+   * 先 flush 当前文档：导入会切换 activeId，未保存的编辑会被覆盖。
+   */
+  importDocument: async (sourcePath) => {
+    if (!(await get().flushActive())) return null;
+    set({ error: null });
+    try {
+      const created = await api.importDocument(sourcePath);
+      await get().loadDocuments();
+      await get().openDocument(created.id);
+      return created;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "importDocument", code }, raw);
+      set({ error: code });
+      return null;
     }
   },
 

@@ -645,6 +645,28 @@ The deployment SHOULD include a documented periodic backup mechanism.
 
 Backup implementation is operational infrastructure and does not require a distributed backup system.
 
+### 20.1 Document Import and Export
+
+Distinct from whole-workspace backup (§20): this is moving **one document** in or
+out as a plain `.md` file, so users can cooperate with other editors.
+
+- Exported content MUST be the document body verbatim — no application-private
+  metadata, no wrapper. What the user sees in the editor is what lands on disk.
+- Import MUST create a **new document with a fresh identity** (a new UUID, §11),
+  never overwrite or adopt an existing document. Importing the same file twice
+  MUST yield two independent documents.
+- Both directions MUST refuse paths **inside the workspace**: writing into
+  `notes/` bypasses UUID-based identity, and writing into `.app/` corrupts the
+  metadata database. The check MUST be performed on canonicalized paths, so
+  `notes/../..` cannot be used to escape.
+- Both directions MUST enforce a size limit before reading the whole file into
+  memory; a size-limited check MUST NOT leave a partial file or a metadata row
+  behind on failure.
+- The file picker only supplies a path. Reading and writing MUST still happen in
+  the application layer (§7.1); the client MUST NOT be granted filesystem
+  permissions of its own.
+- A cancelled picker is **not** an error and MUST NOT surface a failure message.
+
 ---
 
 ## 21. Performance Expectations

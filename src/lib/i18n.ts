@@ -48,6 +48,10 @@ export const zh = {
     delete: "删除",
     /** 另存为副本（新身份、独立文件，原标题与原文不动）。 */
     duplicate: "另存为副本",
+    /** 导出为独立的 .md 文件，可交给别的编辑器打开。 */
+    exportDoc: "导出为 Markdown…",
+    /** 从磁盘导入 .md 文件为新笔记。 */
+    importDoc: "导入 Markdown…",
     /** 行内重命名输入框的无障碍标签。 */
     renameLabel: "笔记名称",
     /** 顶部「更多操作」按钮，用于触屏等无右键场景。 */
@@ -281,6 +285,18 @@ export const zh = {
     deleted: "已删除",
     duplicated: "已另存为副本",
     duplicateFailed: "另存失败，原文未受影响",
+    exported: "已导出",
+    exportFailed: "导出失败，原笔记未受影响",
+    imported: (title: string) => `已导入「${title}」`,
+    importFailed: "导入失败，未创建笔记",
+  },
+
+  /** 导入 / 导出用的系统文件对话框文案。 */
+  transfer: {
+    exportTitle: "导出为 Markdown",
+    importTitle: "导入 Markdown 文件",
+    /** 仅显示 Markdown，避免用户选中一个二进制文件。 */
+    markdownFilterName: "Markdown",
   },
 
   /**

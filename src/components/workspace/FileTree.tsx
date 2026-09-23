@@ -19,6 +19,8 @@ export interface FileTreeProps {
   onRename: (id: string, title: string) => void;
   /** 另存为副本：新身份、独立文件，原标题与原文不动。 */
   onDuplicate: (id: string, title: string) => void;
+  /** 导出为 .md 文件（路径由系统对话框选定）。 */
+  onExport: (id: string, title: string) => void;
   /** 请求删除；确认对话框由上层负责。 */
   onRequestDelete: (id: string, title: string) => void;
 }
@@ -30,6 +32,7 @@ export function FileTree({
   onCreate,
   onRename,
   onDuplicate,
+  onExport,
   onRequestDelete,
 }: FileTreeProps) {
   const tree = useMemo(() => buildFileTree(documents), [documents]);
@@ -59,13 +62,18 @@ export function FileTree({
         onSelect: () => onDuplicate(id, title),
       },
       {
+        id: "export",
+        label: zh.fileTree.exportDoc,
+        onSelect: () => onExport(id, title),
+      },
+      {
         id: "delete",
         label: zh.fileTree.delete,
         danger: true,
         onSelect: () => onRequestDelete(id, title),
       },
     ],
-    [closeMenu, onDuplicate, onRequestDelete],
+    [closeMenu, onDuplicate, onExport, onRequestDelete],
   );
 
   const startRename = useCallback((id: string) => {

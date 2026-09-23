@@ -107,6 +107,8 @@ pub fn run() {
             commands::documents::set_workspace_root,
             commands::documents::reset_workspace_root,
             commands::documents::default_workspace_root,
+            commands::documents::export_document,
+            commands::documents::import_document,
             app_version,
             close_window,
         ])

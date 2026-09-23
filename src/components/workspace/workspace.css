@@ -276,6 +276,11 @@ body[data-resizing="true"] {
 }
 /* 中文标题不做 text-transform: uppercase —— 对汉字无意义，且会拉宽字距。 */
 .app-sidebar__header {
+  /* 横向排列：左侧小标题，右侧导入入口 —— 导入针对整个列表而非某一篇。 */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
   padding: var(--space-4) var(--space-4) var(--space-2);
   font-size: var(--text-xs);
   font-weight: 600;
