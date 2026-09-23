@@ -25,6 +25,9 @@ export const zh = {
     newDocument: "新建",
     toggleOutline: "大纲",
     settings: "设置",
+    syncScroll: "同步滚动",
+    syncScrollOn: "已开启",
+    syncScrollOff: "已关闭",
     /** 视图模式切换（编辑 / 分栏 / 阅读）。 */
     view: {
       label: "视图",
@@ -186,6 +189,12 @@ export const zh = {
         edit: "仅编辑",
         split: "分栏",
         preview: "仅阅读",
+      },
+      syncScroll: "同步滚动",
+      syncScrollHint: "分栏视图下编辑区与预览区保持同步滚动。",
+      syncScrollOption: {
+        enabled: "开启",
+        disabled: "关闭",
       },
     },
 

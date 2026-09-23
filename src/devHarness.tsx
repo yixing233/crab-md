@@ -183,6 +183,8 @@ function Harness() {
         onChangeTheme={setTheme}
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
+        syncScroll={true}
+        onChangeSyncScroll={() => {}}
         fontSize={fontSize}
         onChangeFontSize={setFontSize}
         latinFont={latinFont}

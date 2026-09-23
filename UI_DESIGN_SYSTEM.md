@@ -414,6 +414,23 @@ The chosen mode SHOULD persist across sessions.
 Below the compact breakpoint the `split` mode MAY degrade to `edit`, but the
 user MUST still be able to reach the preview by switching modes explicitly.
 
+### 11.2 Synchronized scrolling in split view
+
+In `split` view mode, the editor and preview panes are displayed side by side.
+The application MUST support bidirectional synchronized scrolling with an explicit toggle switch.
+
+Rules:
+
+- The synchronized scrolling toggle MUST be accessible directly in the `DocumentBar`
+  when in `split` view mode, and also configurable in Settings under the editor section.
+- The state MUST be persisted across sessions (`crab-md.sync-scroll`), defaulting to enabled (`true`).
+- When enabled, scrolling either the editor or the preview proportionally scrolls the opposite pane.
+- To prevent feedback loops and scroll jitter, an active-source lock (`activeSource`) MUST be used:
+  scrolling initiated in one pane locks that pane as the driver, ignoring bounce-back scroll events
+  from the follower pane until 100ms after scrolling settles.
+- When disabled, both panes scroll completely independently.
+- When toggled on or when switching into split view, the preview MUST align to the editor's current scroll position.
+
 ---
 
 ## 12. Mobile Workspace Layout

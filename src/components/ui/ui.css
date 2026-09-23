@@ -59,6 +59,11 @@
   background: var(--bg-surface-hover);
   color: var(--text-primary);
 }
+.ui-button[data-variant="ghost"][aria-pressed="true"],
+.ui-button[data-variant="ghost"][data-active] {
+  background: var(--bg-surface-active);
+  color: var(--accent);
+}
 
 .ui-button[data-variant="danger"] { background: var(--danger-solid); color: var(--text-on-danger); }
 .ui-button[data-variant="danger"]:hover:not(:disabled) { filter: brightness(0.92); }

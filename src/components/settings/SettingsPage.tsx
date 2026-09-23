@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  ArrowUpDown,
   Check,
   Copy,
   Download,
@@ -92,6 +93,9 @@ export interface SettingsPageProps {
   /** 视图模式同样由 App 持有。 */
   viewMode: ViewMode;
   onChangeViewMode: (mode: ViewMode) => void;
+  /** 同步滚动开关。 */
+  syncScroll: boolean;
+  onChangeSyncScroll: (enabled: boolean) => void;
   /**
    * 编辑器字号由 App 持有，不在这里自持状态。
    * 若设置页自己 useState + useEffect 应用，字号就只在「打开过设置页」
@@ -141,6 +145,8 @@ export function SettingsPage({
   onChangeTheme,
   viewMode,
   onChangeViewMode,
+  syncScroll,
+  onChangeSyncScroll,
   fontSize,
   onChangeFontSize,
   latinFont,
@@ -317,6 +323,11 @@ export function SettingsPage({
     ["edit", "split", "preview"] as const
   ).map((mode) => ({ value: mode, label: zh.settings.editor.viewModeOption[mode] }));
 
+  const syncScrollOptions: readonly SegmentedOption<"enabled" | "disabled">[] = [
+    { value: "enabled", label: zh.settings.editor.syncScrollOption.enabled },
+    { value: "disabled", label: zh.settings.editor.syncScrollOption.disabled },
+  ];
+
   const SECTION_LABEL: Record<SettingsSection, string> = {
     appearance: zh.settings.sections.appearance,
     editor: zh.settings.sections.editor,
@@ -463,6 +474,23 @@ export function SettingsPage({
                       options={viewModeOptions}
                       onChange={onChangeViewMode}
                       ariaLabel={zh.settings.editor.viewMode}
+                      showLabels
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <ArrowUpDown size={14} aria-hidden />
+                      {zh.settings.editor.syncScroll}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.editor.syncScrollHint}
+                    </p>
+                    <SegmentedControl
+                      value={syncScroll ? "enabled" : "disabled"}
+                      options={syncScrollOptions}
+                      onChange={(val) => onChangeSyncScroll(val === "enabled")}
+                      ariaLabel={zh.settings.editor.syncScroll}
                       showLabels
                     />
                   </div>

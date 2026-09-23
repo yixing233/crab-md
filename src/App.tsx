@@ -62,6 +62,11 @@ import {
   type PreviewTypography,
 } from "./lib/previewTypography";
 import {
+  readStoredSyncScroll,
+  SYNC_SCROLL_KEY,
+  useSyncScroll,
+} from "./lib/syncScroll";
+import {
   pickExportPath,
   pickImportPath,
   runExport,
@@ -186,6 +191,29 @@ export default function App() {
   const handleResetPreviewTypography = useCallback(() => {
     setPreviewTypography(defaultPreviewTypography());
   }, []);
+
+  const [editorScrollEl, setEditorScrollEl] = useState<HTMLElement | null>(null);
+  const [previewScrollEl, setPreviewScrollEl] = useState<HTMLElement | null>(null);
+  // 同步滚动开关：分栏视图下编辑区与预览区按比例双向同步滚动。
+  const [syncScroll, setSyncScroll] = useState<boolean>(() =>
+    readStoredSyncScroll(
+      typeof localStorage === "undefined" ? null : localStorage.getItem(SYNC_SCROLL_KEY),
+    ),
+  );
+
+  // 同步滚动偏好持久化（UI §34.2）。
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(SYNC_SCROLL_KEY, String(syncScroll));
+    }
+  }, [syncScroll]);
+
+  // 编辑区与预览区双向同步滚动（在分栏且开启时生效）。
+  useSyncScroll({
+    editorEl: editorScrollEl,
+    previewEl: previewScrollEl,
+    enabled: syncScroll && showsEditor(viewMode) && showsPreview(viewMode),
+  });
 
   // 字号：写 CSS 变量（CodeMirror theme 读它），并持久化。
   // 用变量而非重建编辑器：重建会丢光标位置与撤销历史。
@@ -523,6 +551,8 @@ export default function App() {
                 onChangeViewMode={setViewMode}
                 outlineVisible={outlineVisible}
                 onToggleOutline={() => setOutlineVisible((v) => !v)}
+                syncScroll={syncScroll}
+                onToggleSyncScroll={() => setSyncScroll((s) => !s)}
               >
                 <Breadcrumb
                   virtualPath={activeDoc?.virtualPath ?? "/"}
@@ -545,6 +575,7 @@ export default function App() {
                       onCursor={(line, column) => setCursor({ line, column })}
                       jumpTarget={jumpTarget}
                       findNonce={findNonce}
+                      onScrollDOM={setEditorScrollEl}
                     />
                   </div>
                 )}
@@ -574,7 +605,10 @@ export default function App() {
                       // 单栏（仅阅读）时占满宽度，忽略记忆的拖拽宽度。
                       style={showsEditor(viewMode) ? { flexBasis: previewWidth } : undefined}
                     >
-                      <MarkdownPreview source={activeContent} />
+                      <MarkdownPreview
+                        source={activeContent}
+                        onScrollDOM={setPreviewScrollEl}
+                      />
                     </div>
                   </>
                 )}
@@ -641,6 +675,8 @@ export default function App() {
         onChangeTheme={setThemePreference}
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
+        syncScroll={syncScroll}
+        onChangeSyncScroll={setSyncScroll}
         fontSize={fontSize}
         onChangeFontSize={setFontSize}
         latinFont={latinFont}

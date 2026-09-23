@@ -8,20 +8,28 @@ import "./editor.css";
 
 export interface MarkdownPreviewProps {
   source: string;
+  /** 上报可滚动的根 DOM 容器，供编辑/预览同步滚动机制监听。 */
+  onScrollDOM?: (el: HTMLElement | null) => void;
 }
 
-export function MarkdownPreview({ source }: MarkdownPreviewProps) {
+export function MarkdownPreview({ source, onScrollDOM }: MarkdownPreviewProps) {
   // renderMarkdown 已内置 HTML 消毒（ARCHITECTURE.md §19）。
   const html = useMemo(() => renderMarkdown(source), [source]);
 
   if (!html) {
     return (
-      <div className="markdown-preview markdown-preview--empty">{zh.preview.empty}</div>
+      <div
+        ref={onScrollDOM}
+        className="markdown-preview markdown-preview--empty"
+      >
+        {zh.preview.empty}
+      </div>
     );
   }
 
   return (
     <div
+      ref={onScrollDOM}
       className="markdown-preview"
       // 内容已由 DOMPurify 消毒，见 lib/markdown.ts。
       dangerouslySetInnerHTML={{ __html: html }}

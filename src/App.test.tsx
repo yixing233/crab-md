@@ -361,6 +361,25 @@ describe("App panes and shortcuts", () => {
     expect(toast).toHaveTextContent("另存失败，原文未受影响");
   });
 
+  it("toggles synchronized scrolling in split view and persists the preference", async () => {
+    localStorage.clear();
+    await openOneDocument();
+
+    // 默认开启同步滚动
+    const toggle = screen.getByRole("button", { name: "同步滚动" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    // 点击关闭同步滚动
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(localStorage.getItem("crab-md.sync-scroll")).toBe("false");
+
+    // 再次点击开启同步滚动
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(localStorage.getItem("crab-md.sync-scroll")).toBe("true");
+  });
+
   it("hides the preview in edit-only mode (收起预览栏)", async () => {
     await openOneDocument();
     // 分栏时两者都在。

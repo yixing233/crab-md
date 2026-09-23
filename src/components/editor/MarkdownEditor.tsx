@@ -33,7 +33,8 @@ export interface MarkdownEditorProps {
   findNonce?: number;
   /** 是否显示格式工具栏（UI_DESIGN_SYSTEM.md §21.1）。 */
   showToolbar?: boolean;
-
+  /** 上报 CodeMirror 可滚动的根 DOM 容器（cm-scroller），供编辑/预览同步滚动机制监听。 */
+  onScrollDOM?: (el: HTMLElement | null) => void;
 }
 
 /** 让 CodeMirror 读取应用主题令牌，避免出现与外壳无关的配色。 */
@@ -153,6 +154,7 @@ export function MarkdownEditor({
   jumpTarget,
   findNonce,
   showToolbar = true,
+  onScrollDOM,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -160,9 +162,11 @@ export function MarkdownEditor({
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const onCursorRef = useRef(onCursor);
+  const onScrollDOMRef = useRef(onScrollDOM);
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
   onCursorRef.current = onCursor;
+  onScrollDOMRef.current = onScrollDOM;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -214,11 +218,13 @@ export function MarkdownEditor({
     });
 
     viewRef.current = view;
+    onScrollDOMRef.current?.(view.scrollDOM);
     // 初始光标位置也要上报，否则状态栏在打开文档前是空的。
     const { line, column } = cursorPosition(view.state);
     onCursorRef.current?.(line, column);
 
     return () => {
+      onScrollDOMRef.current?.(null);
       view.destroy();
       viewRef.current = null;
     };

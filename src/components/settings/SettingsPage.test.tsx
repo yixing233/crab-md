@@ -73,6 +73,8 @@ function renderPage(over: Partial<Parameters<typeof SettingsPage>[0]> = {}) {
     onChangeTheme: vi.fn(),
     viewMode: "split",
     onChangeViewMode: vi.fn(),
+    syncScroll: true,
+    onChangeSyncScroll: vi.fn(),
     fontSize: "md",
     onChangeFontSize: vi.fn(),
     latinFont: "system",
@@ -97,6 +99,8 @@ const BASE_PROPS: Parameters<typeof SettingsPage>[0] = {
   onChangeTheme: () => {},
   viewMode: "split",
   onChangeViewMode: () => {},
+  syncScroll: true,
+  onChangeSyncScroll: () => {},
   fontSize: "md",
   onChangeFontSize: () => {},
   latinFont: "system",
@@ -407,6 +411,31 @@ describe("SettingsPage (UI §34)", () => {
 
     await userEvent.click(screen.getByRole("radio", { name: "仅阅读" }));
     expect(props.onChangeViewMode).toHaveBeenCalledWith("preview");
+  });
+
+  it("offers the sync scroll switch and reports user toggle", async () => {
+    setSettings();
+    const props = renderPage({ syncScroll: true });
+    await goTo("编辑器");
+
+    expect(screen.getByText("同步滚动")).toBeInTheDocument();
+    const disabledOption = screen.getByRole("radio", { name: "关闭" });
+    expect(disabledOption).toBeInTheDocument();
+
+    await userEvent.click(disabledOption);
+    expect(props.onChangeSyncScroll).toHaveBeenCalledWith(false);
+  });
+
+  it("reflects disabled sync scroll state and allows turning on", async () => {
+    setSettings();
+    const props = renderPage({ syncScroll: false });
+    await goTo("编辑器");
+
+    const enabledOption = screen.getByRole("radio", { name: "开启" });
+    expect(enabledOption).toBeInTheDocument();
+
+    await userEvent.click(enabledOption);
+    expect(props.onChangeSyncScroll).toHaveBeenCalledWith(true);
   });
 
   // ---- 文件与数据 ----

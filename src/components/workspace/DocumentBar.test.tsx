@@ -76,4 +76,38 @@ describe("DocumentBar", () => {
     expect(bar?.querySelector(".breadcrumb")).not.toBeNull();
     expect(bar?.querySelector(".ui-segmented")).not.toBeNull();
   });
+
+  describe("sync scroll toggle button", () => {
+    it("renders sync scroll button in split mode and reflects active state", () => {
+      renderBar({ viewMode: "split", syncScroll: true, onToggleSyncScroll: vi.fn() });
+      const btn = screen.getByRole("button", { name: "同步滚动" });
+      expect(btn).toBeInTheDocument();
+      expect(btn).toHaveAttribute("aria-pressed", "true");
+      expect(btn).toHaveAttribute("data-active", "true");
+    });
+
+    it("reflects inactive state when syncScroll is false", () => {
+      renderBar({ viewMode: "split", syncScroll: false, onToggleSyncScroll: vi.fn() });
+      const btn = screen.getByRole("button", { name: "同步滚动" });
+      expect(btn).toHaveAttribute("aria-pressed", "false");
+      expect(btn).not.toHaveAttribute("data-active");
+    });
+
+    it("calls onToggleSyncScroll when clicked", async () => {
+      const onToggle = vi.fn();
+      renderBar({ viewMode: "split", syncScroll: true, onToggleSyncScroll: onToggle });
+      await userEvent.click(screen.getByRole("button", { name: "同步滚动" }));
+      expect(onToggle).toHaveBeenCalledOnce();
+    });
+
+    it("hides sync scroll button when in edit mode", () => {
+      renderBar({ viewMode: "edit", onToggleSyncScroll: vi.fn() });
+      expect(screen.queryByRole("button", { name: "同步滚动" })).not.toBeInTheDocument();
+    });
+
+    it("hides sync scroll button when in preview mode", () => {
+      renderBar({ viewMode: "preview", onToggleSyncScroll: vi.fn() });
+      expect(screen.queryByRole("button", { name: "同步滚动" })).not.toBeInTheDocument();
+    });
+  });
 });
