@@ -1123,9 +1123,12 @@ Rules:
   the settings panel. If the panel owns it, the value only takes effect once the
   user has opened settings, and is lost on restart — which reads to the user as
   "the setting did not save".
-- The preview pane is the primary long-form reading surface and MUST honour both
-  settings. Headings inside it MUST use relative units (`em`) so they scale with
-  the base size instead of flattening the hierarchy.
+- Typography MUST be edited **only in settings**. Per-selection font editing in
+  the editor is deliberately not offered: it writes a `<span style="font-family:…">`
+  into the user's plain Markdown, and the only way to make font fallback robust
+  is to inline the whole fallback chain — a single 宋体 became ~189 characters of
+  the app's internal stack inside the document. Typography is an application
+  preference, not document content, and MUST NOT be written into `.md` files.
 - Font stacks MUST name explicit CJK faces. A generic-only stack (`serif`,
   `sans-serif`) resolves Chinese to one system font, making the choice
   invisible to the users this product targets.
@@ -1141,15 +1144,14 @@ Rules:
   even though both are installed.
 - A stored preference from an older scheme MUST be migrated, not silently
   reset. A reset reads to the user as "my setting was lost".
-- Chinese and Latin fonts MUST be settable **independently** (Word does the
-  same). Implement it with one CSS stack, and put the **CJK face first** while
-  the Latin choice is still the default. The tempting rule — "Latin first,
-  because Latin faces carry no CJK glyphs" — is wrong in practice: the default
-  Latin entry is `system-ui`, which on Windows is Microsoft YaHei and **carries
-  full Latin glyphs**, so it takes over the whole stack. Pixel comparison
-  measured that choosing 楷体 changed *nothing* — Chinese, digits and mixed text
-  all rendered identically to `system-ui`. Only when the user has explicitly
-  picked a Latin face may it lead.
+- Chinese and Latin fonts MUST be settable **independently**. Within a preview
+  element, put the **Latin face first** — it works only because the Latin stack
+  excludes `system-ui`. The tempting default entry is `system-ui`, which on
+  Windows is Microsoft YaHei and **carries both full Latin and CJK glyphs**, so
+  it takes over the entire stack and the chosen font appears to do nothing.
+  With a pure-Latin face first (`Segoe UI`), pixel comparison measured the Latin
+  run resolving to `Segoe UI` and the CJK run falling through to the chosen CJK
+  face — both directions correct at once.
 - Font behaviour MUST be judged by rendered glyphs, not by the declared stack.
   `getComputedStyle().fontFamily` only echoes the declaration, and CJK advance
   widths are uniformly `1em`, so width comparison cannot tell faces apart.
@@ -1160,35 +1162,44 @@ Rules:
   (`system-ui`), which makes every option look identical — the picker's whole
   purpose. Measured: all six CJK options rendered as `system-ui` before this
   was split out.
-- Setting a font with **no selection** MUST apply to what the user types next
-  (insert a collapsed `<span>` pair at the caret). It MUST NOT be a no-op, and
-  the entry MUST NOT be disabled for lack of a selection.
-- An empty font span the caret has left MUST be cleaned up, so a preset that is
-  never used does not accumulate junk in the file.
-- A formula inside a styled span MUST still render. `@vscode/markdown-it-katex`
-  skips inline math when the preceding token is an **attributed** inline HTML
-  tag (`/^<\w+.+[^/]>$/`) — exactly the `<span style="font-family:…">` this
-  feature writes — so an extra inline rule is required; keep the plugin's
-  word-boundary rules so `$5 and $10` stays currency.
-- Assigning a font to a selection MUST be visible **while editing**, not only
-  in the preview. A stored `<span style="font-family:…">` has to be decorated
-  in the editor, otherwise the setting appears not to work.
-- The in-editor font control MUST be a single icon button that opens a dropdown,
-  not a persistent row of font buttons. Eight CJK faces side by side crowd the
-  format toolbar and dominate it, while font choice is low-frequency; the entry
-  belongs at the trailing end of the same toolbar row rather than on its own bar.
-- A dropdown item that represents a font MUST be rendered in **that item's own**
-  face, never in the current default. Otherwise `Times` and `等宽` both display
-  as the default and the list cannot be read (measured). The trigger's
-  press MUST NOT count as an outside click, or the button cannot close its own
-  menu.
-- Per-selection font MUST be per selection, never a silent whole-document
-  change.
 - The caret MUST be driven by a theme token (`--caret`). CodeMirror's base
   theme hard-codes the caret to black (`&light .cm-content { caretColor: black }`,
   `.cm-cursor { border-left: 1.2px solid black }`) and only overrides it under
   its own `&dark` marker, which a custom light-only theme never receives —
   leaving a black caret on a dark background.
+
+#### 34.6.1 Preview typography is per element
+
+The preview is the reading surface, so it MUST be configurable **per element**
+rather than as one global setting. The editable categories are:
+
+- body
+- headings, **each level separately** (h1…h6)
+- code
+- quote
+- table
+- math
+
+Rules:
+
+- Latin typography MUST be a **single global choice**, applied to every element.
+  Splitting it per element multiplies a decision most users make once.
+- Each element MUST have an independent font and size, persisted independently.
+  Changing one MUST NOT disturb another.
+- Element sizes MUST be absolute (`px`), not relative (`em`). With `em` the
+  headings scale with the body size, so adjusting body text silently moves
+  every heading — that is not the quantity the user set.
+- Sizes MUST come from a bounded ladder with a per-element range, not a free
+  number field: a typo like `3px` or `900px` would otherwise make a category
+  unreadable and look like a bug. Both ends of the range MUST disable the
+  control rather than accepting a step that does nothing.
+- Stored values MUST be normalized **per element**. A single corrupted field
+  MUST NOT discard the whole set — one bad entry falls back to its default while
+  the rest survive.
+- Every element category the settings expose MUST be reachable in the preview,
+  and every CSS variable written MUST be consumed by the stylesheet. A variable
+  written but never referenced (or referenced but never written) makes the
+  control silently do nothing while every test still passes.
 
 ### 34.7 Token roles for solid surfaces
 
@@ -1380,6 +1391,7 @@ Coding/UI agents MUST follow these rules unless a task explicitly overrides them
 13. Add explicit empty/loading/error states for new major surfaces.
 14. Follow `ARCHITECTURE.md` for sync/auth/data behavior.
 15. Write all user-visible copy in Simplified Chinese, taken from `src/lib/i18n.ts` rather than hard-coded in components (see §2.5).
+16. Keep typography an application preference, not document content: it belongs in settings and MUST NOT be written into `.md` files (see §34.6).
 
 ---
 

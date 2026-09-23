@@ -29,11 +29,18 @@ import {
   type EditorFontSize,
   type EditorLatinFont,
 } from "../../lib/editorPrefs";
+import {
+  PREVIEW_ELEMENTS,
+  type ElementTypography,
+  type PreviewElementId,
+  type PreviewTypography,
+} from "../../lib/previewTypography";
 import type { ViewMode } from "../../lib/viewMode";
 import type { ThemePreference } from "../../lib/theme";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { FontPicker, type FontPickerOption } from "../ui/FontPicker";
+import { PreviewTypeRow } from "./PreviewTypeRow";
 import { SegmentedControl, type SegmentedOption } from "../ui/SegmentedControl";
 import {
   type UpdateStatus,
@@ -64,9 +71,15 @@ function updateMessage(status: UpdateStatus): string {
 }
 
 /** 左侧分组。用稳定 id 而非索引，避免将来插入分组时页面错位。 */
-export type SettingsSection = "appearance" | "editor" | "files" | "about";
+export type SettingsSection = "appearance" | "editor" | "preview" | "files" | "about";
 
-const SECTION_ORDER: readonly SettingsSection[] = ["appearance", "editor", "files", "about"] as const;
+const SECTION_ORDER: readonly SettingsSection[] = [
+  "appearance",
+  "editor",
+  "preview",
+  "files",
+  "about",
+] as const;
 
 export interface SettingsPageProps {
   open: boolean;
@@ -91,6 +104,15 @@ export interface SettingsPageProps {
   onChangeLatinFont: (font: EditorLatinFont) => void;
   cjkFont: EditorCjkFont;
   onChangeCjkFont: (font: EditorCjkFont) => void;
+  /**
+   * 预览排版：按元素分别设置字体与字号（只影响阅读面）。
+   *
+   * 与编辑区那套是**两套独立设置**：编辑区是书写面，通篇一种字体最省心；
+   * 预览是阅读面，标题/代码/公式各按各的才符合阅读习惯。
+   */
+  previewTypography: PreviewTypography;
+  onChangePreviewElement: (element: PreviewElementId, next: ElementTypography) => void;
+  onResetPreviewTypography: () => void;
   /**
    * 打开时要落到哪个分组（如工具栏的更新入口直达「关于」）。
    * null 表示保持上次/默认分组。
@@ -125,6 +147,9 @@ export function SettingsPage({
   onChangeLatinFont,
   cjkFont,
   onChangeCjkFont,
+  previewTypography,
+  onChangePreviewElement,
+  onResetPreviewTypography,
   initialSection = null,
 }: SettingsPageProps) {
   const settings = useWorkspaceStore((s) => s.settings);
@@ -295,6 +320,7 @@ export function SettingsPage({
   const SECTION_LABEL: Record<SettingsSection, string> = {
     appearance: zh.settings.sections.appearance,
     editor: zh.settings.sections.editor,
+    preview: zh.settings.preview.label,
     files: zh.settings.sections.files,
     about: zh.settings.sections.about,
   };
@@ -439,6 +465,59 @@ export function SettingsPage({
                       ariaLabel={zh.settings.editor.viewMode}
                       showLabels
                     />
+                  </div>
+                </section>
+              )}
+
+              {/* ---- 预览排版 ---- */}
+              {section === "preview" && (
+                <section className="settings-section" aria-labelledby="set-preview">
+                  <h3 className="settings-section__title" id="set-preview">
+                    {zh.settings.preview.label}
+                  </h3>
+                  <p className="settings-field__description">
+                    {zh.settings.preview.description}
+                  </p>
+
+                  {/* 西文是**全局一项**：拉丁字符的差异通常只需要
+                      「衬线/无衬线」一次决定，逐元素重复设置没有意义。 */}
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Type size={14} aria-hidden />
+                      {zh.settings.preview.latinLabel}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.preview.latinHint}
+                    </p>
+                    <FontPicker
+                      value={latinFont}
+                      options={latinFontOptions}
+                      onChange={onChangeLatinFont}
+                      ariaLabel={zh.settings.preview.latinLabel}
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Type size={14} aria-hidden />
+                      {zh.settings.preview.elementsLabel}
+                    </span>
+                    <div className="preview-type-list">
+                      {PREVIEW_ELEMENTS.map((element) => (
+                        <PreviewTypeRow
+                          key={element}
+                          element={element}
+                          value={previewTypography[element]}
+                          latinFont={latinFont}
+                          onChange={(next) => onChangePreviewElement(element, next)}
+                        />
+                      ))}
+                    </div>
+
+                    <Button variant="secondary" size="sm" onClick={onResetPreviewTypography}>
+                      <RotateCcw size={13} aria-hidden />
+                      {zh.settings.preview.reset}
+                    </Button>
                   </div>
                 </section>
               )}

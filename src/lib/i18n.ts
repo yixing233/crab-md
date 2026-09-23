@@ -85,25 +85,6 @@ export const zh = {
       math: "行内公式",
       mathBlock: "块级公式",
     },
-    /** 字体入口：给选中的文字单独指定字体；没选中则作用于接下来输入的内容。 */
-    quickFont: "字体",
-    quickFontHint: "选中文字后设置字体；未选中时，设置为接下来输入的字体。",
-    quickFontClear: "清除字体",
-    quickFontNoSelection: "请先选中文字",
-    /** 编辑器内快速选字体时展示的短名（完整名在设置页）。 */
-    quickFontOption: {
-      system: "默认",
-      yahei: "雅黑",
-      simhei: "黑体",
-      simsun: "宋体",
-      kaiti: "楷体",
-      fangsong: "仿宋",
-      times: "Times",
-      georgia: "Georgia",
-      arial: "Arial",
-      calibri: "Calibri",
-      mono: "等宽",
-    },
   },
 
   statusBar: {
@@ -208,6 +189,45 @@ export const zh = {
       },
     },
 
+    /** 预览排版：按元素分别设置字体与字号（只影响阅读面）。 */
+    preview: {
+      label: "预览排版",
+      description:
+        "只影响阅读面的显示。西文字体全局统一；中文可按元素分别设置，标题逐级独立。",
+      latinLabel: "西文字体",
+      latinHint: "英文、数字与符号统一使用该字体，对所有元素生效。",
+      elementsLabel: "分类设置",
+      font: "字体",
+      changeFont: "更换字体",
+      smaller: "缩小",
+      larger: "放大",
+      sizesLabel: "字号",
+      reset: "恢复默认排版",
+      resetDone: "已恢复默认排版",
+      /** 元素名用界面语言，而不是 HTML 标签名（h1 / code）。 */
+      element: {
+        body: "正文",
+        h1: "一级标题",
+        h2: "二级标题",
+        h3: "三级标题",
+        h4: "四级标题",
+        h5: "五级标题",
+        h6: "六级标题",
+        code: "代码",
+        quote: "引用",
+        table: "表格",
+        math: "公式",
+      },
+      cjkFontOption: {
+        system: "默认",
+        yahei: "微软雅黑",
+        simhei: "黑体",
+        simsun: "宋体",
+        kaiti: "楷体",
+        fangsong: "仿宋",
+      },
+    },
+
     storage: {
       label: "数据目录",
       description: "所有笔记、附件与索引都保存在这个文件夹里。",
@@ -240,7 +260,6 @@ export const zh = {
       dataFormat: "数据格式",
       dataFormatValue: "标准 Markdown + 本地 SQLite 索引",
     },
-
     update: {
       label: "软件更新",
       /** 自动检查的说明：让用户知道"它自己会看"，但一天最多一次。 */

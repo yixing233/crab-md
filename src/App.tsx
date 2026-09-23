@@ -53,6 +53,15 @@ import {
   type ViewMode,
 } from "./lib/viewMode";
 import {
+  applyPreviewTypography,
+  defaultPreviewTypography,
+  parseStoredTypography,
+  PREVIEW_TYPE_KEY,
+  type ElementTypography,
+  type PreviewElementId,
+  type PreviewTypography,
+} from "./lib/previewTypography";
+import {
   pickExportPath,
   pickImportPath,
   runExport,
@@ -152,17 +161,30 @@ export default function App() {
   });
 
   /**
-   * 选区字体请求。用 nonce 让「同一字体连点两次」也能重新触发 ——
-   * 与 jumpTarget / findNonce 同一套路（UI §34.6）。
+   * 预览排版：按元素分别设置字体与字号（只影响阅读面）。
+   *
+   * 从 localStorage 还原时逐元素归一 —— 用户手改存储或从旧版本升级
+   * 都可能带来非法值，绝不能直接写进 CSS。
    */
-  const [fontSpanRequest, setFontSpanRequest] = useState<{ stack: string; nonce: number } | null>(
-    null,
+  const [previewTypography, setPreviewTypography] = useState<PreviewTypography>(() =>
+    parseStoredTypography(
+      typeof localStorage === "undefined"
+        ? null
+        : localStorage.getItem(PREVIEW_TYPE_KEY),
+    ),
   );
-  const [clearFontNonce, setClearFontNonce] = useState(0);
 
-  /** 编辑器内快速改字体：把选中的文字设成指定字体栈。 */
-  const handleQuickFont = useCallback((stack: string) => {
-    setFontSpanRequest({ stack, nonce: Date.now() });
+  /** 改一类元素的排版。 */
+  const handleChangePreviewElement = useCallback(
+    (element: PreviewElementId, next: ElementTypography) => {
+      setPreviewTypography((prev) => ({ ...prev, [element]: next }));
+    },
+    [],
+  );
+
+  /** 恢复默认排版（用户可能把某类元素调得没法看）。 */
+  const handleResetPreviewTypography = useCallback(() => {
+    setPreviewTypography(defaultPreviewTypography());
   }, []);
 
   // 字号：写 CSS 变量（CodeMirror theme 读它），并持久化。
@@ -183,6 +205,17 @@ export default function App() {
       localStorage.setItem(FONT_CJK_KEY, cjkFont);
     }
   }, [latinFont, cjkFont]);
+
+  // 预览排版：按元素分别写 CSS 变量，同时持久化。
+  //
+  // 与编辑区那套互相独立：编辑区只关心「写起来舒服」，
+  // 预览要按元素区分（标题/代码/公式各有各的字号）。
+  useEffect(() => {
+    applyPreviewTypography(latinFont, previewTypography);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(PREVIEW_TYPE_KEY, JSON.stringify(previewTypography));
+    }
+  }, [latinFont, previewTypography]);
 
   // 主题：写入 <html data-theme>，CSS 变量随之切换（UI_DESIGN_SYSTEM.md §4.1）。
   // 偏好为 system 时还要监听系统变化，用户切换系统主题应当即时跟随。
@@ -512,12 +545,6 @@ export default function App() {
                       onCursor={(line, column) => setCursor({ line, column })}
                       jumpTarget={jumpTarget}
                       findNonce={findNonce}
-                      fontSpanRequest={fontSpanRequest}
-                      clearFontNonce={clearFontNonce}
-                      onQuickFont={handleQuickFont}
-                      onClearFont={() => setClearFontNonce((n) => n + 1)}
-                      defaultLatinFont={latinFont}
-                      defaultCjkFont={cjkFont}
                     />
                   </div>
                 )}
@@ -620,6 +647,9 @@ export default function App() {
         onChangeLatinFont={setLatinFont}
         cjkFont={cjkFont}
         onChangeCjkFont={setCjkFont}
+        previewTypography={previewTypography}
+        onChangePreviewElement={handleChangePreviewElement}
+        onResetPreviewTypography={handleResetPreviewTypography}
         initialSection={settingsSection}
       />
     </div>

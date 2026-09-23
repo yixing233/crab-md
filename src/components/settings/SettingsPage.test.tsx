@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
+import { defaultPreviewTypography } from "../../lib/previewTypography";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 
 // 原生目录选择器在 jsdom 里不可用；这里替代成可控 stub，
@@ -78,6 +79,9 @@ function renderPage(over: Partial<Parameters<typeof SettingsPage>[0]> = {}) {
     onChangeLatinFont: vi.fn(),
     cjkFont: "system",
     onChangeCjkFont: vi.fn(),
+    previewTypography: defaultPreviewTypography(),
+    onChangePreviewElement: vi.fn(),
+    onResetPreviewTypography: vi.fn(),
     ...over,
   };
   render(<SettingsPage {...props} />);
@@ -99,6 +103,9 @@ const BASE_PROPS: Parameters<typeof SettingsPage>[0] = {
   onChangeLatinFont: () => {},
   cjkFont: "system",
   onChangeCjkFont: () => {},
+  previewTypography: defaultPreviewTypography(),
+  onChangePreviewElement: () => {},
+  onResetPreviewTypography: () => {},
 };
 
 /** 切到某个分组（设置页是左侧导航 + 右侧内容）。 */
@@ -129,10 +136,10 @@ describe("SettingsPage (UI §34)", () => {
   it("shows the four groups by user mental model, not implementation module", () => {
     setSettings();
     renderPage();
-    // §34：分组按用户心智模型 —— 外观/编辑器/文件与数据/关于，
+    // §34：分组按用户心智模型 —— 外观/编辑器/预览排版/文件与数据/关于，
     // 而不是「数据库 / 路径 / 缓存」。
     const nav = screen.getByRole("navigation", { name: "设置分组" });
-    for (const label of ["外观", "编辑器", "文件与数据", "关于"]) {
+    for (const label of ["外观", "编辑器", "预览排版", "文件与数据", "关于"]) {
       expect(within(nav).getByRole("button", { name: label })).toBeInTheDocument();
     }
   });
@@ -148,6 +155,93 @@ describe("SettingsPage (UI §34)", () => {
     renderPage();
     await goTo("关于");
     expect(screen.getByTestId("app-version")).toBeInTheDocument();
+  });
+
+  describe("preview typography group", () => {
+    it("lists every element category the user asked for", async () => {
+      setSettings();
+      renderPage();
+      await goTo("预览排版");
+
+      // 正文 + 六个标题层级 + 代码 + 引用 + 表格 + 公式。
+      for (const name of [
+        "正文",
+        "一级标题",
+        "二级标题",
+        "三级标题",
+        "四级标题",
+        "五级标题",
+        "六级标题",
+        "代码",
+        "引用",
+        "表格",
+        "公式",
+      ]) {
+        expect(screen.getByText(name), name).toBeInTheDocument();
+      }
+    });
+
+    it("keeps the six heading levels separate rather than merging them", async () => {
+      // 用户明确要求标题逐级独立：大标题与六级标题要能设成不同字体。
+      setSettings();
+      renderPage();
+      await goTo("预览排版");
+
+      const numerals = ["一", "二", "三", "四", "五", "六"];
+      for (const n of numerals) {
+        expect(
+          screen.getByRole("button", { name: new RegExp(`${n}级标题.*字体`) }),
+          `${n}级标题`,
+        ).toBeInTheDocument();
+      }
+    });
+
+    it("offers the Latin face once, globally, not per element", async () => {
+      // 拉丁是全局一项：逐元素重复设置同一件事没有意义。
+      setSettings();
+      renderPage();
+      await goTo("预览排版");
+      expect(screen.getByText("西文字体")).toBeInTheDocument();
+
+      // 11 行元素 + 1 个全局西文选择器，字体按钮不该出现 12 个独立分组。
+      const latinPickers = screen.getAllByRole("radiogroup", { name: "西文字体" });
+      expect(latinPickers).toHaveLength(1);
+    });
+
+    it("reports a per-element change with that element's id", async () => {
+      setSettings();
+      const props = renderPage();
+      await goTo("预览排版");
+
+      await userEvent.click(screen.getByRole("button", { name: /一级标题.*放大/ }));
+
+      expect(props.onChangePreviewElement).toHaveBeenCalledWith(
+        "h1",
+        expect.objectContaining({ sizePx: expect.any(Number) }),
+      );
+    });
+
+    it("does not report changes for other elements when one is adjusted", async () => {
+      // 分元素设置若会互相影响，这个功能就没有意义了。
+      setSettings();
+      const props = renderPage();
+      await goTo("预览排版");
+
+      await userEvent.click(screen.getByRole("button", { name: /代码.*放大/ }));
+
+      const calls = (props.onChangePreviewElement as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls).toHaveLength(1);
+      expect(calls[0][0]).toBe("code");
+    });
+
+    it("offers a reset so a ruined setting is recoverable", async () => {
+      setSettings();
+      const props = renderPage();
+      await goTo("预览排版");
+
+      await userEvent.click(screen.getByRole("button", { name: "恢复默认排版" }));
+      expect(props.onResetPreviewTypography).toHaveBeenCalledOnce();
+    });
   });
 
   it("closes with the close button", async () => {

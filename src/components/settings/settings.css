@@ -231,6 +231,71 @@
   color: var(--text-secondary);
 }
 
+/* ---------------------------------------------------------------------------
+   预览排版：每类元素一行（字体下拉 + 字号增减）。
+   11 类元素若各铺一排按钮会失控，故压成紧凑行。
+   --------------------------------------------------------------------------- */
+
+.preview-type-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.preview-type-row {
+  display: grid;
+  /* 名称定宽、字体自适应、字号靠右 —— 三列对齐后竖着扫视很整齐。 */
+  grid-template-columns: 5.5em minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+}
+
+/* 行间用细线分隔；末行不画，避免与外框重线。 */
+.preview-type-row + .preview-type-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.preview-type-row__name {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.preview-type-row__font {
+  display: flex;
+  min-width: 0;
+}
+
+/* 字体按钮占满该列：名字长短不一时也能对齐。 */
+.preview-type-row__font-button {
+  justify-content: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.preview-type-row__font-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-type-row__size {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+/* 数值等宽居中：增减时位置不跳，眼睛能盯住同一个地方。 */
+.preview-type-row__size-value {
+  min-width: 2.2em;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--text-primary);
+}
+
 /* 下载进度：细一点，不要喧宾夺主。 */
 .settings-progress {
   width: 100%;
