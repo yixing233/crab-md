@@ -11,12 +11,29 @@
    下沿用结构性边框（而非内部细线），否则工具栏与正文糊在一起（UI §2.3）。 */
 .editor-toolbar {
   display: flex;
-  flex-wrap: wrap;
+  /* 不换行：换行会让工具栏高度随宽度变化，正文跟着上下跳动。
+     宽度不足时由 lib/toolbarLayout.ts 把末尾动作收进「更多」菜单。 */
+  flex-wrap: nowrap;
   gap: var(--space-1);
   align-items: center;
   padding: var(--space-2) var(--space-3);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-default);
+  /* 极端窄屏下最后一个按钮也不该溢出到工具栏外。 */
+  overflow: hidden;
+}
+
+/* 「更多」入口推到行尾：它收起的是末尾动作，贴在右边符合阅读方向。 */
+.editor-toolbar__more {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* 竖直分隔线是纯装饰，不参与收缩。 */
+.editor-toolbar > * {
+  flex: 0 0 auto;
 }
 
 /* 每组之后画一条 1px 竖线：选中态用背景而非边框，故此处只做分隔。 */

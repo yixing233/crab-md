@@ -72,6 +72,8 @@ export const zh = {
   editor: {
     /** 格式工具栏的无障碍标签。 */
     toolbarAriaLabel: "格式化",
+    /** 宽度不足时收起多余动作的入口。 */
+    moreActions: "更多格式",
     actions: {
       bold: "加粗",
       italic: "斜体",
