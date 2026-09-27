@@ -22,6 +22,7 @@ export const zh = {
       system: "跟随系统",
     },
     search: "搜索",
+    printPdf: "导出 PDF",
     newDocument: "新建",
     toggleOutline: "大纲",
     settings: "设置",
@@ -53,8 +54,8 @@ export const zh = {
     duplicate: "另存为副本",
     /** 导出为独立的 .md 文件，可交给别的编辑器打开。 */
     exportDoc: "导出为 Markdown…",
-    /** 从磁盘导入 .md 文件为新笔记。 */
-    importDoc: "导入 Markdown…",
+    /** 从磁盘打开文本或 Markdown 文件为新笔记。 */
+    openFile: "打开文件…",
     /** 行内重命名输入框的无障碍标签。 */
     renameLabel: "笔记名称",
     /** 顶部「更多操作」按钮，用于触屏等无右键场景。 */
@@ -69,16 +70,43 @@ export const zh = {
     cancel: "取消",
   },
 
+  recovery: {
+    title: "发现未保存草稿",
+    body: (title: string) => `「${title}」有一份未保存的本地草稿。要恢复它吗？`,
+    conflictBody: (title: string) =>
+      `「${title}」在草稿保存后发生过变化。仍可恢复草稿，但它会覆盖当前编辑区内容。`,
+    restore: "恢复草稿",
+    discard: "放弃草稿",
+  },
+
   editor: {
     /** 格式工具栏的无障碍标签。 */
     toolbarAriaLabel: "格式化",
     /** 宽度不足时收起多余动作的入口。 */
     moreActions: "更多格式",
+    contextMenu: {
+      ariaLabel: "编辑器操作",
+      undo: "撤销",
+      redo: "重做",
+      cut: "剪切",
+      copy: "复制",
+      paste: "粘贴",
+      selectAll: "全选",
+      findReplace: "查找 / 替换",
+      format: "格式",
+      insert: "插入",
+    },
     actions: {
       bold: "加粗",
       italic: "斜体",
       strikethrough: "删除线",
       heading: "标题",
+      h1: "H1",
+      h2: "H2",
+      h3: "H3",
+      h4: "H4",
+      h5: "H5",
+      h6: "H6",
       bulletList: "无序列表",
       orderedList: "有序列表",
       quote: "引用",
@@ -317,16 +345,20 @@ export const zh = {
     duplicateFailed: "另存失败，原文未受影响",
     exported: "已导出",
     exportFailed: "导出失败，原笔记未受影响",
-    imported: (title: string) => `已导入「${title}」`,
-    importFailed: "导入失败，未创建笔记",
+    printUnavailable: "当前环境不支持打印",
+    imagePasteFailed: "图片保存失败，未插入图片引用",
+    opened: (title: string) => `已打开「${title}」`,
+    openFailed: "打开文件失败，未创建笔记",
   },
 
-  /** 导入 / 导出用的系统文件对话框文案。 */
+  /** 打开 / 导出用的系统文件对话框文案。 */
   transfer: {
     exportTitle: "导出为 Markdown",
-    importTitle: "导入 Markdown 文件",
-    /** 仅显示 Markdown，避免用户选中一个二进制文件。 */
+    openTitle: "打开文件",
+    /** 导出只允许 Markdown，避免产生格式不明确的文件。 */
     markdownFilterName: "Markdown",
+    /** 打开时允许纯文本与 Markdown。 */
+    textFilterName: "文本与 Markdown",
   },
 
   /**

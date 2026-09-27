@@ -1,16 +1,35 @@
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { bracketMatching, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorSelection as CmSelection, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { searchKeymap } from "@codemirror/search";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  redo,
+  redoDepth,
+  selectAll,
+  undo,
+  undoDepth,
+} from "@codemirror/commands";
+import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { applyMarkdownAction, type MarkdownActionId } from "../../lib/markdownActions";
-import { cmPhrases } from "../../lib/i18n";
+import { cmPhrases, zh } from "../../lib/i18n";
+import {
+  ContextMenu,
+  type ContextMenuEntry,
+  type ContextMenuItem,
+} from "../ui/ContextMenu";
+import { createCustomSearchPanel, openSearchWithReplace } from "./customSearchPanel";
 import { EditorToolbar } from "./EditorToolbar";
 import "./editor.css";
+
+export type PasteImageHandler = (
+  file: File,
+) => Promise<string | null | undefined> | string | null | undefined;
 
 export interface MarkdownEditorProps {
   /** 当前文档 id；切换文档时重建编辑器状态。 */
@@ -19,8 +38,10 @@ export interface MarkdownEditorProps {
   onChange: (value: string) => void;
   /** Ctrl+S 回调，用于立即落盘。 */
   onSave?: () => void;
-  /** 光标位置变化（1 基行/列），供状态栏显示（UI §28）。 */
-  onCursor?: (line: number, column: number) => void;
+  /** 图片剪贴板回调；返回附件 UUID 后编辑器插入 attachment:// 引用。 */
+  onPasteImage?: PasteImageHandler;
+  /** 光标位置变化（1 基行/列与选中文本），供状态栏显示（UI §28）。 */
+  onCursor?: (line: number, column: number, selectedText?: string) => void;
   /**
    * 请求把光标跳到某个 0 基行号（大纲点击时用）。
    * 用 `nonce` 区分「同一个行号被再次点击」，否则重复点击同一个标题不会触发。
@@ -82,6 +103,27 @@ const appTheme = EditorView.theme({
   ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": {
     backgroundColor: "var(--accent-soft)",
     outline: "1px solid var(--border-focus)",
+  },
+  // 查找与替换面板：适配明暗主题令牌
+  ".cm-panels": {
+    backgroundColor: "var(--bg-surface)",
+    color: "var(--text-primary)",
+    fontFamily: "var(--font-ui)",
+  },
+  ".cm-panels-top": {
+    borderBottom: "1px solid var(--border-default)",
+  },
+  ".cm-panels-bottom": {
+    borderTop: "1px solid var(--border-default)",
+  },
+  ".cm-searchMatch": {
+    backgroundColor: "rgb(250 204 21 / 0.45)",
+    borderRadius: "2px",
+  },
+  ".cm-searchMatch-selected": {
+    backgroundColor: "var(--accent-solid)",
+    color: "var(--text-on-accent)",
+    borderRadius: "2px",
   },
 });
 
@@ -145,35 +187,167 @@ function dispatchAction(view: EditorView, action: MarkdownActionId): void {
 }
 
 
-/** 取 1 基的行列号（状态栏用，UI §28）。 */
-function cursorPosition(state: EditorState): { line: number; column: number } {
-  const head = state.selection.main.head;
+/** 取 1 基的行列号与选区内容（状态栏用，UI §28）。 */
+function cursorPosition(state: EditorState): { line: number; column: number; selectedText: string } {
+  const main = state.selection.main;
+  const head = main.head;
   const line = state.doc.lineAt(head);
-  return { line: line.number, column: head - line.from + 1 };
+  const selectedText = main.from !== main.to ? state.sliceDoc(main.from, main.to) : "";
+  return { line: line.number, column: head - line.from + 1, selectedText };
 }
 
-export function MarkdownEditor({
-  documentId,
-  value,
-  onChange,
-  onSave,
-  onCursor,
-  jumpTarget,
-  findNonce,
-  showToolbar = true,
-  onScrollDOM,
-}: MarkdownEditorProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
-  // 用 ref 持有最新回调，避免每次渲染都重建编辑器。
-  const onChangeRef = useRef(onChange);
-  const onSaveRef = useRef(onSave);
-  const onCursorRef = useRef(onCursor);
-  const onScrollDOMRef = useRef(onScrollDOM);
-  onChangeRef.current = onChange;
-  onSaveRef.current = onSave;
-  onCursorRef.current = onCursor;
-  onScrollDOMRef.current = onScrollDOM;
+interface EditorContextMenuState {
+  x: number;
+  y: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  hasSelection: boolean;
+}
+
+const SUPPORTED_PASTE_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
+
+/** 只从剪贴板提取支持的图片；没有图片时交回 CodeMirror 的默认粘贴流程。 */
+function clipboardImage(event: ClipboardEvent): File | null {
+  const data = event.clipboardData;
+  if (!data) return null;
+
+  for (const item of Array.from(data.items)) {
+    if (item.kind !== "file" || !SUPPORTED_PASTE_IMAGE_TYPES.has(item.type.toLowerCase())) {
+      continue;
+    }
+    const file = item.getAsFile();
+    if (file) return file;
+  }
+
+  // 某些 WebView 只暴露 files，不暴露 items；仍然保持同一 MIME 白名单。
+  for (const file of Array.from(data.files)) {
+    if (SUPPORTED_PASTE_IMAGE_TYPES.has(file.type.toLowerCase())) return file;
+  }
+  return null;
+}
+
+const LUCIDE_CHEVRON_DOWN =
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const LUCIDE_CHEVRON_RIGHT =
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+
+function createFoldMarker(open: boolean): HTMLElement {
+  const el = document.createElement("span");
+  el.className = open ? "cm-fold-marker cm-fold-marker--open" : "cm-fold-marker cm-fold-marker--closed";
+  el.setAttribute("aria-hidden", "true");
+  el.innerHTML = open ? LUCIDE_CHEVRON_DOWN : LUCIDE_CHEVRON_RIGHT;
+  return el;
+}
+
+export interface MarkdownEditorHandle {
+  dispatchAction: (action: MarkdownActionId) => void;
+  focus: () => void;
+}
+
+export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
+  function MarkdownEditor(
+    {
+      documentId,
+      value,
+      onChange,
+      onSave,
+      onPasteImage,
+      onCursor,
+      jumpTarget,
+      findNonce,
+      showToolbar = true,
+      onScrollDOM,
+    }: MarkdownEditorProps,
+    ref,
+  ) {
+    const hostRef = useRef<HTMLDivElement>(null);
+    const viewRef = useRef<EditorView | null>(null);
+    const [contextMenu, setContextMenu] = useState<EditorContextMenuState | null>(null);
+    // 用 ref 持有最新回调，避免每次渲染都重建编辑器。
+    const onChangeRef = useRef(onChange);
+    const onSaveRef = useRef(onSave);
+    const onPasteImageRef = useRef(onPasteImage);
+    const onCursorRef = useRef(onCursor);
+    const onScrollDOMRef = useRef(onScrollDOM);
+    onChangeRef.current = onChange;
+    onSaveRef.current = onSave;
+    onPasteImageRef.current = onPasteImage;
+    onCursorRef.current = onCursor;
+    onScrollDOMRef.current = onScrollDOM;
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        dispatchAction: (action: MarkdownActionId) => {
+          const view = viewRef.current;
+          if (view) dispatchAction(view, action);
+        },
+        focus: () => {
+          viewRef.current?.focus();
+        },
+      }),
+      [],
+    );
+
+  const insertAttachmentReference = (
+    editor: EditorView,
+    attachmentId: string,
+    from: number,
+    to: number,
+  ): boolean => {
+    if (viewRef.current !== editor) return false;
+    const id = attachmentId.trim();
+    if (!id) return false;
+    const reference = id.startsWith("attachment://") ? id : `attachment://${id}`;
+    const markdown = `![图片](${reference})`;
+    // 上传期间用户可能编辑了文档；把旧选区夹回当前文档，避免越界。
+    const currentLength = editor.state.doc.length;
+    const safeFrom = Math.min(from, currentLength);
+    const safeTo = Math.min(Math.max(safeFrom, to), currentLength);
+    editor.dispatch({
+      changes: { from: safeFrom, to: safeTo, insert: markdown },
+      selection: CmSelection.cursor(safeFrom + markdown.length),
+      scrollIntoView: true,
+    });
+    editor.focus();
+    return true;
+  };
+
+  const saveClipboardImage = async (
+    file: File,
+    editor: EditorView,
+    from: number,
+    to: number,
+  ): Promise<boolean> => {
+    const callback = onPasteImageRef.current;
+    if (!callback) return false;
+    try {
+      const attachmentId = await callback(file);
+      return attachmentId
+        ? insertAttachmentReference(editor, attachmentId, from, to)
+        : false;
+    } catch {
+      // 保存失败时保留原文与原选区；由调用方决定是否展示错误提示。
+      return false;
+    }
+  };
+
+  const handlePasteImage = (event: ClipboardEvent, editor: EditorView): boolean => {
+    const file = clipboardImage(event);
+    const callback = onPasteImageRef.current;
+    // 没有受支持的图片，或父层未接入保存回调时，绝不阻止普通文本粘贴。
+    if (!file || !callback) return false;
+
+    event.preventDefault();
+    const { from, to } = editor.state.selection.main;
+    void saveClipboardImage(file, editor, from, to);
+    return true;
+  };
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -189,7 +363,9 @@ export function MarkdownEditor({
           markdown({ base: markdownLanguage, codeLanguages: languages }),
           syntaxHighlighting(markdownHighlight),
           bracketMatching(),
+          foldGutter({ markerDOM: (open) => createFoldMarker(open) }),
           EditorView.lineWrapping,
+          search({ top: true, createPanel: createCustomSearchPanel }),
           appTheme,
           // CodeMirror 内置面板（查找/替换）默认英文，注入中文词表（UI §2.5）。
           EditorState.phrases.of(cmPhrases),
@@ -206,18 +382,55 @@ export function MarkdownEditor({
             { key: "Mod-b", preventDefault: true, run: (v) => (dispatchAction(v, "bold"), true) },
             { key: "Mod-i", preventDefault: true, run: (v) => (dispatchAction(v, "italic"), true) },
             { key: "Mod-`", preventDefault: true, run: (v) => (dispatchAction(v, "inlineCode"), true) },
+            { key: "Mod-Alt-1", preventDefault: true, run: (v) => (dispatchAction(v, "h1"), true) },
+            { key: "Mod-Alt-2", preventDefault: true, run: (v) => (dispatchAction(v, "h2"), true) },
+            { key: "Mod-Alt-3", preventDefault: true, run: (v) => (dispatchAction(v, "h3"), true) },
+            { key: "Mod-Alt-4", preventDefault: true, run: (v) => (dispatchAction(v, "h4"), true) },
+            { key: "Mod-Alt-5", preventDefault: true, run: (v) => (dispatchAction(v, "h5"), true) },
+            { key: "Mod-Alt-6", preventDefault: true, run: (v) => (dispatchAction(v, "h6"), true) },
             ...defaultKeymap,
             ...historyKeymap,
             ...searchKeymap,
+            ...foldKeymap,
           ]),
+          EditorView.domEventHandlers({
+            paste: (event, editor) => handlePasteImage(event, editor),
+            contextmenu: (event, editor) => {
+              event.preventDefault();
+              const position = editor.posAtCoords({ x: event.clientX, y: event.clientY });
+              const selection = editor.state.selection.main;
+              // 右键落在当前选区内时保留选区，便于复制/剪切/格式化；
+              // 否则将光标移到右键位置，符合编辑器的常见行为。
+              if (
+                position !== null &&
+                !(selection.from !== selection.to && position >= selection.from && position <= selection.to)
+              ) {
+                editor.dispatch({ selection: CmSelection.cursor(position) });
+              }
+              editor.focus();
+              const current = editor.state.selection.main;
+              setContextMenu({
+                x: event.clientX,
+                y: event.clientY,
+                canUndo: undoDepth(editor.state) > 0,
+                canRedo: redoDepth(editor.state) > 0,
+                hasSelection: !current.empty,
+              });
+              return true;
+            },
+          }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               onChangeRef.current(update.state.doc.toString());
             }
-            // 光标移动也要更新状态栏行列号。
+            // 光标移动也要更新状态栏行列号与选中文本。
             if (update.selectionSet || update.docChanged) {
-              const { line, column } = cursorPosition(update.state);
-              onCursorRef.current?.(line, column);
+              const { line, column, selectedText } = cursorPosition(update.state);
+              if (selectedText) {
+                onCursorRef.current?.(line, column, selectedText);
+              } else {
+                onCursorRef.current?.(line, column);
+              }
             }
           }),
         ],
@@ -227,8 +440,12 @@ export function MarkdownEditor({
     viewRef.current = view;
     onScrollDOMRef.current?.(view.scrollDOM);
     // 初始光标位置也要上报，否则状态栏在打开文档前是空的。
-    const { line, column } = cursorPosition(view.state);
-    onCursorRef.current?.(line, column);
+    const { line, column, selectedText } = cursorPosition(view.state);
+    if (selectedText) {
+      onCursorRef.current?.(line, column, selectedText);
+    } else {
+      onCursorRef.current?.(line, column);
+    }
 
     return () => {
       onScrollDOMRef.current?.(null);
@@ -273,14 +490,22 @@ export function MarkdownEditor({
 
   // 全局 Ctrl+F：编辑器未聚焦时也要能打开查找面板。
   // searchKeymap 只在编辑器有焦点时生效，所以这里显式补一条。
-  useEffect(() => {
+  const openFindPanel = (expandReplace = false) => {
     const view = viewRef.current;
-    if (!view || !findNonce) return;
+    if (!view) return;
     view.focus();
-    // openSearchPanel 由 @codemirror/search 提供。
-    void import("@codemirror/search").then(({ openSearchPanel }) => {
+    if (expandReplace) {
+      openSearchWithReplace(view);
+    } else {
       openSearchPanel(view);
-    });
+    }
+  };
+
+  useEffect(() => {
+    if (!findNonce) return;
+    openFindPanel();
+    // 该函数只依赖 ref；nonce 是唯一触发条件。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [findNonce]);
 
   const handleAction = (action: MarkdownActionId) => {
@@ -288,10 +513,191 @@ export function MarkdownEditor({
     if (view) dispatchAction(view, action);
   };
 
+  const runCommand = (command: (view: EditorView) => boolean) => () => {
+    const view = viewRef.current;
+    if (!view) return;
+    command(view);
+    view.focus();
+  };
+
+  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+  const copySelection = async (cut: boolean) => {
+    const view = viewRef.current;
+    if (!view || !clipboard?.writeText) return;
+    const { from, to } = view.state.selection.main;
+    if (from === to) return;
+    try {
+      await clipboard.writeText(view.state.sliceDoc(from, to));
+    } catch {
+      // 剪贴板被系统拒绝时不修改文档，避免剪切操作导致内容丢失。
+      return;
+    }
+    if (cut) {
+      view.dispatch({
+        changes: { from, to, insert: "" },
+        selection: CmSelection.cursor(from),
+        scrollIntoView: true,
+      });
+    }
+    view.focus();
+  };
+
+  const readClipboardImage = async (): Promise<File | null> => {
+    if (!clipboard?.read) return null;
+    try {
+      const items = await clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((candidate) =>
+          SUPPORTED_PASTE_IMAGE_TYPES.has(candidate.toLowerCase()),
+        );
+        if (!type) continue;
+        const blob = await item.getType(type);
+        const extension = type.slice(type.indexOf("/") + 1).replace("jpeg", "jpg");
+        return new File([blob], `pasted-image.${extension}`, { type });
+      }
+    } catch {
+      // 系统可能要求额外剪贴板权限；交给文本读取流程兜底。
+    }
+    return null;
+  };
+
+  const pasteFromClipboard = async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const { from, to } = view.state.selection.main;
+
+    // 右键「粘贴」也支持截图；没有图片时再读取纯文本。
+    if (onPasteImageRef.current) {
+      const image = await readClipboardImage();
+      if (image && (await saveClipboardImage(image, view, from, to))) return;
+    }
+
+    if (!clipboard?.readText) return;
+    try {
+      const text = await clipboard.readText();
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: CmSelection.cursor(from + text.length),
+        scrollIntoView: true,
+      });
+      view.focus();
+    } catch {
+      // 系统可能要求额外剪贴板权限；失败时保留原文并安静结束。
+    }
+  };
+
+  const formatItem = (action: MarkdownActionId): ContextMenuItem => ({
+    id: `format-${action}`,
+    label: zh.editor.actions[action],
+    onSelect: () => handleAction(action),
+  });
+
+  const contextMenuItems: ContextMenuEntry[] = contextMenu
+    ? [
+        {
+          id: "undo",
+          label: zh.editor.contextMenu.undo,
+          shortcut: "Ctrl+Z",
+          disabled: !contextMenu.canUndo,
+          onSelect: runCommand(undo),
+        },
+        {
+          id: "redo",
+          label: zh.editor.contextMenu.redo,
+          shortcut: "Ctrl+Y",
+          disabled: !contextMenu.canRedo,
+          onSelect: runCommand(redo),
+        },
+        { id: "edit-separator", separator: true },
+        {
+          id: "cut",
+          label: zh.editor.contextMenu.cut,
+          shortcut: "Ctrl+X",
+          disabled: !contextMenu.hasSelection || !clipboard?.writeText,
+          onSelect: () => copySelection(true),
+        },
+        {
+          id: "copy",
+          label: zh.editor.contextMenu.copy,
+          shortcut: "Ctrl+C",
+          disabled: !contextMenu.hasSelection || !clipboard?.writeText,
+          onSelect: () => copySelection(false),
+        },
+        {
+          id: "paste",
+          label: zh.editor.contextMenu.paste,
+          shortcut: "Ctrl+V",
+          disabled: !clipboard?.readText && !clipboard?.read,
+          onSelect: pasteFromClipboard,
+        },
+        {
+          id: "select-all",
+          label: zh.editor.contextMenu.selectAll,
+          shortcut: "Ctrl+A",
+          onSelect: runCommand(selectAll),
+        },
+        {
+          id: "find-replace",
+          label: zh.editor.contextMenu.findReplace,
+          shortcut: "Ctrl+F",
+          onSelect: () => openFindPanel(true),
+        },
+         { id: "format-separator", separator: true },
+        {
+          id: "format",
+          label: zh.editor.contextMenu.format,
+          submenu: [
+            formatItem("bold"),
+            formatItem("italic"),
+            formatItem("strikethrough"),
+            formatItem("inlineCode"),
+            { id: "heading-separator", separator: true },
+            {
+              id: "heading-submenu",
+              label: "标题",
+              submenu: [
+                formatItem("h1"),
+                formatItem("h2"),
+                formatItem("h3"),
+                formatItem("h4"),
+                formatItem("h5"),
+                formatItem("h6"),
+              ],
+            },
+            { id: "block-separator", separator: true },
+            formatItem("bulletList"),
+            formatItem("orderedList"),
+            formatItem("quote"),
+            formatItem("codeBlock"),
+          ],
+        },
+        {
+          id: "insert",
+          label: zh.editor.contextMenu.insert,
+          submenu: [
+            formatItem("link"),
+            formatItem("image"),
+            { id: "insert-separator", separator: true },
+            formatItem("table"),
+            formatItem("math"),
+            formatItem("mathBlock"),
+          ],
+        },
+      ]
+    : [];
+
   return (
     <div className="markdown-editor-root">
       {showToolbar && <EditorToolbar onAction={handleAction} />}
       <div className="markdown-editor" ref={hostRef} data-testid="markdown-editor" />
+      <ContextMenu
+        open={contextMenu !== null}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        items={contextMenuItems}
+        ariaLabel={zh.editor.contextMenu.ariaLabel}
+        onClose={() => setContextMenu(null)}
+      />
     </div>
   );
-}
+});

@@ -30,6 +30,7 @@ vi.mock("../lib/api", () => ({
       : { code: "UNKNOWN", message: String(raw) },
 }));
 
+import { readRecoveryDraft, writeRecoveryDraft } from "../lib/recovery";
 import { useWorkspaceStore, __setAutosaveDelay } from "./useWorkspaceStore";
 
 function summary(id: string, title = "T") {
@@ -48,9 +49,10 @@ describe("useWorkspaceStore", () => {
     // 失败路径会经 lib/log 写 console.error；那是预期行为，
     // 但会把测试输出淹掉，故在断言层面之外静音。
     vi.spyOn(console, "error").mockImplementation(() => {});
+    localStorage.clear();
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
-      loading: false, error: null, dirty: false,
+      loading: false, error: null, dirty: false, recoveryCandidate: null,
     });
   });
 
@@ -137,11 +139,12 @@ describe("unsaved content is never silently discarded", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => {});
+    localStorage.clear();
     // 去抖调长，确保用例不会因为自动保存提前触发而失真。
     __setAutosaveDelay(60_000);
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
-      loading: false, error: null, dirty: false,
+      loading: false, error: null, dirty: false, recoveryCandidate: null,
     });
   });
 
@@ -234,9 +237,10 @@ describe("autosave debounce", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => {});
+    localStorage.clear();
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
-      loading: false, error: null, dirty: false,
+      loading: false, error: null, dirty: false, recoveryCandidate: null,
     });
   });
 
@@ -273,6 +277,89 @@ describe("autosave debounce", () => {
   });
 });
 
+describe("useWorkspaceStore recovery drafts", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __setAutosaveDelay(60_000);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    localStorage.clear();
+    useWorkspaceStore.setState({
+      documents: [summary("1")],
+      activeId: null,
+      activeContent: "",
+      loading: false,
+      error: null,
+      dirty: false,
+      recoveryCandidate: null,
+    });
+  });
+
+  it("writes a draft immediately and removes it after the matching save", async () => {
+    readDocument.mockResolvedValue({ ...summary("1"), content: "old" });
+    saveDocument.mockResolvedValue(summary("1"));
+    await useWorkspaceStore.getState().openDocument("1");
+
+    useWorkspaceStore.getState().setContent("crash-safe");
+    expect(readRecoveryDraft("1")?.content).toBe("crash-safe");
+
+    await useWorkspaceStore.getState().saveActive();
+    expect(readRecoveryDraft("1")).toBeNull();
+  });
+
+  it("offers a candidate without replacing the saved document", async () => {
+    writeRecoveryDraft({
+      documentId: "1",
+      content: "本地草稿",
+      baseRevision: 1,
+      baseContentHash: "sha256:x",
+      updatedAt: Date.now(),
+    });
+    readDocument.mockResolvedValue({ ...summary("1"), content: "磁盘正文" });
+
+    await useWorkspaceStore.getState().openDocument("1");
+    expect(useWorkspaceStore.getState().activeContent).toBe("磁盘正文");
+    expect(useWorkspaceStore.getState().dirty).toBe(false);
+    expect(useWorkspaceStore.getState().recoveryCandidate?.content).toBe("本地草稿");
+
+    useWorkspaceStore.getState().restoreRecovery();
+    expect(useWorkspaceStore.getState().activeContent).toBe("本地草稿");
+    expect(useWorkspaceStore.getState().dirty).toBe(true);
+    expect(useWorkspaceStore.getState().recoveryCandidate).toBeNull();
+  });
+
+  it("discarding a candidate removes its local copy", async () => {
+    writeRecoveryDraft({
+      documentId: "1",
+      content: "放弃我",
+      baseRevision: 1,
+      baseContentHash: "sha256:x",
+      updatedAt: Date.now(),
+    });
+    readDocument.mockResolvedValue({ ...summary("1"), content: "磁盘正文" });
+
+    await useWorkspaceStore.getState().openDocument("1");
+    useWorkspaceStore.getState().discardRecovery();
+    expect(readRecoveryDraft("1")).toBeNull();
+    expect(useWorkspaceStore.getState().activeContent).toBe("磁盘正文");
+  });
+
+  it("does not clear a newer edit when an older save resolves", async () => {
+    readDocument.mockResolvedValue({ ...summary("1"), content: "old" });
+    await useWorkspaceStore.getState().openDocument("1");
+
+    let resolveSave!: (value: unknown) => void;
+    saveDocument.mockReturnValue(new Promise((resolve) => { resolveSave = resolve; }));
+    useWorkspaceStore.getState().setContent("first");
+    const saving = useWorkspaceStore.getState().saveActive();
+    useWorkspaceStore.getState().setContent("second");
+    resolveSave(summary("1"));
+    await saving;
+
+    expect(useWorkspaceStore.getState().dirty).toBe(true);
+    expect(readRecoveryDraft("1")?.content).toBe("second");
+  });
+});
+
 /**
  * 另存为副本（ARCHITECTURE.md §11：副本必须是独立身份）。
  */
@@ -281,9 +368,10 @@ describe("useWorkspaceStore duplicateDocument", () => {
     vi.clearAllMocks();
     __setAutosaveDelay(60_000);
     vi.spyOn(console, "error").mockImplementation(() => {});
+    localStorage.clear();
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
-      loading: false, error: null, dirty: false,
+      loading: false, error: null, dirty: false, recoveryCandidate: null,
     });
   });
 
@@ -371,9 +459,10 @@ describe("useWorkspaceStore settings", () => {
     vi.clearAllMocks();
     __setAutosaveDelay(60_000);
     vi.spyOn(console, "error").mockImplementation(() => {});
+    localStorage.clear();
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
-      loading: false, error: null, dirty: false, settings: null,
+      loading: false, error: null, dirty: false, recoveryCandidate: null, settings: null,
     });
   });
 

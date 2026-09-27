@@ -207,9 +207,9 @@ describe("SettingsPage (UI §34)", () => {
       await goTo("预览排版");
       expect(screen.getByText("西文字体")).toBeInTheDocument();
 
-      // 11 行元素 + 1 个全局西文选择器，字体按钮不该出现 12 个独立分组。
-      const latinPickers = screen.getAllByRole("radiogroup", { name: "西文字体" });
-      expect(latinPickers).toHaveLength(1);
+      // 全局西文字体只提供一个紧凑的下拉触发按钮，不在页面平铺选项。
+      expect(screen.getAllByRole("button", { name: /西文字体/ })).toHaveLength(1);
+      expect(screen.queryByRole("radiogroup", { name: "西文字体" })).not.toBeInTheDocument();
     });
 
     it("reports a per-element change with that element's id", async () => {
@@ -307,7 +307,8 @@ describe("SettingsPage (UI §34)", () => {
     const props = renderPage();
     await goTo("编辑器");
 
-    await userEvent.click(screen.getByRole("radio", { name: "宋体" }));
+    await userEvent.click(screen.getByRole("button", { name: /中文字体/ }));
+    await userEvent.click(screen.getByRole("menuitemradio", { name: "宋体" }));
 
     expect(props.onChangeCjkFont).toHaveBeenCalledWith("simsun");
   });
@@ -317,32 +318,50 @@ describe("SettingsPage (UI §34)", () => {
     const props = renderPage();
     await goTo("编辑器");
 
-    await userEvent.click(screen.getByRole("radio", { name: "Times New Roman" }));
+    await userEvent.click(screen.getByRole("button", { name: /西文字体/ }));
+    await userEvent.click(screen.getByRole("menuitemradio", { name: "Times New Roman" }));
 
     expect(props.onChangeLatinFont).toHaveBeenCalledWith("times");
     // 关键：改西文**不应**动到中文。
     expect(props.onChangeCjkFont).not.toHaveBeenCalled();
   });
 
-  it("offers Chinese and Latin fonts as two separate groups", async () => {
+  it("offers separate compact dropdowns for Chinese and Latin fonts", async () => {
     setSettings();
     renderPage();
     await goTo("编辑器");
 
-    // 两组各有自己的可访问名，用户能分辨在改哪一侧。
-    expect(screen.getByRole("radiogroup", { name: "中文字体" })).toBeInTheDocument();
-    expect(screen.getByRole("radiogroup", { name: "西文字体" })).toBeInTheDocument();
+    // 两组各有自己的可访问名，选项只在打开对应下拉菜单后出现。
+    const cjkPicker = screen.getByRole("button", { name: /中文字体/ });
+    const latinPicker = screen.getByRole("button", { name: /西文字体/ });
+    expect(cjkPicker).toHaveAttribute("aria-haspopup", "menu");
+    expect(latinPicker).toHaveAttribute("aria-haspopup", "menu");
 
-    // 中文字体在中文组里。
-    const cjkGroup = screen.getByRole("radiogroup", { name: "中文字体" });
+    await userEvent.click(cjkPicker);
+    const cjkMenu = screen.getByRole("menu", { name: "中文字体" });
     for (const name of ["微软雅黑", "黑体", "宋体", "楷体", "仿宋"]) {
-      expect(within(cjkGroup).getByRole("radio", { name })).toBeInTheDocument();
+      expect(within(cjkMenu).getByRole("menuitemradio", { name })).toBeInTheDocument();
     }
-    // 西文字体在西文组里。
-    const latinGroup = screen.getByRole("radiogroup", { name: "西文字体" });
+
+    await userEvent.click(latinPicker);
+    const latinMenu = screen.getByRole("menu", { name: "西文字体" });
     for (const name of ["Times New Roman", "Georgia", "Arial", "Calibri"]) {
-      expect(within(latinGroup).getByRole("radio", { name })).toBeInTheDocument();
+      expect(within(latinMenu).getByRole("menuitemradio", { name })).toBeInTheDocument();
     }
+  });
+
+  it("closes the font dropdown when clicking outside it", async () => {
+    setSettings();
+    renderPage();
+    await goTo("编辑器");
+
+    await userEvent.click(screen.getByRole("button", { name: /中文字体/ }));
+    expect(screen.getByRole("menu", { name: "中文字体" })).toBeInTheDocument();
+
+    // 左侧分组导航位于下拉菜单外，点击它应同时关闭菜单并正常切换分组。
+    await userEvent.click(screen.getByRole("button", { name: "外观" }));
+    expect(screen.queryByRole("menu", { name: "中文字体" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "外观" })).toBeInTheDocument();
   });
 
   it("renders each option's name in its own font so the choice is visible", async () => {
@@ -350,9 +369,10 @@ describe("SettingsPage (UI §34)", () => {
     renderPage();
     await goTo("编辑器");
 
-    // 这是选择列表的核心价值：读到「宋体」两个字本身就是宋体。
-    const option = screen.getByRole("radio", { name: "宋体" });
-    const nameEl = option.querySelector(".ui-font-picker__name") as HTMLElement;
+    // 下拉选项仍以各自字体渲染名称，方便直接比较字形。
+    await userEvent.click(screen.getByRole("button", { name: /中文字体/ }));
+    const option = screen.getByRole("menuitemradio", { name: "宋体" });
+    const nameEl = option.querySelector(".ui-menu__label") as HTMLElement;
     expect(nameEl.style.fontFamily).toContain("SimSun");
   });
 
@@ -361,8 +381,9 @@ describe("SettingsPage (UI §34)", () => {
     renderPage();
     await goTo("编辑器");
 
-    const option = screen.getByRole("radio", { name: "Georgia" });
-    const nameEl = option.querySelector(".ui-font-picker__name") as HTMLElement;
+    await userEvent.click(screen.getByRole("button", { name: /西文字体/ }));
+    const option = screen.getByRole("menuitemradio", { name: "Georgia" });
+    const nameEl = option.querySelector(".ui-menu__label") as HTMLElement;
     expect(nameEl.style.fontFamily).toContain("Georgia");
   });
 
@@ -371,19 +392,22 @@ describe("SettingsPage (UI §34)", () => {
     renderPage({ cjkFont: "kaiti", latinFont: "georgia" });
     await goTo("编辑器");
 
-    expect(screen.getByRole("radio", { name: "楷体" })).toHaveAttribute(
+    await userEvent.click(screen.getByRole("button", { name: /中文字体/ }));
+    expect(screen.getByRole("menuitemradio", { name: "楷体" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(screen.getByRole("radio", { name: "宋体" })).toHaveAttribute(
+    expect(screen.getByRole("menuitemradio", { name: "宋体" })).toHaveAttribute(
       "aria-checked",
       "false",
     );
-    expect(screen.getByRole("radio", { name: "Georgia" })).toHaveAttribute(
+
+    await userEvent.click(screen.getByRole("button", { name: /西文字体/ }));
+    expect(screen.getByRole("menuitemradio", { name: "Georgia" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(screen.getByRole("radio", { name: "Arial" })).toHaveAttribute(
+    expect(screen.getByRole("menuitemradio", { name: "Arial" })).toHaveAttribute(
       "aria-checked",
       "false",
     );

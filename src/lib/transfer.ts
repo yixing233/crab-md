@@ -47,15 +47,18 @@ export async function pickExportPath(title: string): Promise<string | null> {
   }
 }
 
+/** 打开文件对话框允许的纯文本与 Markdown 扩展名。 */
+export const OPEN_FILE_EXTENSIONS = ["txt", "md", "markdown"] as const;
+
 /** 弹出「打开文件」对话框，返回所选路径；取消或无桥时返回 null。 */
-export async function pickImportPath(): Promise<string | null> {
+export async function pickOpenFilePath(): Promise<string | null> {
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const picked = await open({
       multiple: false,
       directory: false,
-      title: zh.transfer.importTitle,
-      filters: [{ name: zh.transfer.markdownFilterName, extensions: ["md", "markdown"] }],
+      title: zh.transfer.openTitle,
+      filters: [{ name: zh.transfer.textFilterName, extensions: [...OPEN_FILE_EXTENSIONS] }],
     });
     return typeof picked === "string" ? picked : null;
   } catch {
@@ -65,15 +68,15 @@ export async function pickImportPath(): Promise<string | null> {
 
 export interface TransferDeps {
   pickExport: (title: string) => Promise<string | null>;
-  pickImport: () => Promise<string | null>;
+  pickOpenFile: () => Promise<string | null>;
   exportDocument: (id: string, target: string) => Promise<boolean>;
-  importDocument: (source: string) => Promise<{ title: string } | null>;
+  openFile: (source: string) => Promise<{ title: string } | null>;
 }
 
 /** 默认依赖：真实对话框 + 真实 store（由调用方注入以保持本模块无 store 依赖）。 */
 export const defaultTransferDeps = {
   pickExport: pickExportPath,
-  pickImport: pickImportPath,
+  pickOpenFile: pickOpenFilePath,
 };
 
 /**
@@ -93,13 +96,13 @@ export async function runExport(
   return ok ? { kind: "ok", title } : { kind: "failed" };
 }
 
-/** 导入流程：选文件 → 收进工作区并打开。 */
-export async function runImport(
-  deps: Pick<TransferDeps, "pickImport" | "importDocument">,
+/** 打开流程：选文本或 Markdown 文件 → 收进工作区并打开。 */
+export async function runOpenFile(
+  deps: Pick<TransferDeps, "pickOpenFile" | "openFile">,
 ): Promise<TransferOutcome> {
-  const source = await deps.pickImport();
+  const source = await deps.pickOpenFile();
   if (source === null) return { kind: "cancelled" };
 
-  const created = await deps.importDocument(source);
+  const created = await deps.openFile(source);
   return created ? { kind: "ok", title: created.title } : { kind: "failed" };
 }

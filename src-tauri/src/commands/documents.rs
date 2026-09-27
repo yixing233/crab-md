@@ -262,7 +262,7 @@ impl DocumentService {
         Ok(bytes.len() as u64)
     }
 
-    /// 从工作区外的任意路径导入一个 Markdown 文件为**新文档**。
+    /// 从工作区外的任意路径打开一个文本或 Markdown 文件为**新文档**。
     ///
     /// 新文档拿到全新的 UUID，与来源文件无关（§11：身份由 UUID 承载，
     /// 不依赖路径或文件名）。因此重复导入同一文件会得到多篇文档，
@@ -417,7 +417,7 @@ pub fn export_document(
     svc.export(&id, Path::new(&target_path))
 }
 
-/// 导入：把用户选定的 Markdown 文件作为**新文档**收进工作区。
+/// 打开：把用户选定的文本或 Markdown 文件作为**新文档**收进工作区。
 /// title 为 None 时用文件名（去扩展名）作为标题。
 #[tauri::command]
 pub fn import_document(
@@ -1025,6 +1025,19 @@ mod tests {
         assert_eq!(svc.read(&created.id).unwrap().content, "# 导入的笔记\n\n正文");
         // 索引也要更新，否则导入的内容搜不到。
         assert_eq!(svc.search("导入", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn import_accepts_plain_text_files() {
+        let (d, svc) = svc();
+        let src = outside();
+        let source = src.path().join("plain.txt");
+        std::fs::write(&source, "纯文本内容").unwrap();
+
+        let created = svc.import(&source, None, "/").unwrap();
+
+        assert_eq!(created.title, "plain");
+        assert_eq!(svc.read(&created.id).unwrap().content, "纯文本内容");
     }
 
     #[test]

@@ -38,6 +38,20 @@
       "icons/icon.ico"
     ],
     "createUpdaterArtifacts": true,
+    "fileAssociations": [
+      {
+        "ext": ["txt"],
+        "mimeType": "text/plain",
+        "name": "纯文本文件",
+        "role": "Editor"
+      },
+      {
+        "ext": ["md", "markdown"],
+        "mimeType": "text/markdown",
+        "name": "Markdown 文档",
+        "role": "Editor"
+      }
+    ],
     "windows": {
       "nsis": {
         "installMode": "currentUser"

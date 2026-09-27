@@ -43,3 +43,12 @@ export interface AppSettingsView {
   configPath: string;
   version: number;
 }
+
+/** 服务端生成的附件标识；它不是文件系统路径。 */
+export type AttachmentId = string;
+
+/** 粘贴/读取附件时允许的图片 MIME 类型。 */
+export type AttachmentMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+
+/** Rust `read_attachment` 返回的二进制数据在前端的表示。 */
+export type AttachmentBytes = Uint8Array;

@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import { api, toAppError } from "../lib/api";
 import { logFailure } from "../lib/log";
+import {
+  clearAllRecoveryDrafts,
+  clearRecoveryDraft,
+  readRecoveryDraft,
+  toRecoveryCandidate,
+  writeRecoveryDraft,
+  type RecoveryCandidate,
+} from "../lib/recovery";
 import type { AppSettingsView, DocumentSummary } from "../types/document";
 
 /**
@@ -16,6 +24,8 @@ export function __setAutosaveDelay(ms: number): void {
 
 /** 待触发的自动保存计时器。放在模块级，不参与渲染。 */
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+/** 防止快速切换文档时旧的异步 read 响应覆盖新文档。 */
+let openRequestToken = 0;
 
 function clearAutosave(): void {
   if (autosaveTimer !== null) {
@@ -35,6 +45,8 @@ export interface WorkspaceState {
   error: string | null;
   /** 设置视图（数据目录等）。加载失败时为 null，设置页据此显示错误。 */
   settings: AppSettingsView | null;
+  /** 打开文档时发现的本地未保存草稿；必须由用户明确选择恢复或放弃。 */
+  recoveryCandidate: RecoveryCandidate | null;
 
   loadDocuments: () => Promise<void>;
   openDocument: (id: string) => Promise<void>;
@@ -46,7 +58,7 @@ export interface WorkspaceState {
 
   /** 导出到指定路径（由系统对话框取得）。返回是否成功。 */
   exportDocument: (id: string, targetPath: string) => Promise<boolean>;
-  /** 导入文件为新文档并打开；失败返回 null。 */
+  /** 打开文本或 Markdown 文件为新文档并打开；失败返回 null。 */
   importDocument: (sourcePath: string) => Promise<DocumentSummary | null>;
 
   /** 读取设置（数据目录等）。 */
@@ -68,6 +80,8 @@ export interface WorkspaceState {
    */
   flushActive: () => Promise<boolean>;
   setContent: (content: string) => void;
+  restoreRecovery: () => void;
+  discardRecovery: () => void;
   clearError: () => void;
 }
 
@@ -79,6 +93,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   loading: false,
   error: null,
   settings: null,
+  recoveryCandidate: null,
 
   loadDocuments: async () => {
     set({ loading: true, error: null });
@@ -92,28 +107,48 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   openDocument: async (id) => {
+    const requestToken = ++openRequestToken;
     // 切换前先把当前文档落盘。否则未保存的编辑会被下面的 set 静默覆盖。
     if (!(await get().flushActive())) return;
+    if (requestToken !== openRequestToken) return;
 
-    set({ error: null });
+    set({ error: null, recoveryCandidate: null });
     try {
       const doc = await api.readDocument(id);
-      set({ activeId: doc.id, activeContent: doc.content, dirty: false });
+      // 快速连续点击时，旧请求即使后返回也不能覆盖最新选择。
+      if (requestToken !== openRequestToken) return;
+
+      const draft = readRecoveryDraft(doc.id);
+      const candidate = draft
+        ? toRecoveryCandidate(draft, doc, doc.content)
+        : null;
+      if (draft && !candidate) clearRecoveryDraft(doc.id);
+
+      set({
+        activeId: doc.id,
+        activeContent: doc.content,
+        dirty: false,
+        recoveryCandidate: candidate,
+      });
     } catch (raw) {
+      if (requestToken !== openRequestToken) return;
       const code = toAppError(raw).code;
       logFailure({ op: "openDocument", code, documentId: id }, raw);
-      set({ error: code });
+      set({ error: code, recoveryCandidate: null });
     }
   },
 
   createDocument: async (title, virtualPath = "/") => {
+    const requestToken = ++openRequestToken;
     // 新建也会切走当前文档，同样先落盘。
     if (!(await get().flushActive())) return;
+    if (requestToken !== openRequestToken) return;
 
-    set({ error: null });
+    set({ error: null, recoveryCandidate: null });
     try {
       const created = await api.createDocument(title, virtualPath);
-      set({ activeId: created.id, activeContent: "", dirty: false });
+      if (requestToken !== openRequestToken) return;
+      set({ activeId: created.id, activeContent: "", dirty: false, recoveryCandidate: null });
       await get().loadDocuments();
     } catch (raw) {
       const code = toAppError(raw).code;
@@ -135,6 +170,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   deleteDocument: async (id) => {
+    openRequestToken += 1;
     // 删除是用户显式确认过的破坏性操作，此时丢弃编辑是符合意图的，
     // 但要先取消待触发的自动保存，避免删除后又把内容写回去。
     if (get().activeId === id) clearAutosave();
@@ -142,9 +178,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ error: null });
     try {
       await api.deleteDocument(id);
+      clearRecoveryDraft(id);
       // 删掉的正是当前打开的文档时清空编辑器，否则保持编辑状态不受影响。
       if (get().activeId === id) {
-        set({ activeId: null, activeContent: "", dirty: false });
+        set({ activeId: null, activeContent: "", dirty: false, recoveryCandidate: null });
       }
       await get().loadDocuments();
     } catch (raw) {
@@ -190,9 +227,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   /**
-   * 导入文件为**新文档**并打开它。
+   * 打开外部文本或 Markdown 文件，收进工作区成为**新文档**并打开它。
    *
-   * 先 flush 当前文档：导入会切换 activeId，未保存的编辑会被覆盖。
+   * 先 flush 当前文档：打开文件会切换 activeId，未保存的编辑会被覆盖。
    */
   importDocument: async (sourcePath) => {
     if (!(await get().flushActive())) return null;
@@ -213,18 +250,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   saveActive: async () => {
     const { activeId, activeContent } = get();
     if (!activeId) return;
+    const savedId = activeId;
+    const savedContent = activeContent;
 
     // 显式保存（Ctrl+S）与自动保存共用此路径，先取消防抖避免重复写。
     clearAutosave();
     set({ error: null });
     try {
-      await api.saveDocument(activeId, activeContent);
-      set({ dirty: false });
+      await api.saveDocument(savedId, savedContent);
+      // 保存期间用户可能继续输入，或已经切到另一篇文档。
+      // 旧响应不能把新内容误标成已保存，也不能删除新草稿。
+      const current = get();
+      if (current.activeId === savedId && current.activeContent === savedContent) {
+        clearRecoveryDraft(savedId);
+        set({ dirty: false });
+      }
       await get().loadDocuments();
     } catch (raw) {
       const code = toAppError(raw).code;
       // 只记录 id 与错误码；正文一律不进日志（ARCH §23 MUST NOT）。
-      logFailure({ op: "saveDocument", code, documentId: activeId }, raw);
+      logFailure({ op: "saveDocument", code, documentId: savedId }, raw);
       set({ error: code });
     }
   },
@@ -238,7 +283,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   setContent: (content) => {
-    set({ activeContent: content, dirty: true });
+    const { activeId, documents } = get();
+    if (activeId) {
+      const summary = documents.find((document) => document.id === activeId);
+      if (summary) {
+        // 先写本地草稿，再等待正式文件的去抖保存；进程在窗口期崩溃时仍可恢复。
+        writeRecoveryDraft({
+          documentId: activeId,
+          content,
+          baseRevision: summary.revision,
+          baseContentHash: summary.contentHash,
+          updatedAt: Date.now(),
+        });
+      }
+    }
+    set({ activeContent: content, dirty: true, recoveryCandidate: null });
     // 每次编辑都重置计时器：停止输入 autosaveDelayMs 后才落盘。
     clearAutosave();
     autosaveTimer = setTimeout(() => {
@@ -246,6 +305,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       // 落盘失败时 dirty 保持 true，error 已设置，UI 会提示。
       void get().saveActive();
     }, autosaveDelayMs);
+  },
+
+  restoreRecovery: () => {
+    const candidate = get().recoveryCandidate;
+    if (!candidate || get().activeId !== candidate.documentId) return;
+    // 显式恢复也要走 setContent：重新进入自动保存流程，并把候选清掉。
+    get().setContent(candidate.content);
+    set({ recoveryCandidate: null });
+  },
+
+  discardRecovery: () => {
+    const candidate = get().recoveryCandidate;
+    if (!candidate) return;
+    clearRecoveryDraft(candidate.documentId);
+    set({ recoveryCandidate: null });
   },
 
   clearError: () => set({ error: null }),
@@ -261,14 +335,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   setWorkspaceRoot: async (path) => {
+    const requestToken = ++openRequestToken;
     // 切换前先把当前编辑落盘，否则会跟着旧工作区一起被换掉。
     if (!(await get().flushActive())) return false;
+    if (requestToken !== openRequestToken) return false;
 
     set({ error: null });
     try {
       const settings = await api.setWorkspaceRoot(path);
+      if (requestToken !== openRequestToken) return false;
+      clearAllRecoveryDrafts();
       // 换目录等于换了一整套文档：清空编辑器，重新拉列表。
-      set({ settings, activeId: null, activeContent: "", dirty: false });
+      set({ settings, activeId: null, activeContent: "", dirty: false, recoveryCandidate: null });
       await get().loadDocuments();
       return true;
     } catch (raw) {
@@ -281,12 +359,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   resetWorkspaceRoot: async () => {
+    const requestToken = ++openRequestToken;
     if (!(await get().flushActive())) return false;
+    if (requestToken !== openRequestToken) return false;
 
     set({ error: null });
     try {
       const settings = await api.resetWorkspaceRoot();
-      set({ settings, activeId: null, activeContent: "", dirty: false });
+      if (requestToken !== openRequestToken) return false;
+      clearAllRecoveryDrafts();
+      set({ settings, activeId: null, activeContent: "", dirty: false, recoveryCandidate: null });
       await get().loadDocuments();
       return true;
     } catch (raw) {

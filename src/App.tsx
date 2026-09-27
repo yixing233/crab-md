@@ -1,25 +1,33 @@
-import { useCallback, useEffect, useState } from "react";
-import { MarkdownEditor } from "./components/editor/MarkdownEditor";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { MarkdownEditor, type MarkdownEditorHandle } from "./components/editor/MarkdownEditor";
+import { EditorToolbar } from "./components/editor/EditorToolbar";
 import { EditorStatusBar } from "./components/editor/EditorStatusBar";
 import { MarkdownPreview } from "./components/editor/MarkdownPreview";
-import { OutlineTree } from "./components/editor/OutlineTree";
 import { AppToolbar } from "./components/workspace/AppToolbar";
 import { Sidebar } from "./components/workspace/Sidebar";
 import { UpdateBar } from "./components/workspace/UpdateBar";
 import { Breadcrumb } from "./components/workspace/Breadcrumb";
-import { DocumentBar } from "./components/workspace/DocumentBar";
+import { TabBar } from "./components/workspace/TabBar";
+import { HomePage } from "./components/home/HomePage";
+import {
+  CloseDocumentModal,
+  type ClosePromptType,
+} from "./components/workspace/CloseDocumentModal";
+import { clearRecoveryDraft } from "./lib/recovery";
 import { Splitter } from "./components/workspace/Splitter";
 import { SettingsPage, type SettingsSection } from "./components/settings/SettingsPage";
-import { EmptyState } from "./components/ui/EmptyState";
 import { Button } from "./components/ui/Button";
 import { Dialog } from "./components/ui/Dialog";
 import { Spinner } from "./components/ui/Spinner";
 import { Toast } from "./components/ui/Toast";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
+import { api } from "./lib/api";
 import { zh } from "./lib/i18n";
 import { checkForUpdate, readLastCheck, shouldAutoCheck, writeLastCheck } from "./lib/updater";
 import { tauriUpdaterBridge } from "./lib/updaterBridge";
+import { printPreview } from "./lib/print";
 import { useUpdateStore } from "./stores/useUpdateStore";
+import type { MarkdownActionId } from "./lib/markdownActions";
 import {
   applyTheme,
   applyWindowTheme,
@@ -68,15 +76,16 @@ import {
 } from "./lib/syncScroll";
 import {
   pickExportPath,
-  pickImportPath,
+  pickOpenFilePath,
   runExport,
-  runImport,
+  runOpenFile,
 } from "./lib/transfer";
 import "./App.css";
 
 /** 面板宽度持久化的存储键。 */
 const SIDEBAR_WIDTH_KEY = "crab-md.sidebar-width";
 const PREVIEW_WIDTH_KEY = "crab-md.preview-width";
+const OPEN_TABS_KEY = "crab-md.open-tabs";
 
 /** 读取已保存的面板宽度；无存储或值非法时回退到默认值。 */
 function readStoredWidth(key: string, fallback: number): number {
@@ -85,6 +94,19 @@ function readStoredWidth(key: string, fallback: number): number {
   if (!raw) return fallback;
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** 智能从正文中提取建议的笔记标题（优先取第一个一级标题或首行内容）。 */
+function extractSuggestedTitle(content: string): string {
+  const headingMatch = content.match(/^#+\s+(.+)$/m);
+  if (headingMatch && headingMatch[1].trim()) {
+    return headingMatch[1].trim().slice(0, 40).replace(/[\\/:*?"<>|]/g, "");
+  }
+  const firstLine = content.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
+  if (firstLine) {
+    return firstLine.replace(/^[#*`>~-]+\s*/, "").slice(0, 40).replace(/[\\/:*?"<>|]/g, "").trim();
+  }
+  return "";
 }
 
 export default function App() {
@@ -104,18 +126,65 @@ export default function App() {
   const flushActive = useWorkspaceStore((s) => s.flushActive);
   const setContent = useWorkspaceStore((s) => s.setContent);
   const clearError = useWorkspaceStore((s) => s.clearError);
+  const recoveryCandidate = useWorkspaceStore((s) => s.recoveryCandidate);
+  const restoreRecovery = useWorkspaceStore((s) => s.restoreRecovery);
+  const discardRecovery = useWorkspaceStore((s) => s.discardRecovery);
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
   // 视图模式：仅编辑 / 分栏 / 仅阅读（UI §11）。持久化，记住用户的选择。
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     readStoredViewMode(typeof localStorage === "undefined" ? null : localStorage.getItem(VIEW_MODE_KEY)),
   );
-  const [outlineVisible, setOutlineVisible] = useState(false);
   // 面板宽度（UI §11 pane resizing）。侧栏宽度持久化，符合「记住我的布局」预期。
   const [sidebarWidth, setSidebarWidth] = useState(() => readStoredWidth(SIDEBAR_WIDTH_KEY, 260));
   const [previewWidth, setPreviewWidth] = useState(() => readStoredWidth(PREVIEW_WIDTH_KEY, 420));
-  // 编辑器光标位置，供状态栏显示（UI §28）。
-  const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  // 编辑器光标位置与选中文本，供状态栏显示（UI §28）。
+  const [cursor, setCursor] = useState({ line: 1, column: 1, selectedText: "" });
+  // 编辑器句柄，供横跨全屏的工具栏派发格式化动作。
+  const editorRef = useRef<MarkdownEditorHandle>(null);
+  const handleEditorAction = useCallback((action: MarkdownActionId) => {
+    editorRef.current?.dispatchAction(action);
+  }, []);
+
+  // 记录本次会话中新建尚未明确命名的文档 ID
+  const newDocumentIdsRef = useRef<Set<string>>(new Set());
+  // 关闭文档时的确认 / 命名弹窗状态
+  const [closePrompt, setClosePrompt] = useState<ClosePromptType | null>(null);
+
+  // 顶部多标签栏打开的文档 ID 列表
+  const [openTabIds, setOpenTabIds] = useState<string[]>(() => {
+    if (typeof localStorage === "undefined") return [];
+    try {
+      const stored = localStorage.getItem(OPEN_TABS_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // 持久化打开的标签列表
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(openTabIds));
+    }
+  }, [openTabIds]);
+
+  // 保证当前激活文档在打开标签列表中（仅当 activeId 发生切换时执行）
+  useEffect(() => {
+    if (activeId) {
+      setOpenTabIds((prev) => (prev.includes(activeId) ? prev : [...prev, activeId]));
+    }
+  }, [activeId]);
+
+  // 清理已被删除的不存在文档
+  useEffect(() => {
+    if (documents.length > 0) {
+      setOpenTabIds((prev) => {
+        const next = prev.filter((id) => documents.some((d) => d.id === id));
+        return next.length === prev.length ? prev : next;
+      });
+    }
+  }, [documents]);
   // 大纲跳转目标；nonce 保证重复点同一标题也能再次跳转。
   const [jumpTarget, setJumpTarget] = useState<{ line: number; nonce: number } | null>(null);
   // 轻提示（UI §33）：保存成功/失败等非阻塞反馈。
@@ -340,10 +409,6 @@ export default function App() {
     setThemePreference((p) => (p === "system" ? "light" : p === "light" ? "dark" : "system"));
   }, []);
 
-  useEffect(() => {
-    void loadDocuments();
-  }, [loadDocuments]);
-
   // 关窗前强制落盘。
   //
   // Rust 侧 `WindowEvent::CloseRequested` 会 prevent_close 并 emit
@@ -360,8 +425,10 @@ export default function App() {
 
         const off = await listen("flush-before-close", () => {
           void (async () => {
-            await useWorkspaceStore.getState().flushActive();
-            await invoke("close_window");
+            const saved = await useWorkspaceStore.getState().flushActive();
+            // 保存失败时保持窗口打开，给用户机会处理磁盘错误；绝不能静默丢稿。
+            if (saved) await invoke("close_window");
+            else setToast({ message: zh.toast.saveFailed, tone: "error" });
           })();
         });
 
@@ -381,9 +448,192 @@ export default function App() {
     };
   }, []);
 
-  const handleNewDocument = useCallback(() => {
-    void createDocument(zh.app.untitled);
+  const handleNewDocument = useCallback(async () => {
+    await createDocument(zh.app.untitled);
+    const newId = useWorkspaceStore.getState().activeId;
+    if (newId) {
+      newDocumentIdsRef.current.add(newId);
+      setOpenTabIds((prev) => (prev.includes(newId) ? prev : [...prev, newId]));
+    }
   }, [createDocument]);
+
+  const handleOpenDocument = useCallback(
+    async (id: string) => {
+      setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      await openDocument(id);
+    },
+    [openDocument],
+  );
+
+  const finalizeCloseTab = useCallback(
+    async (id: string) => {
+      newDocumentIdsRef.current.delete(id);
+      const nextTabs = openTabIds.filter((t) => t !== id);
+      setOpenTabIds(nextTabs);
+
+      if (activeId === id) {
+        if (nextTabs.length > 0) {
+          const currentIndex = openTabIds.indexOf(id);
+          const nextIndex = Math.min(currentIndex, nextTabs.length - 1);
+          await openDocument(nextTabs[nextIndex]);
+        } else {
+          useWorkspaceStore.setState({ activeId: null, activeContent: "", dirty: false });
+        }
+      }
+    },
+    [activeId, openTabIds, openDocument],
+  );
+
+  const handleSelectTab = useCallback(
+    async (id: string | null) => {
+      if (id === null) {
+        // 切换到主页
+        if (dirty && activeId) {
+          await saveActive();
+        }
+        useWorkspaceStore.setState({ activeId: null, activeContent: "", dirty: false });
+      } else {
+        await handleOpenDocument(id);
+      }
+    },
+    [activeId, dirty, handleOpenDocument, saveActive],
+  );
+
+  const handleCloseTab = useCallback(
+    async (id: string) => {
+      const doc = documents.find((d) => d.id === id);
+      const isNewDoc = newDocumentIdsRef.current.has(id) || doc?.title === zh.app.untitled;
+      let content = id === activeId ? activeContent : "";
+      if (id !== activeId && isNewDoc) {
+        try {
+          const fullDoc = await api.readDocument(id);
+          content = fullDoc.content;
+        } catch {
+          content = "";
+        }
+      }
+      const isContentEmpty = content.trim().length === 0;
+
+      // 场景 1：新建了空白文档但没有任何内容输入 -> 直接关闭并静默删除，不入库不存盘
+      if (isNewDoc && isContentEmpty) {
+        newDocumentIdsRef.current.delete(id);
+        const nextTabs = openTabIds.filter((t) => t !== id);
+        setOpenTabIds(nextTabs);
+        await deleteDocument(id);
+        if (activeId === id) {
+          if (nextTabs.length > 0) {
+            const currentIndex = openTabIds.indexOf(id);
+            const nextIndex = Math.min(currentIndex, nextTabs.length - 1);
+            await openDocument(nextTabs[nextIndex]);
+          } else {
+            useWorkspaceStore.setState({ activeId: null, activeContent: "", dirty: false });
+          }
+        }
+        return;
+      }
+
+      // 场景 3：新建了文档且已输入内容 -> 提示保存并顺带命名
+      if (isNewDoc && !isContentEmpty) {
+        const suggested = extractSuggestedTitle(content) || (doc?.title ?? zh.app.untitled);
+        setClosePrompt({
+          kind: "save-and-name",
+          id,
+          suggestedName: suggested,
+        });
+        return;
+      }
+
+      // 场景 2：既有文档修改但未保存（dirty === true） -> 提示是否保存修改
+      const isModified = id === activeId ? dirty : false;
+      if (isModified) {
+        setClosePrompt({
+          kind: "save-changes",
+          id,
+          title: doc?.title ?? "当前文档",
+        });
+        return;
+      }
+
+      // 常态已保存文档直接关闭
+      await finalizeCloseTab(id);
+    },
+    [
+      activeId,
+      activeContent,
+      dirty,
+      documents,
+      openTabIds,
+      deleteDocument,
+      finalizeCloseTab,
+      openDocument,
+    ],
+  );
+
+  const handleConfirmSaveAndClose = useCallback(
+    async (name?: string) => {
+      if (!closePrompt) return;
+      const targetId = closePrompt.id;
+
+      if (closePrompt.kind === "save-and-name" && name) {
+        await renameDocument(targetId, name.trim());
+      }
+      if (targetId === activeId) {
+        await saveActive();
+      }
+      setClosePrompt(null);
+      await finalizeCloseTab(targetId);
+    },
+    [activeId, closePrompt, finalizeCloseTab, renameDocument, saveActive],
+  );
+
+  const handleDiscardAndClose = useCallback(async () => {
+    if (!closePrompt) return;
+    const targetId = closePrompt.id;
+
+    if (closePrompt.kind === "save-and-name") {
+      // 新建未保存的草稿丢弃 -> 彻底删除
+      await deleteDocument(targetId);
+    } else {
+      // 既有修改丢弃 -> 清除草稿还原
+      clearRecoveryDraft(targetId);
+      if (targetId === activeId) {
+        useWorkspaceStore.setState({ dirty: false });
+      }
+    }
+    setClosePrompt(null);
+    await finalizeCloseTab(targetId);
+  }, [activeId, closePrompt, deleteDocument, finalizeCloseTab]);
+
+  const handleCloseOtherTabs = useCallback(
+    async (id: string) => {
+      setOpenTabIds([id]);
+      if (activeId !== id) {
+        await openDocument(id);
+      }
+    },
+    [activeId, openDocument],
+  );
+
+  const handleCloseRightTabs = useCallback(
+    async (id: string) => {
+      const idx = openTabIds.indexOf(id);
+      if (idx === -1) return;
+      const nextTabs = openTabIds.slice(0, idx + 1);
+      setOpenTabIds(nextTabs);
+      if (activeId && !nextTabs.includes(activeId)) {
+        await openDocument(id);
+      }
+    },
+    [activeId, openDocument, openTabIds],
+  );
+
+  const handleCloseAllTabs = useCallback(async () => {
+    if (dirty && activeId) {
+      await saveActive();
+    }
+    setOpenTabIds([]);
+    useWorkspaceStore.setState({ activeId: null, activeContent: "", dirty: false });
+  }, [activeId, dirty, saveActive]);
 
   // 保存并给出反馈（UI §33）。自动保存与 Ctrl+S 都经过这里。
   const handleSave = useCallback(async () => {
@@ -394,6 +644,22 @@ export default function App() {
       setToast({ message: zh.toast.saved, tone: "success" });
     }
   }, [saveActive]);
+
+  const handlePrint = useCallback(() => {
+    if (!printPreview()) {
+      setToast({ message: zh.toast.printUnavailable, tone: "error" });
+    }
+  }, []);
+
+  const handlePasteImage = useCallback(async (file: File): Promise<string | null> => {
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      return await api.saveAttachment(bytes, file.type);
+    } catch {
+      setToast({ message: zh.toast.imagePasteFailed, tone: "error" });
+      return null;
+    }
+  }, []);
 
   /**
    * 另存为副本（新身份、独立文件）。
@@ -433,19 +699,50 @@ export default function App() {
     }
   }, []);
 
-  /** 导入：弹系统「打开文件」，由 Rust 收进工作区并打开。取消时不提示。 */
-  const handleImport = useCallback(async () => {
+  /** 打开指定路径：由 Rust 收进工作区并打开。取消时不提示。 */
+  const handleOpenPath = useCallback(async (sourcePath: string) => {
     const store = useWorkspaceStore.getState();
-    const outcome = await runImport({
-      pickImport: pickImportPath,
-      importDocument: store.importDocument,
+    const outcome = await runOpenFile({
+      pickOpenFile: async () => sourcePath,
+      openFile: store.importDocument,
     });
     if (outcome.kind === "ok") {
-      setToast({ message: zh.toast.imported(outcome.title), tone: "success" });
+      setToast({ message: zh.toast.opened(outcome.title), tone: "success" });
     } else if (outcome.kind === "failed") {
-      setToast({ message: zh.toast.importFailed, tone: "error" });
+      setToast({ message: zh.toast.openFailed, tone: "error" });
     }
   }, []);
+
+  /** 打开文件：弹系统「打开文件」，由 Rust 收进工作区并打开。取消时不提示。 */
+  const handleOpenFile = useCallback(async () => {
+    const sourcePath = await pickOpenFilePath();
+    if (sourcePath !== null) await handleOpenPath(sourcePath);
+  }, [handleOpenPath]);
+
+  /** 启动时接收 Windows 文件关联传入的路径，并复用同一套打开流程。 */
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      await loadDocuments();
+      if (cancelled) return;
+
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const paths = await invoke<string[]>("opened_files");
+        for (const path of paths) {
+          if (cancelled) return;
+          await handleOpenPath(path);
+        }
+      } catch {
+        // 浏览器预览与单测没有 Tauri IPC；桌面版则由 Rust 提供该命令。
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [handleOpenPath, loadDocuments]);
 
   // 全局快捷键（UI_DESIGN_SYSTEM.md §29）。集中在此处而非散落各页面。
   useEffect(() => {
@@ -459,6 +756,12 @@ export default function App() {
       } else if (e.key.toLowerCase() === "s") {
         e.preventDefault();
         void handleSave();
+      } else if (e.key.toLowerCase() === "w") {
+        // Ctrl+W：关闭当前标签页
+        if (activeId) {
+          e.preventDefault();
+          void handleCloseTab(activeId);
+        }
       } else if (e.key.toLowerCase() === "f") {
         // Ctrl+F：文档内查找。编辑器未聚焦时 searchKeymap 不生效，故在此兜住。
         e.preventDefault();
@@ -473,7 +776,7 @@ export default function App() {
         setViewMode((m) => nextViewMode(m));
       } else if (e.shiftKey && e.key.toLowerCase() === "o") {
         e.preventDefault();
-        setOutlineVisible((v) => !v);
+        setSidebarVisible((v) => !v);
       } else if (e.shiftKey && e.key.toLowerCase() === "l") {
         e.preventDefault();
         cycleTheme();
@@ -481,10 +784,19 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleNewDocument, handleSave, cycleTheme]);
+  }, [handleNewDocument, handleSave, cycleTheme, activeId, handleCloseTab]);
 
   const activeDoc = documents.find((d) => d.id === activeId);
   const activeTitle = activeDoc?.title ?? "";
+
+  const tabsList = openTabIds.map((id) => {
+    const doc = documents.find((d) => d.id === id);
+    return {
+      id,
+      title: doc?.title ?? "无标题",
+      dirty: id === activeId ? dirty : false,
+    };
+  });
 
   return (
     <div className="app-shell" data-sidebar={sidebarVisible || undefined}>
@@ -493,6 +805,7 @@ export default function App() {
         onToggleSidebar={() => setSidebarVisible((v) => !v)}
         sidebarVisible={sidebarVisible}
         onOpenSettings={() => setSettingsOpen(true)}
+        onPrint={handlePrint}
         pendingVersion={pendingUpdateVersion}
         onOpenUpdate={() => {
           // 直接落到「关于」分组 —— 用户点更新入口就是想安装。
@@ -506,30 +819,31 @@ export default function App() {
       <UpdateBar onInstall={handleInstallUpdate} />
 
       <div className="app-body">
+        <Sidebar
+          documents={documents}
+          activeId={activeId}
+          activeContent={activeContent}
+          onJump={(line) => setJumpTarget({ line, nonce: Date.now() })}
+          onSelect={(id) => void handleOpenDocument(id)}
+          onCreate={handleNewDocument}
+          onRename={(id, title) => void renameDocument(id, title)}
+          onDuplicate={(id, title) => void handleDuplicate(id, title)}
+          onExport={(id, title) => void handleExport(id, title)}
+          onOpenFile={() => void handleOpenFile()}
+          onRequestDelete={(id, title) => setPendingDelete({ id, title })}
+          width={sidebarWidth}
+          collapsed={!sidebarVisible}
+        />
+        {/* 侧栏在左，向右拖变宽（UI §11）。展开时才展示拖拽分隔条 */}
         {sidebarVisible && (
-          <>
-            <Sidebar
-              documents={documents}
-              activeId={activeId}
-              onSelect={(id) => void openDocument(id)}
-              onCreate={handleNewDocument}
-              onRename={(id, title) => void renameDocument(id, title)}
-              onDuplicate={(id, title) => void handleDuplicate(id, title)}
-              onExport={(id, title) => void handleExport(id, title)}
-              onImport={() => void handleImport()}
-              onRequestDelete={(id, title) => setPendingDelete({ id, title })}
-              width={sidebarWidth}
-            />
-            {/* 侧栏在左，向右拖变宽（UI §11）。 */}
-            <Splitter
-              value={sidebarWidth}
-              onChange={setSidebarWidth}
-              min={180}
-              max={480}
-              ariaLabel={zh.splitter.sidebar}
-              side="left"
-            />
-          </>
+          <Splitter
+            value={sidebarWidth}
+            onChange={setSidebarWidth}
+            min={180}
+            max={480}
+            ariaLabel={zh.splitter.sidebar}
+            side="left"
+          />
         )}
 
         <main className="app-main" role="main">
@@ -543,47 +857,60 @@ export default function App() {
             </div>
           )}
 
+          {/* 顶部多标签栏 */}
+          <TabBar
+            tabs={tabsList}
+            activeId={activeId}
+            onSelectTab={(id) => void handleSelectTab(id)}
+            onCloseTab={(id) => void handleCloseTab(id)}
+            onNewTab={handleNewDocument}
+            onCloseOtherTabs={(id) => void handleCloseOtherTabs(id)}
+            onCloseRightTabs={(id) => void handleCloseRightTabs(id)}
+            onCloseAllTabs={() => void handleCloseAllTabs()}
+          />
+
           {activeId ? (
             <>
-              {/* 文档栏：左侧文件名（面包屑），右侧这篇文档的视图控制。 */}
-              <DocumentBar
+              {/* 格式工具栏：左侧格式化动作，右侧文档内查找、视图切换与同步滚动开关 */}
+              <EditorToolbar
+                onAction={handleEditorAction}
+                onSearch={() => setFindNonce((n) => n + 1)}
                 viewMode={viewMode}
                 onChangeViewMode={setViewMode}
-                outlineVisible={outlineVisible}
-                onToggleOutline={() => setOutlineVisible((v) => !v)}
                 syncScroll={syncScroll}
                 onToggleSyncScroll={() => setSyncScroll((s) => !s)}
-              >
+                showFormatting={showsEditor(viewMode)}
+              />
+
+              {/* 隐藏的无障碍路径面包屑导航 */}
+              <div className="sr-only">
                 <Breadcrumb
                   virtualPath={activeDoc?.virtualPath ?? "/"}
                   title={activeTitle}
                 />
-              </DocumentBar>
+              </div>
+
               <div
                 className="app-panes"
                 data-view={viewMode}
                 data-preview={showsPreview(viewMode) || undefined}
-                data-outline={outlineVisible || undefined}
               >
                 {showsEditor(viewMode) && (
                   <div className="app-pane app-pane--editor">
                     <MarkdownEditor
+                      ref={editorRef}
+                      showToolbar={false}
                       documentId={activeId}
                       value={activeContent}
                       onChange={setContent}
                       onSave={() => void handleSave()}
-                      onCursor={(line, column) => setCursor({ line, column })}
+                      onPasteImage={handlePasteImage}
+                      onCursor={(line, column, selectedText) =>
+                        setCursor({ line, column, selectedText: selectedText ?? "" })
+                      }
                       jumpTarget={jumpTarget}
                       findNonce={findNonce}
                       onScrollDOM={setEditorScrollEl}
-                    />
-                  </div>
-                )}
-                {outlineVisible && (
-                  <div className="app-pane app-pane--outline">
-                    <OutlineTree
-                      source={activeContent}
-                      onJump={(line) => setJumpTarget({ line, nonce: Date.now() })}
                     />
                   </div>
                 )}
@@ -618,7 +945,15 @@ export default function App() {
                 line={cursor.line}
                 column={cursor.column}
                 path={activeTitle}
+                content={activeContent}
+                selectedText={cursor.selectedText}
               />
+              {/* 编辑模式也必须能导出：平时隐藏的打印副本避免切换视图时打印空白。 */}
+              {!showsPreview(viewMode) && (
+                <div className="app-print-preview" aria-hidden="true">
+                  <MarkdownPreview source={activeContent} />
+                </div>
+              )}
             </>
           ) : loading ? (
             // 冷启动期间给出加载态，而不是一片空白（UI §32）。
@@ -627,18 +962,32 @@ export default function App() {
               <p>{zh.loading.workspace}</p>
             </div>
           ) : (
-            <EmptyState
-              title={zh.empty.noDocumentTitle}
-              description={zh.empty.noDocumentDescription}
-              action={
-                <Button variant="primary" onClick={handleNewDocument}>
-                  {zh.empty.newNote}
-                </Button>
-              }
+            <HomePage
+              documents={documents}
+              onOpenDocument={(id) => void handleOpenDocument(id)}
+              onNewDocument={handleNewDocument}
+              onOpenFile={() => void handleOpenFile()}
+              onOpenSettings={() => setSettingsOpen(true)}
+              workspacePath={useWorkspaceStore.getState().settings?.effectiveWorkspaceRoot}
             />
           )}
         </main>
       </div>
+
+      <Dialog
+        open={recoveryCandidate !== null}
+        title={zh.recovery.title}
+        confirmLabel={zh.recovery.restore}
+        cancelLabel={zh.recovery.discard}
+        onCancel={discardRecovery}
+        onConfirm={restoreRecovery}
+      >
+        {recoveryCandidate
+          ? recoveryCandidate.conflict
+            ? zh.recovery.conflictBody(recoveryCandidate.title)
+            : zh.recovery.body(recoveryCandidate.title)
+          : null}
+      </Dialog>
 
       <Dialog
         open={pendingDelete !== null}
@@ -656,6 +1005,13 @@ export default function App() {
         {/* 文案点名具体对象，避免用户误删（UI §16）。 */}
         {pendingDelete ? zh.dialog.deleteBody(pendingDelete.title) : null}
       </Dialog>
+
+      <CloseDocumentModal
+        prompt={closePrompt}
+        onSave={handleConfirmSaveAndClose}
+        onDiscard={handleDiscardAndClose}
+        onCancel={() => setClosePrompt(null)}
+      />
 
       <Toast
         message={toast?.message ?? null}

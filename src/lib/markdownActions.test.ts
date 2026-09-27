@@ -88,6 +88,20 @@ describe("line prefix actions", () => {
     expect(r.text).toBe("Title");
   });
 
+  it("applies H1 to H6 headings and switches between levels", () => {
+    const r1 = applyMarkdownAction(sel("Title", 0, 0), "h1");
+    expect(r1.text).toBe("# Title");
+
+    const r3 = applyMarkdownAction(sel("# Title", 0, 0), "h3");
+    expect(r3.text).toBe("### Title");
+
+    const rToggle = applyMarkdownAction(sel("### Title", 0, 0), "h3");
+    expect(rToggle.text).toBe("Title");
+
+    const r6 = applyMarkdownAction(sel("Title", 0, 0), "h6");
+    expect(r6.text).toBe("###### Title");
+  });
+
   it("applies a bullet list to every selected line", () => {
     const r = applyMarkdownAction(sel("one\ntwo", 0, 7), "bulletList");
     expect(r.text).toBe("- one\n- two");

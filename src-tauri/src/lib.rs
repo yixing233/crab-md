@@ -6,7 +6,11 @@ pub mod settings;
 pub mod workspace;
 
 use commands::documents::DocumentService;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::Path;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use tauri::{Emitter, Manager, WindowEvent};
 
 /// 关窗拦截的「已放行」标志。
@@ -15,6 +19,39 @@ use tauri::{Emitter, Manager, WindowEvent};
 /// `close_window` 命令再真正关闭。若前端因故没响应，用户再点一次关闭
 /// 就会直接放行 —— 绝不把应用变成关不掉的窗口。
 static CLOSE_APPROVED: AtomicBool = AtomicBool::new(false);
+
+/// 启动时由 Windows 文件关联传入的待打开文件。
+///
+/// NSIS 会把关联文件作为命令行参数传给应用；前端启动后通过命令一次性取走，
+/// 这样打开 `.txt` / `.md` / `.markdown` 时会复用现有的「打开文件」流程。
+struct OpenedFiles(Mutex<Vec<String>>);
+
+fn supported_open_file(raw: &std::ffi::OsStr) -> Option<String> {
+    let path = Path::new(raw);
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    if matches!(extension.as_str(), "txt" | "md" | "markdown") {
+        Some(path.to_string_lossy().into_owned())
+    } else {
+        None
+    }
+}
+
+fn command_line_opened_files() -> Vec<String> {
+    std::env::args_os()
+        .skip(1)
+        .filter_map(|arg| supported_open_file(&arg))
+        .collect()
+}
+
+/// 取走启动时由文件关联传入的路径；重复调用不会重复打开同一个文件。
+#[tauri::command]
+fn opened_files(files: tauri::State<'_, OpenedFiles>) -> Vec<String> {
+    files
+        .0
+        .lock()
+        .map(|mut paths| std::mem::take(&mut *paths))
+        .unwrap_or_default()
+}
 
 /// 解析工作区根目录，优先级（从高到低）：
 /// 1. `CRAB_MD_WORKSPACE` 环境变量 —— 便于测试与多工作区
@@ -66,6 +103,7 @@ fn app_version(app: tauri::AppHandle) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(OpenedFiles(Mutex::new(command_line_opened_files())))
         .plugin(tauri_plugin_opener::init())
         // 设置页需要「浏览…」选目录；原生选择器交给官方插件，
         // 不在前端自造路径输入。
@@ -95,6 +133,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::attachments::save_attachment,
+            commands::attachments::read_attachment,
             commands::documents::list_documents,
             commands::documents::create_document,
             commands::documents::read_document,
@@ -109,6 +149,7 @@ pub fn run() {
             commands::documents::default_workspace_root,
             commands::documents::export_document,
             commands::documents::import_document,
+            opened_files,
             app_version,
             close_window,
         ])

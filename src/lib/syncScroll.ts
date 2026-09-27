@@ -32,7 +32,7 @@ export function readStoredSyncScroll(raw: string | null): boolean {
  *    彻底避免「A 滚 -> B 滚 -> B 触发 A 滚」的无限回弹抖动（infinite loop / jitter）。
  * 2. 连续滚动时不断刷新 100ms 解锁定时器，确保滚动条拖拽或触控惯性滚动期间锁不丢失。
  * 3. 停止滚动 100ms 后释放锁，允许用户无缝切换去滚动另一侧。
- * 4. 监听 `pointerenter`，鼠标悬浮在哪一侧且处于空闲状态时预先锁定该侧为主控，提升响应即时性。
+ * 4. 仅在真实 scroll 事件发生时切换主控，不根据鼠标悬停预锁定，避免空闲锁导致另一侧滚动被忽略。
  * 5. 初始化挂载时自动按当前编辑区进度对齐预览区，避免切换分栏或开启开关时位置脱节。
  *
  * @returns 销毁函数，调用时彻底解绑所有事件监听并清理计时器。
@@ -83,17 +83,8 @@ export function setupSyncScroll(
     }
   };
 
-  const onEditorPointer = () => {
-    if (activeSource === null) activeSource = "editor";
-  };
-  const onPreviewPointer = () => {
-    if (activeSource === null) activeSource = "preview";
-  };
-
   editorEl.addEventListener("scroll", onEditorScroll, { passive: true });
   previewEl.addEventListener("scroll", onPreviewScroll, { passive: true });
-  editorEl.addEventListener("pointerenter", onEditorPointer, { passive: true });
-  previewEl.addEventListener("pointerenter", onPreviewPointer, { passive: true });
 
   // 初始对齐：若当前已有滚动距离，让预览区对齐到编辑区
   const syncEditorToPreview = () => {
@@ -129,8 +120,6 @@ export function setupSyncScroll(
     }
     editorEl.removeEventListener("scroll", onEditorScroll);
     previewEl.removeEventListener("scroll", onPreviewScroll);
-    editorEl.removeEventListener("pointerenter", onEditorPointer);
-    previewEl.removeEventListener("pointerenter", onPreviewPointer);
   };
 }
 

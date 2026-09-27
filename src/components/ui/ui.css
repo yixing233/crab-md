@@ -222,7 +222,9 @@
 .ui-menu {
   position: fixed;
   z-index: 1200;
-  min-width: 132px;
+  min-width: 176px;
+  max-height: calc(100vh - var(--space-2));
+  overflow-y: auto;
   padding: var(--space-1);
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
@@ -247,7 +249,25 @@
   cursor: pointer;
 }
 
-.ui-menu__item:hover { background: var(--bg-surface-hover); }
+.ui-menu__item:hover:not(:disabled) { background: var(--bg-surface-hover); }
+.ui-menu--submenu { z-index: 1201; }
+.ui-menu__item--submenu .ui-menu__label { flex: 1 1 auto; min-width: 0; }
+.ui-menu__submenu-indicator {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-muted);
+}
+.ui-menu__item:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ui-menu__separator {
+  height: 1px;
+  margin: var(--space-1) var(--space-2);
+  background: var(--border-subtle);
+}
 
 .ui-menu__item:focus-visible {
   outline: 2px solid var(--border-focus);
@@ -420,62 +440,37 @@
 }
 
 /* ---------------------------------------------------------------------------
-   字体选择列表（UI §34.6）。
-   每个选项用自己的字体渲染名字，因此行高要容得下不同字体的差异。
+   字体选择器：按钮保持紧凑，选项复用 ContextMenu 下拉显示。
    --------------------------------------------------------------------------- */
 
 .ui-font-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   width: 100%;
   max-width: 320px;
-  /* 选项多时自身滚动，不把设置页撑长。 */
-  max-height: 260px;
-  overflow-y: auto;
-  padding: var(--space-1);
-  background: var(--bg-app);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
 }
 
-.ui-font-picker__item {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
+.ui-font-picker__trigger {
+  width: 100%;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  font-family: inherit;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  text-align: left;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
+  min-width: 0;
 }
 
-.ui-font-picker__item:hover { background: var(--bg-surface-hover); }
-
-.ui-font-picker__item:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: -1px;
+.ui-font-picker__trigger .ui-button__label {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
-/* 选中态：底色 + 勾选标记，不只靠颜色（UI §39）。 */
-.ui-font-picker__item[data-active] {
-  background: var(--bg-surface-active);
-  font-weight: 500;
-}
-
-/* 字体名：允许省略号，避免「Times New Roman」把行撑破。 */
+/* 字体名：允许省略号，避免长名称撑破设置栏。 */
 .ui-font-picker__name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ui-font-picker__check {
+.ui-menu__check {
   flex: 0 0 auto;
+  margin-left: auto;
   color: var(--accent);
 }

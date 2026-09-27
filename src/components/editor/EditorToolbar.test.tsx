@@ -60,4 +60,19 @@ describe("EditorToolbar responsive overflow", () => {
     expect(screen.getByRole("button", { name: "标题" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "块级公式" })).toBeInTheDocument();
   });
+
+  it("opens heading levels dropdown (H1 ~ H6) and invokes chosen heading level", async () => {
+    toolbarWidth = 1000;
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    render(<EditorToolbar onAction={onAction} />);
+
+    const arrowBtn = screen.getByRole("button", { name: "选择标题级别" });
+    await user.click(arrowBtn);
+
+    const h3Item = await screen.findByRole("menuitem", { name: "H3" });
+    await user.click(h3Item);
+
+    expect(onAction).toHaveBeenCalledWith("h3");
+  });
 });

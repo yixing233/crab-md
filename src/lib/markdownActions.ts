@@ -27,6 +27,12 @@ export type MarkdownActionId =
   | "inlineCode"
   | "codeBlock"
   | "heading"
+  | "h1"
+  | "h2"
+  | "h3"
+  | "h4"
+  | "h5"
+  | "h6"
   | "bulletList"
   | "orderedList"
   | "quote"
@@ -127,6 +133,35 @@ function applyLinePrefix(sel: EditorSelection, prefix: string): EditorChange {
       // 空行不强行加前缀（引用除外，空引用行是合法的）。
       if (l.trim() === "" && prefix !== "> ") return l;
       return l.startsWith(prefix) ? l : prefix + l;
+    })
+    .join("\n");
+
+  return { text: text.slice(0, start) + next + text.slice(end), from: start, to: start + next.length };
+}
+
+/**
+ * 设置指定级别的标题（H1 ~ H6）。
+ *
+ * 如果该行已有任何层级的标题前缀（`# ` ~ `###### `）：
+ * - 若已有层级正好就是当前目标层级：再次触发则取消标题（toggle 变回普通正文）；
+ * - 若已有层级不同：直接替换为目标层级的前缀（例如把 `## 标题` 改为 `### 标题`）。
+ */
+function applyHeadingLevel(sel: EditorSelection, level: number): EditorChange {
+  const { start, end, lines } = expandToLines(sel);
+  const text = sel.text;
+  const targetPrefix = "#".repeat(level) + " ";
+  const headingRegex = /^#{1,6}\s+/;
+
+  // 判断是否所有非空行都已经正好是当前目标层级
+  const allMatchTarget = lines.every((l) => l.trim() === "" || l.startsWith(targetPrefix));
+
+  const next = lines
+    .map((l) => {
+      if (allMatchTarget) {
+        return l.replace(headingRegex, "");
+      }
+      if (l.trim() === "") return l;
+      return targetPrefix + l.replace(headingRegex, "");
     })
     .join("\n");
 
@@ -246,6 +281,19 @@ export function applyMarkdownAction(sel: EditorSelection, action: MarkdownAction
   if (linePrefix) return applyLinePrefix(sel, linePrefix);
 
   switch (action) {
+    case "h1":
+      return applyHeadingLevel(sel, 1);
+    case "h2":
+      return applyHeadingLevel(sel, 2);
+    case "h3":
+      return applyHeadingLevel(sel, 3);
+    case "h4":
+      return applyHeadingLevel(sel, 4);
+    case "h5":
+      return applyHeadingLevel(sel, 5);
+    case "h6":
+      return applyHeadingLevel(sel, 6);
+
     case "orderedList":
       return applyOrderedList(sel);
 
@@ -309,4 +357,19 @@ export const EDITOR_ACTIONS: ReadonlyArray<{
   { id: "table", label: "Table" },
   { id: "math", label: "Inline math" },
   { id: "mathBlock", label: "Block math" },
+];
+
+/** 一级至六级标题专用清单。 */
+export const HEADING_LEVEL_ACTIONS: ReadonlyArray<{
+  id: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+  label: string;
+  level: number;
+  shortcut: string;
+}> = [
+  { id: "h1", label: "Heading 1", level: 1, shortcut: "Ctrl+Alt+1" },
+  { id: "h2", label: "Heading 2", level: 2, shortcut: "Ctrl+Alt+2" },
+  { id: "h3", label: "Heading 3", level: 3, shortcut: "Ctrl+Alt+3" },
+  { id: "h4", label: "Heading 4", level: 4, shortcut: "Ctrl+Alt+4" },
+  { id: "h5", label: "Heading 5", level: 5, shortcut: "Ctrl+Alt+5" },
+  { id: "h6", label: "Heading 6", level: 6, shortcut: "Ctrl+Alt+6" },
 ];

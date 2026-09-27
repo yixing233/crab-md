@@ -23,7 +23,7 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
     onRename: vi.fn(),
     onDuplicate: vi.fn(),
     onExport: vi.fn(),
-    onImport: vi.fn(),
+    onOpenFile: vi.fn(),
     onRequestDelete: vi.fn(),
     ...over,
   };
@@ -31,21 +31,21 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
   return props;
 }
 
-describe("Sidebar import entry", () => {
-  it("offers an import control", () => {
+describe("Sidebar open-file entry", () => {
+  it("offers an open-file control", () => {
     renderSidebar();
-    expect(screen.getByRole("button", { name: "导入 Markdown…" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开文件…" })).toBeInTheDocument();
   });
 
-  it("reports import to the parent", async () => {
+  it("reports opening a file to the parent", async () => {
     const props = renderSidebar();
-    await userEvent.click(screen.getByRole("button", { name: "导入 Markdown…" }));
-    expect(props.onImport).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: "打开文件…" }));
+    expect(props.onOpenFile).toHaveBeenCalledOnce();
   });
 
-  it("offers import even when there are no notes yet", () => {
-    // 空工作区恰恰是最需要导入的时候，入口不能跟着列表一起消失。
+  it("offers open-file even when there are no notes yet", () => {
+    // 空工作区恰恰是最需要打开文件的时候，入口不能跟着列表一起消失。
     renderSidebar({ documents: [] });
-    expect(screen.getByRole("button", { name: "导入 Markdown…" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开文件…" })).toBeInTheDocument();
   });
 });

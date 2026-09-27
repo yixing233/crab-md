@@ -1,4 +1,7 @@
-import { Check } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { Button } from "./Button";
+import { ContextMenu } from "./ContextMenu";
 import "./ui.css";
 
 export interface FontPickerOption<T extends string> {
@@ -18,19 +21,8 @@ export interface FontPickerProps<T extends string> {
 }
 
 /**
- * 字体选择列表（UI_DESIGN_SYSTEM.md §34.6）。
- *
- * 为什么不用 `SegmentedControl`：
- * 字体选项有 8 个且名字长短不一（「系统默认」vs「Times New Roman」），
- * 分段控件会把它们挤成一排等宽小块，既放不下也看不出差异。
- *
- * 关键设计：**每个选项用该字体自身渲染名字**。
- * 用户在 Word 里就是靠这个挑字体的 —— 读到「宋体」两个字本身是宋体，
- * 比任何说明文字都直观。因此这里不用 `aria-label` 覆盖文本，
- * 可访问名仍是字体名本身。
- *
- * 用 `role="radiogroup"` + `role="radio"` 而不是 `<select>`：
- * 原生下拉在 WebView 里样式不可控，且无法做到「每项用自己的字体」。
+ * 紧凑字体下拉选择器。菜单项仍用对应字体预览，触发按钮只显示当前选择，
+ * 避免字体选项在设置页中整块平铺占用空间。
  */
 export function FontPicker<T extends string>({
   value,
@@ -38,30 +30,58 @@ export function FontPicker<T extends string>({
   onChange,
   ariaLabel,
 }: FontPickerProps<T>) {
-  return (
-    <div className="ui-font-picker" role="radiogroup" aria-label={ariaLabel}>
-      {options.map((opt) => {
-        const selected = opt.value === value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            className="ui-font-picker__item"
-            data-active={selected || undefined}
-            onClick={() => onChange(opt.value)}
-          >
-            {/* 名字用该字体自身渲染 —— 这是选择列表的核心价值。 */}
-            <span className="ui-font-picker__name" style={{ fontFamily: opt.stack }}>
-              {opt.label}
-            </span>
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const selected = options.find((option) => option.value === value);
+  const closeMenu = useCallback(() => setOpen(false), []);
 
-            {/* 选中标记：不只靠颜色区分（UI §39）。 */}
-            {selected && <Check size={14} aria-hidden className="ui-font-picker__check" />}
-          </button>
-        );
-      })}
+  const items = options.map((option) => ({
+    id: option.value,
+    label: option.label,
+    fontFamily: option.stack,
+    checked: option.value === value,
+    onSelect: () => onChange(option.value),
+  }));
+
+  const toggleMenu = () => {
+    if (open) {
+      closeMenu();
+      return;
+    }
+    const bounds = anchorRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setPosition({ x: bounds.left, y: bounds.bottom });
+    setOpen(true);
+  };
+
+  return (
+    <div className="ui-font-picker" ref={anchorRef}>
+      <Button
+        variant="secondary"
+        className="ui-font-picker__trigger"
+        aria-label={`${ariaLabel}：${selected?.label ?? value}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={toggleMenu}
+      >
+        <span
+          className="ui-font-picker__name"
+          style={selected ? { fontFamily: selected.stack } : undefined}
+        >
+          {selected?.label ?? value}
+        </span>
+        <ChevronDown size={14} aria-hidden />
+      </Button>
+      <ContextMenu
+        open={open}
+        x={position.x}
+        y={position.y}
+        items={items}
+        onClose={closeMenu}
+        ariaLabel={ariaLabel}
+        anchorRef={anchorRef}
+      />
     </div>
   );
 }

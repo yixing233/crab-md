@@ -21,6 +21,10 @@ export default defineConfig({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: {
+      // 在 Windows 非系统盘（如 E 盘）上，Node 默认文件监听容易漏事件；
+      // 开启轮询保证热重载（HMR）即时响应文件变更。
+      usePolling: true,
+      interval: 100,
       // src-tauri 下的 Rust 构建产物有数 GB、上万文件；
       // 不排除的话 Vite 会持续监听并触发无意义的重载。
       ignored: ["**/src-tauri/**"],

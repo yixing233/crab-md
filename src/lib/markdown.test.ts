@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdown, resolveKatexPlugin } from "./markdown";
+import {
+  renderMarkdown,
+  resolveKatexPlugin,
+  sanitizeMermaidSvg,
+} from "./markdown";
 
 describe("renderMarkdown", () => {
   it("renders basic markdown structure", () => {
@@ -18,6 +22,44 @@ describe("renderMarkdown", () => {
     const html = renderMarkdown("```js\nconst x = 1;\n```");
     expect(html).toContain("<pre>");
     expect(html).toContain("<code");
+    expect(html).toContain('class="code-block"');
+    expect(html).toContain('data-language="js"');
+    expect(html).toContain('class="code-block__copy"');
+  });
+
+  it("renders Mermaid fences as escaped, controlled source containers", () => {
+    const html = renderMarkdown(
+      "```mermaid\nflowchart TD\n  A[<script>alert(1)</script>] --> B\n```",
+    );
+    expect(html).toContain("data-mermaid-source");
+    expect(html).toContain('class="mermaid-source"');
+    expect(html).toContain("flowchart TD");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).not.toContain("<script");
+  });
+
+  it("recognizes Mermaid fence info case-insensitively", () => {
+    expect(renderMarkdown("```MERMAID\ngraph TD\nA-->B\n```")).toContain(
+      "data-mermaid-source",
+    );
+  });
+
+  it("keeps ordinary fenced languages as code blocks", () => {
+    const html = renderMarkdown("```mermaidish\nA-->B\n```");
+    expect(html).not.toContain("data-mermaid-source");
+    expect(html).toContain('class="language-mermaidish"');
+  });
+
+  it("sanitizes generated Mermaid SVG before insertion", () => {
+    const svg = sanitizeMermaidSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script>' +
+        '<path d="M0 0" onclick="alert(1)" onload="alert(1)" /></svg>',
+    );
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("<path");
+    expect(svg).not.toContain("<script");
+    expect(svg).not.toContain("onclick");
+    expect(svg).not.toContain("onload");
   });
 
   it("renders Chinese content correctly", () => {

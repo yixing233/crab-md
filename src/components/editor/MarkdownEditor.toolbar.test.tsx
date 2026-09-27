@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { EditorView } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 import { MarkdownEditor } from "./MarkdownEditor";
 
@@ -24,6 +25,101 @@ describe("MarkdownEditor toolbar", () => {
     ]) {
       expect(screen.getByRole("button", { name: label }), label).toBeInTheDocument();
     }
+  });
+
+  it("opens a compact editor context menu with grouped formatting and insert submenus", async () => {
+    const onChange = vi.fn();
+    render(<MarkdownEditor documentId="d1" value="hello" onChange={onChange} />);
+    const content = screen.getByTestId("markdown-editor").querySelector(".cm-content") as HTMLElement;
+    const view = EditorView.findFromDOM(content);
+    expect(view).not.toBeNull();
+    view!.dispatch({ selection: { anchor: 0, head: 5 } });
+
+    fireEvent.contextMenu(content, { clientX: 40, clientY: 60 });
+
+    const menu = screen.getByRole("menu", { name: "编辑器操作" });
+    expect(menu).toBeInTheDocument();
+    expect(screen.getAllByRole("separator")).toHaveLength(2);
+    expect(screen.getByRole("menuitem", { name: "撤销" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "粘贴" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "查找 / 替换" })).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Ctrl+F",
+    );
+    expect(screen.getByRole("menuitem", { name: "格式" })).toHaveAttribute("aria-haspopup", "menu");
+    expect(screen.getByRole("menuitem", { name: "插入" })).toHaveAttribute("aria-haspopup", "menu");
+    expect(screen.queryByRole("menuitem", { name: "加粗" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "格式" }));
+    expect(await screen.findByRole("menu", { name: "格式" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "加粗" })).toBeEnabled();
+  });
+
+  it("defaults to find-only panel with replace collapsed, supports expanding replace and closing", async () => {
+    const { rerender } = render(
+      <MarkdownEditor documentId="d1" value="hello world" onChange={() => {}} findNonce={0} />,
+    );
+    expect(screen.queryByPlaceholderText("查找")).not.toBeInTheDocument();
+
+    rerender(
+      <MarkdownEditor documentId="d1" value="hello world" onChange={() => {}} findNonce={1} />,
+    );
+
+    const searchInput = await screen.findByPlaceholderText("查找");
+    expect(searchInput).toBeInTheDocument();
+    expect(searchInput).toHaveClass("cm-textfield");
+
+    // 查找行按钮可见
+    for (const name of ["下一个", "上一个", "全部"]) {
+      expect(screen.getByRole("button", { name })).toHaveClass("cm-button");
+    }
+
+    // 选项复选框可见
+    expect(screen.getByLabelText("区分大小写")).toBeInTheDocument();
+    expect(screen.getByLabelText("正则表达式")).toBeInTheDocument();
+    expect(screen.getByLabelText("全词匹配")).toBeInTheDocument();
+
+    // 默认折叠：替换行不可见
+    const replaceInput = screen.getByPlaceholderText("替换");
+    expect(replaceInput).not.toBeVisible();
+    expect(screen.queryByRole("button", { name: "替换" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "全部替换" })).toBeNull();
+
+    // 点击切换按钮：展开替换行
+    const toggleBtn = screen.getByRole("button", { name: "展开替换" });
+    expect(toggleBtn).toBeInTheDocument();
+    await userEvent.click(toggleBtn);
+
+    expect(replaceInput).toBeVisible();
+    expect(screen.getByRole("button", { name: "替换" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "全部替换" })).toBeVisible();
+    expect(toggleBtn).toHaveAttribute("aria-label", "收起替换");
+
+    // 再次点击切换按钮：收起替换行
+    await userEvent.click(toggleBtn);
+    expect(replaceInput).not.toBeVisible();
+    expect(screen.queryByRole("button", { name: "替换" })).toBeNull();
+    expect(toggleBtn).toHaveAttribute("aria-label", "展开替换");
+
+    // 关闭按钮
+    const closeBtn = screen.getByRole("button", { name: "关闭" });
+    expect(closeBtn).toBeInTheDocument();
+    await userEvent.click(closeBtn);
+
+    expect(screen.queryByPlaceholderText("查找")).not.toBeInTheDocument();
+  });
+
+  it("opens with replace expanded when triggered from the context menu", async () => {
+    render(<MarkdownEditor documentId="d1" value="hello" onChange={() => {}} />);
+    const content = screen.getByTestId("markdown-editor").querySelector(".cm-content") as HTMLElement;
+    fireEvent.contextMenu(content, { clientX: 40, clientY: 60 });
+
+    const menu = screen.getByRole("menu", { name: "编辑器操作" });
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "查找 / 替换" }));
+
+    const replaceInput = await screen.findByPlaceholderText("替换");
+    expect(replaceInput).toBeVisible();
+    expect(screen.getByRole("button", { name: "收起替换" })).toBeInTheDocument();
   });
 
   it("can hide the toolbar", () => {

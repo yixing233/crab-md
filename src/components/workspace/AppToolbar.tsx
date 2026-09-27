@@ -1,4 +1,4 @@
-import { Download, Moon, PanelLeft, Plus, Search, Settings, Sun, SunMoon } from "lucide-react";
+import { Download, Moon, PanelLeft, Plus, Printer, Search, Settings, Sun, SunMoon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
 import { Tooltip } from "../ui/Tooltip";
@@ -11,6 +11,10 @@ export interface AppToolbarProps {
   sidebarVisible: boolean;
   /** 打开设置页（UI §34，快捷键 Ctrl+,）。 */
   onOpenSettings: () => void;
+  /** 可选：打开编辑器查找面板（若全局工具栏不需要则不传）。 */
+  onSearch?: () => void;
+  /** 打开系统打印对话框，用户可选择另存为 PDF。 */
+  onPrint: () => void;
   /**
    * 有新版本时显示常驻入口（含徽标）。
    * 传 null 表示无更新 —— 工具栏保持安静（§2.1）。
@@ -36,6 +40,8 @@ export function AppToolbar({
   onToggleSidebar,
   sidebarVisible,
   onOpenSettings,
+  onSearch,
+  onPrint,
   pendingVersion,
   onOpenUpdate,
   themePreference,
@@ -75,15 +81,29 @@ export function AppToolbar({
         </Button>
       </Tooltip>
 
-      <Tooltip content={zh.toolbar.search}>
+      {onSearch && (
+        <Tooltip content={`${zh.toolbar.search}　Ctrl+F`}>
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            aria-label={zh.toolbar.search}
+            onClick={onSearch}
+          >
+            <Search size={16} aria-hidden />
+          </Button>
+        </Tooltip>
+      )}
+
+      <Tooltip content={zh.toolbar.printPdf}>
         <Button
           variant="ghost"
           size="sm"
           iconOnly
-          aria-label={zh.toolbar.search}
-          disabled
+          aria-label={zh.toolbar.printPdf}
+          onClick={onPrint}
         >
-          <Search size={16} aria-hidden />
+          <Printer size={16} aria-hidden />
         </Button>
       </Tooltip>
 

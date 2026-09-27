@@ -126,6 +126,8 @@ function Harness() {
         onToggleSidebar={() => {}}
         sidebarVisible
         onOpenSettings={() => {}}
+         onSearch={() => {}}
+         onPrint={() => {}}
         pendingVersion="1.2.3"
         onOpenUpdate={() => {}}
         themePreference={theme}

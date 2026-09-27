@@ -69,6 +69,98 @@ describe("ContextMenu", () => {
     expect(item).toHaveAttribute("aria-keyshortcuts", "F2");
   });
 
+  it("opens a second-level submenu and runs its item without treating it as outside", async () => {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ContextMenu
+        open
+        x={10}
+        y={10}
+        items={[
+          {
+            id: "format",
+            label: "格式",
+            submenu: [{ id: "bold", label: "加粗", onSelect }],
+          },
+        ]}
+        onClose={onClose}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "格式" }));
+    const submenu = await screen.findByRole("menu", { name: "格式" });
+    expect(submenu).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "加粗" }));
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("opens a third-level nested submenu and executes its item", async () => {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ContextMenu
+        open
+        x={10}
+        y={10}
+        items={[
+          {
+            id: "format",
+            label: "格式",
+            submenu: [
+              {
+                id: "heading",
+                label: "标题",
+                submenu: [{ id: "h1", label: "H1", onSelect }],
+              },
+            ],
+          },
+        ]}
+        onClose={onClose}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "格式" }));
+    const formatMenu = await screen.findByRole("menu", { name: "格式" });
+    expect(formatMenu).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "标题" }));
+    const headingMenu = await screen.findByRole("menu", { name: "标题" });
+    expect(headingMenu).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "H1" }));
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("Escape closes the submenu before closing the parent menu", async () => {
+    const onClose = vi.fn();
+    render(
+      <ContextMenu
+        open
+        x={10}
+        y={10}
+        items={[
+          {
+            id: "format",
+            label: "格式",
+            submenu: [{ id: "bold", label: "加粗", onSelect: () => {} }],
+          },
+        ]}
+        onClose={onClose}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "格式" }));
+    expect(await screen.findByRole("menu", { name: "格式" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() => expect(screen.queryByRole("menu", { name: "格式" })).not.toBeInTheDocument());
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("closes on Escape", async () => {
     const onClose = vi.fn();
     render(<ContextMenu open x={0} y={0} items={items()} onClose={onClose} />);

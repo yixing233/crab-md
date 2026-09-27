@@ -2,6 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppErrorShape,
   AppSettingsView,
+  AttachmentBytes,
+  AttachmentId,
+  AttachmentMimeType,
   DocumentPayload,
   DocumentSummary,
   SearchHit,
@@ -66,13 +69,40 @@ export const api = {
   exportDocument: (id: string, targetPath: string) =>
     call<number>("export_document", { id, targetPath }),
 
-  /** 把指定 Markdown 文件导入为**新文档**（新 UUID，不覆盖既有文档）。 */
+  /** 把指定文本或 Markdown 文件打开为**新文档**（新 UUID，不覆盖既有文档）。 */
   importDocument: (sourcePath: string, title?: string, virtualPath = "/") =>
     call<DocumentSummary>("import_document", {
       sourcePath,
       title: title ?? null,
       virtualPath,
     }),
+
+  // ---- 附件 ----
+  //
+  // Tauri 命令的 Vec<u8> 通过 JSON 边界传输为 number[]；在 API 边界
+  // 统一转换成 Uint8Array，编辑器/预览不需要关心命令序列化细节。
+
+  /** 保存剪贴板图片，返回 Rust 生成的 UUID（不是文件系统路径）。 */
+  saveAttachment: (
+    bytes: AttachmentBytes | ArrayBuffer | number[],
+    mimeType: AttachmentMimeType | string,
+  ) => {
+    const data = bytes instanceof ArrayBuffer
+      ? new Uint8Array(bytes)
+      : bytes instanceof Uint8Array
+        ? bytes
+        : new Uint8Array(bytes);
+    return call<AttachmentId>("save_attachment", {
+      data: Array.from(data),
+      mimeType,
+    });
+  },
+
+  /** 读取附件二进制；非法/不存在的 id 由 Rust 转换为稳定错误。 */
+  readAttachment: async (id: AttachmentId): Promise<AttachmentBytes> => {
+    const data = await call<number[] | Uint8Array>("read_attachment", { id });
+    return data instanceof Uint8Array ? data : new Uint8Array(data);
+  },
 
   // ---- 设置（UI_DESIGN_SYSTEM.md §34）----
 

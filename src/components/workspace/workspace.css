@@ -16,22 +16,24 @@
   user-select: none;
 }
 
-/* 每行 = 文档按钮 + 悬停才出现的「更多」按钮。 */
+/* 每行 = 全宽文档条目 + 悬浮于右侧的「更多」操作按钮 */
 .file-tree__row {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
+  width: 100%;
 }
 
 .file-tree__item {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex: 1;
+  width: 100%;
+  flex: 1 1 100%;
   min-width: 0;
   height: 30px;
-  padding-right: var(--space-2);
+  /* 右侧预留 28px 留白，防止超长文件名与悬浮按钮重叠 */
+  padding-right: 28px;
   font-family: inherit;
   font-size: var(--text-sm);
   color: var(--text-secondary);
@@ -68,16 +70,34 @@
   white-space: nowrap;
 }
 
-/* 「更多」按钮：平时隐形，悬停该行或键盘聚焦时才出现，
-   避免每一行都挂一个图标造成视觉噪音（UI §18.1 要求常态安静）。 */
+/* 「更多」按钮：绝对定位悬浮在条目右端，不占用常规布局空间，常态静默隐藏，悬停时优雅浮现 */
 .file-tree__more {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: 0;
   opacity: 0;
-  flex: 0 0 auto;
   color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  z-index: 2;
+  transition: opacity var(--duration-fast) ease,
+              background-color var(--duration-fast) ease,
+              color var(--duration-fast) ease;
 }
+
 .file-tree__row:hover .file-tree__more,
-.file-tree__more:focus-visible {
+.file-tree__more:focus-visible,
+.file-tree__more[aria-expanded="true"] {
   opacity: 1;
+}
+
+.file-tree__more:hover {
+  background-color: var(--bg-surface-active);
+  color: var(--text-primary);
 }
 
 /* 侧栏空态：与文件树列表同样的内边距，避免贴边。 */
@@ -104,7 +124,14 @@
   border-bottom: 1px solid var(--border-default);
 }
 
-.document-bar__spacer { flex: 1; }
+.document-bar__spacer {
+  flex: 1 1 0;
+  min-width: var(--space-2);
+}
+
+.document-bar > *:not(.document-bar__spacer):not(.breadcrumb) {
+  flex-shrink: 0;
+}
 
 /* 面包屑在文档栏内部：容器已提供底色与下边框，
    自身不再重复（否则会出现双层背景与双线）。 */
@@ -265,6 +292,7 @@ body[data-resizing="true"] {
 }
 
 .app-sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   /* 用 flex-basis 而非 width：分隔条拖拽时由内联 flex-basis 覆盖（UI §11），
@@ -273,19 +301,115 @@ body[data-resizing="true"] {
   background: var(--bg-surface);
   /* 结构性分隔（外壳↔内容）：比内部细线更明确。 */
   border-right: 1px solid var(--border-default);
+  overflow: hidden;
+  box-sizing: border-box;
+  /* 平滑丝滑的展开/折叠过渡动画 */
+  transition: flex-basis var(--duration-slow) cubic-bezier(0.16, 1, 0.3, 1),
+              width var(--duration-slow) cubic-bezier(0.16, 1, 0.3, 1),
+              border-color var(--duration-normal) ease;
+  will-change: flex-basis, width;
+}
+
+.app-sidebar[data-collapsed="true"] {
+  flex-basis: 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  border-right-color: transparent !important;
+  pointer-events: none;
+  visibility: hidden;
+  transition: flex-basis var(--duration-slow) cubic-bezier(0.16, 1, 0.3, 1),
+              width var(--duration-slow) cubic-bezier(0.16, 1, 0.3, 1),
+              border-color var(--duration-normal) ease,
+              visibility 0s linear var(--duration-slow);
+}
+
+/* 拖拽期间关闭过渡动画，保证鼠标实时跟手 */
+body[data-resizing="true"] .app-sidebar {
+  transition: none !important;
+}
+
+/* 内部保持固定宽度，避免收起时内部文本与图标挤压折行换行 */
+.app-sidebar__inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 /* 中文标题不做 text-transform: uppercase —— 对汉字无意义，且会拉宽字距。 */
-.app-sidebar__header {
-  /* 横向排列：左侧小标题，右侧导入入口 —— 导入针对整个列表而非某一篇。 */
+/* 侧边栏内部两个分栏：大纲在上（主视区），笔记列表在下 */
+.app-sidebar__section--outline {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 50%;
+  min-height: 120px;
+  max-height: 60%;
+  border-bottom: 1px solid var(--border-default);
+  overflow: hidden;
+}
+
+.app-sidebar__section--files {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 50%;
+  min-height: 120px;
+  overflow: hidden;
+}
+
+.app-sidebar__section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-4) var(--space-4) var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.app-sidebar__section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-xs);
   font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.app-sidebar__outline-container,
+.app-sidebar__files-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.app-sidebar__empty-outline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  gap: var(--space-2);
   color: var(--text-muted);
-  letter-spacing: 0.02em;
+}
+
+.app-sidebar__empty-icon {
+  opacity: 0.6;
+}
+
+.app-sidebar__empty-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.app-sidebar__empty-desc {
+  font-size: 11px;
+  margin: 0;
+  line-height: 1.4;
 }
 
 .sr-only {

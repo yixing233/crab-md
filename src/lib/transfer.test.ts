@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  OPEN_FILE_EXTENSIONS,
   runExport,
-  runImport,
+  runOpenFile,
   suggestedFileName,
   type TransferDeps,
 } from "./transfer";
@@ -42,12 +43,18 @@ describe("suggestedFileName", () => {
 function deps(over: Partial<TransferDeps> = {}): TransferDeps {
   return {
     pickExport: vi.fn(async () => "/tmp/out.md"),
-    pickImport: vi.fn(async () => "/tmp/in.md"),
+    pickOpenFile: vi.fn(async () => "/tmp/in.txt"),
     exportDocument: vi.fn(async () => true),
-    importDocument: vi.fn(async () => ({ title: "导入的笔记" })),
+    openFile: vi.fn(async () => ({ title: "打开的笔记" })),
     ...over,
   };
 }
+
+describe("open-file dialog", () => {
+  it("allows plain text and Markdown files", () => {
+    expect(OPEN_FILE_EXTENSIONS).toEqual(["txt", "md", "markdown"]);
+  });
+});
 
 describe("runExport", () => {
   it("exports to the chosen path and reports success", async () => {
@@ -79,25 +86,25 @@ describe("runExport", () => {
   });
 });
 
-describe("runImport", () => {
-  it("imports the chosen file and reports the new title", async () => {
+describe("runOpenFile", () => {
+  it("opens the chosen text file and reports the new title", async () => {
     const d = deps();
-    const outcome = await runImport(d);
+    const outcome = await runOpenFile(d);
 
-    expect(outcome).toEqual({ kind: "ok", title: "导入的笔记" });
-    expect(d.importDocument).toHaveBeenCalledWith("/tmp/in.md");
+    expect(outcome).toEqual({ kind: "ok", title: "打开的笔记" });
+    expect(d.openFile).toHaveBeenCalledWith("/tmp/in.txt");
   });
 
   it("reports cancelled when the user dismisses the dialog", async () => {
-    const d = deps({ pickImport: vi.fn(async () => null) });
-    const outcome = await runImport(d);
+    const d = deps({ pickOpenFile: vi.fn(async () => null) });
+    const outcome = await runOpenFile(d);
 
     expect(outcome).toEqual({ kind: "cancelled" });
-    expect(d.importDocument).not.toHaveBeenCalled();
+    expect(d.openFile).not.toHaveBeenCalled();
   });
 
-  it("reports failed when the import itself fails", async () => {
-    const d = deps({ importDocument: vi.fn(async () => null) });
-    expect(await runImport(d)).toEqual({ kind: "failed" });
+  it("reports failed when opening the file itself fails", async () => {
+    const d = deps({ openFile: vi.fn(async () => null) });
+    expect(await runOpenFile(d)).toEqual({ kind: "failed" });
   });
 });

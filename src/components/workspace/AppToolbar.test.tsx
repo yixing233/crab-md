@@ -9,6 +9,8 @@ function props(over: Partial<Parameters<typeof AppToolbar>[0]> = {}) {
     onToggleSidebar: vi.fn(),
     sidebarVisible: true,
     onOpenSettings: vi.fn(),
+    onSearch: vi.fn(),
+    onPrint: vi.fn(),
     pendingVersion: null,
     onOpenUpdate: vi.fn(),
     themePreference: "system" as const,
@@ -49,6 +51,18 @@ describe("AppToolbar update entry", () => {
     // 两个入口语义不同：一个进设置，一个直接去安装。
     expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /有新版本/ })).toBeInTheDocument();
+  });
+
+  it("opens search and print actions", async () => {
+    const onSearch = vi.fn();
+    const onPrint = vi.fn();
+    render(<AppToolbar {...props({ onSearch, onPrint })} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await userEvent.click(screen.getByRole("button", { name: "导出 PDF" }));
+
+    expect(onSearch).toHaveBeenCalledOnce();
+    expect(onPrint).toHaveBeenCalledOnce();
   });
 
   it("no longer hosts the document view controls", () => {

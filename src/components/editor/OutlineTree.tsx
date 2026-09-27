@@ -9,6 +9,8 @@ export interface OutlineTreeProps {
   source: string;
   /** 点击某个标题时跳转到它的行（0 基）。 */
   onJump: (line: number) => void;
+  /** 是否展示内置大纲标题栏（嵌入其他容器时可隐藏避免重复）。 */
+  showHeader?: boolean;
 }
 
 /**
@@ -16,7 +18,7 @@ export interface OutlineTreeProps {
  *
  * 纯展示组件：标题抽取逻辑在 `lib/outline.ts`，跳转行为由父组件决定。
  */
-export function OutlineTree({ source, onJump }: OutlineTreeProps) {
+export function OutlineTree({ source, onJump, showHeader = true }: OutlineTreeProps) {
   const items = useMemo(() => extractOutline(source), [source]);
 
   if (items.length === 0) {
@@ -25,10 +27,12 @@ export function OutlineTree({ source, onJump }: OutlineTreeProps) {
 
   return (
     <nav className="outline" aria-label={zh.outline.ariaLabel}>
-      <div className="outline__header">
-        <ListTree size={14} aria-hidden />
-        <span>{zh.outline.title}</span>
-      </div>
+      {showHeader && (
+        <div className="outline__header">
+          <ListTree size={14} aria-hidden />
+          <span>{zh.outline.title}</span>
+        </div>
+      )}
       <ul className="outline__list">
         {items.map((item, i) => (
           <li key={`${item.line}-${i}`}>

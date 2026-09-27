@@ -12,6 +12,8 @@ vi.mock("./lib/api", () => ({
     renameDocument: vi.fn(),
     deleteDocument: vi.fn(),
     duplicateDocument: vi.fn(),
+    saveAttachment: vi.fn(),
+    readAttachment: vi.fn(),
     // 设置相关：SettingsPage 会用到，工厂必须一并提供（整体替换模块）。
     getSettings: vi.fn().mockResolvedValue({
       workspaceRoot: null,
@@ -61,6 +63,7 @@ function resetStore() {
     dirty: false,
     loading: false,
     error: null,
+    recoveryCandidate: null,
   });
 }
 
@@ -474,7 +477,7 @@ describe("App panes and shortcuts", () => {
     );
   });
 
-  it("toggles the outline pane from the document bar", async () => {
+  it("toggles the outline sidebar with the toggle button", async () => {
     const doc = {
       id: "d1", title: "甲", virtualPath: "/", revision: 1,
       contentHash: "sha256:x", createdAt: "2026-01-01T00:00:00Z",
@@ -485,14 +488,13 @@ describe("App panes and shortcuts", () => {
     (api.readDocument as ReturnType<typeof vi.fn>).mockResolvedValue({ ...doc, content: "# 标题" });
 
     render(<App />);
-    // 大纲开关属于「当前文档怎么看」，只在打开文档后出现于文档栏。
     await userEvent.click(await screen.findByText("甲"));
 
-    const toggle = await screen.findByRole("button", { name: "大纲" });
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    const toggle = await screen.findByRole("button", { name: "切换侧边栏" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
 
     await userEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
 
   it("toggles the outline with Ctrl+Shift+O", async () => {
@@ -507,10 +509,11 @@ describe("App panes and shortcuts", () => {
 
     render(<App />);
     await userEvent.click(await screen.findByText("甲"));
-    const toggle = await screen.findByRole("button", { name: "大纲" });
+    const toggle = await screen.findByRole("button", { name: "切换侧边栏" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
 
     await userEvent.keyboard("{Control>}{Shift>}o{/Shift}{/Control}");
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
 
   it("creates a document with Ctrl+N", async () => {

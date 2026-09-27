@@ -96,6 +96,20 @@ describe("setupSyncScroll", () => {
     cleanup();
   });
 
+  it("still synchronizes if the pointer entered the other pane before scrolling", () => {
+    const editor = createMockScrollElement(1000, 500);
+    const preview = createMockScrollElement(2500, 500);
+
+    const cleanup = setupSyncScroll(editor, preview);
+
+    // Hovering must not claim scroll ownership before an actual scroll event.
+    editor.dispatchEvent(new Event("pointerenter"));
+    preview.scrollTop = 500;
+
+    expect(editor.scrollTop).toBe(125);
+    cleanup();
+  });
+
   it("prevents feedback loops and jitter between panes", () => {
     const editor = createMockScrollElement(1000, 500);
     const preview = createMockScrollElement(2000, 500);

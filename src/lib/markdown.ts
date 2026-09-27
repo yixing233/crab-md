@@ -112,6 +112,132 @@ function mathInlineAnywhere(state: StateInline, silent: boolean): boolean {
 md.inline.ruler.before("math_inline", "math_inline_anywhere", mathInlineAnywhere);
 
 /**
+ * Mermaid fences are deliberately rendered as inert source containers first.
+ *
+ * Mermaid must not receive HTML from the Markdown renderer directly: the source
+ * is escaped into a `<code>` element and the preview effect replaces that
+ * element only after Mermaid has parsed it and its SVG has gone through a
+ * second DOMPurify pass.
+ */
+const defaultFenceRenderer = md.renderer.rules.fence;
+md.renderer.rules.fence = (tokens, index, options, env, self) => {
+  const token = tokens[index];
+  const language = token.info.trim().split(/\s+/u)[0]?.toLowerCase();
+
+  if (language === "mermaid") {
+    return [
+      '<div class="mermaid-diagram" data-mermaid-source>',
+      '<pre class="mermaid-source"><code>',
+      md.utils.escapeHtml(token.content),
+      "</code></pre></div>\n",
+    ].join("");
+  }
+
+  const rawRendered = defaultFenceRenderer?.(tokens, index, options, env, self) ?? "";
+  const langLabel = language || "text";
+
+  return [
+    `<div class="code-block" data-language="${md.utils.escapeHtml(langLabel)}">`,
+    '  <div class="code-block__header">',
+    `    <span class="code-block__lang">${md.utils.escapeHtml(langLabel)}</span>`,
+    '    <button type="button" class="code-block__copy" aria-label="复制代码" title="复制代码">',
+    '      <svg class="code-block__copy-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">',
+    '        <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>',
+    '        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    '      </svg>',
+    '      <span class="code-block__copy-text">复制</span>',
+    '    </button>',
+    '  </div>',
+    rawRendered,
+    '</div>\n',
+  ].join("\n");
+};
+
+/** A deliberately small surface for Mermaid, so jsdom tests can mock it. */
+export interface MermaidRenderer {
+  initialize(config: {
+    startOnLoad: boolean;
+    securityLevel: "strict";
+    htmlLabels: boolean;
+  }): void;
+  render(
+    id: string,
+    source: string,
+  ): Promise<{ svg: string } | string> | { svg: string } | string;
+}
+
+/**
+ * Load Mermaid lazily. Mermaid expects browser layout APIs (for example
+ * `getBBox`), which are not available in jsdom; keeping the import behind this
+ * function lets Markdown rendering and the fallback source stay testable there.
+ */
+export async function loadMermaid(): Promise<MermaidRenderer> {
+  const module = await import("mermaid");
+  const candidate = module.default ?? module;
+
+  if (
+    !candidate ||
+    typeof candidate !== "object" ||
+    typeof candidate.initialize !== "function" ||
+    typeof candidate.render !== "function"
+  ) {
+    throw new Error("Mermaid module does not expose initialize/render");
+  }
+
+  return candidate as unknown as MermaidRenderer;
+}
+
+/**
+ * Sanitize Mermaid's generated SVG separately from the Markdown HTML.
+ * Mermaid strict mode is the first boundary; this is the second boundary
+ * before generated markup is inserted into the live preview DOM.
+ */
+export function sanitizeMermaidSvg(svg: string): string {
+  return DOMPurify.sanitize(svg, {
+    USE_PROFILES: { svg: true, svgFilters: true },
+    FORBID_TAGS: ["script", "iframe", "object", "embed", "form", "input"],
+    FORBID_ATTR: [
+      "onerror",
+      "onload",
+      "onclick",
+      "onmouseover",
+      "onfocus",
+      "onmouseenter",
+      "onanimationstart",
+      "onbegin",
+      "onend",
+      "onrepeat",
+    ],
+  });
+}
+
+/**
+ * Parse and render one Mermaid source string, returning only sanitized SVG.
+ * `htmlLabels: false` keeps Mermaid's labels in SVG text nodes rather than
+ * introducing HTML `foreignObject` content that would need to be trusted.
+ */
+export async function renderMermaidDiagram(source: string, id: string): Promise<string> {
+  const mermaid = await loadMermaid();
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    htmlLabels: false,
+  });
+
+  const result = await mermaid.render(id, source);
+  const svg = typeof result === "string" ? result : result.svg;
+  if (typeof svg !== "string") {
+    throw new Error("Mermaid did not return SVG markup");
+  }
+
+  const sanitized = sanitizeMermaidSvg(svg);
+  if (!sanitized.trim()) {
+    throw new Error("Mermaid SVG was empty after sanitization");
+  }
+  return sanitized;
+}
+
+/**
  * KaTeX 允许保留的内联样式属性白名单。
  *
  * 为什么要有白名单，而不是简单放行 `style`：

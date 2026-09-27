@@ -207,6 +207,7 @@ function TreeItem({
         onContextMenu={(e) => {
           // 右键打开菜单；触屏用户用右侧的「更多」按钮。
           e.preventDefault();
+          e.stopPropagation();
           onOpenMenu(id, node.name, e.clientX, e.clientY);
         }}
         onKeyDown={(e) => {
@@ -232,6 +233,7 @@ function TreeItem({
           className="file-tree__more"
           aria-label={`${node.name} ${zh.fileTree.moreActions}`}
           onClick={(e) => {
+            e.stopPropagation();
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
             onOpenMenu(id, node.name, r.left, r.bottom + 2);
           }}
