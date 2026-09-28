@@ -1163,12 +1163,12 @@ button.cm-button.cm-search-close:focus-visible,
   text-align: left;
 }
 
-/* 围栏代码块卡片化排版（无缝一体化、零偏移） */
+/* 围栏代码块卡片化排版（无缝一体化、紧凑紧实、零偏移） */
 .cm-live-code-line {
   background-color: var(--bg-surface-elevated, var(--bg-surface)) !important;
   font-family: var(--preview-font-code, var(--font-mono)) !important;
-  padding-left: 16px !important;
-  padding-right: 16px !important;
+  padding-left: 14px !important;
+  padding-right: 14px !important;
   border-left: 1px solid var(--border-default) !important;
   border-right: 1px solid var(--border-default) !important;
   color: var(--text-primary);
@@ -1179,21 +1179,29 @@ button.cm-button.cm-search-close:focus-visible,
   border-top: 1px solid var(--border-default) !important;
   border-top-left-radius: var(--radius-md, 6px) !important;
   border-top-right-radius: var(--radius-md, 6px) !important;
-  padding-top: 8px !important;
-  padding-bottom: 2px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  line-height: 20px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 
 .cm-live-code-line--body {
-  padding-top: 2px !important;
-  padding-bottom: 2px !important;
+  padding-top: 1px !important;
+  padding-bottom: 1px !important;
+  line-height: 1.55 !important;
 }
 
 .cm-live-code-line--footer {
   border-bottom: 1px solid var(--border-default) !important;
   border-bottom-left-radius: var(--radius-md, 6px) !important;
   border-bottom-right-radius: var(--radius-md, 6px) !important;
-  padding-top: 2px !important;
-  padding-bottom: 8px !important;
+  height: 6px !important;
+  min-height: 6px !important;
+  line-height: 0 !important;
+  font-size: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 
 .cm-live-code-line--editing {
@@ -1203,14 +1211,14 @@ button.cm-button.cm-search-close:focus-visible,
 
 .cm-live-code-lang {
   position: absolute !important;
-  top: 8px !important;
-  right: 12px !important;
-  font-size: 10px !important;
+  top: 2px !important;
+  right: 8px !important;
+  font-size: 9.5px !important;
   font-weight: 600 !important;
   text-transform: uppercase !important;
   color: var(--text-muted) !important;
   letter-spacing: 0.05em !important;
-  padding: 1px 6px !important;
+  padding: 0 5px !important;
   line-height: 16px !important;
   border-radius: 3px !important;
   background-color: var(--bg-surface) !important;
