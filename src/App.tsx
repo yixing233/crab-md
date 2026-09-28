@@ -26,8 +26,8 @@ import { api } from "./lib/api";
 import { zh } from "./lib/i18n";
 import { checkForUpdate, readLastCheck, shouldAutoCheck, writeLastCheck } from "./lib/updater";
 import { tauriUpdaterBridge } from "./lib/updaterBridge";
-import { printPreview } from "./lib/print";
 import { toggleTaskInSource } from "./lib/markdown";
+import { PrintExportModal } from "./components/export/PrintExportModal";
 import { useUpdateStore } from "./stores/useUpdateStore";
 import type { MarkdownActionId } from "./lib/markdownActions";
 import {
@@ -152,6 +152,8 @@ export default function App() {
   const newDocumentIdsRef = useRef<Set<string>>(new Set());
   // 关闭文档时的确认 / 命名弹窗状态
   const [closePrompt, setClosePrompt] = useState<ClosePromptType | null>(null);
+  // PDF 导出与打印排版沉浸式对话框
+  const [printModalOpen, setPrintModalOpen] = useState(false);
   // 打开的外部物理磁盘文件映射表（原位查看/编辑，绝不拷贝进数据库）
   const [externalFiles, setExternalFiles] = useState<
     Map<
@@ -798,10 +800,8 @@ export default function App() {
       setToast({ message: "请先打开一篇笔记后再进行打印或导出 PDF", tone: "error" });
       return;
     }
-    if (!printPreview(activeTitle)) {
-      setToast({ message: zh.toast.printUnavailable, tone: "error" });
-    }
-  }, [activeId, activeTitle]);
+    setPrintModalOpen(true);
+  }, [activeId]);
 
   const handlePasteImage = useCallback(async (file: File): Promise<string | null> => {
     try {
@@ -1254,6 +1254,14 @@ export default function App() {
         onChangePreviewElement={handleChangePreviewElement}
         onResetPreviewTypography={handleResetPreviewTypography}
         initialSection={settingsSection}
+      />
+
+      <PrintExportModal
+        open={printModalOpen}
+        documentTitle={activeTitle}
+        content={activeContent}
+        isPlainText={isPlainText}
+        onClose={() => setPrintModalOpen(false)}
       />
     </div>
   );
