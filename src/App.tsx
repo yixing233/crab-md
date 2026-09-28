@@ -505,6 +505,15 @@ export default function App() {
     [activeId, openTabIds, openDocument],
   );
 
+  const activeExt = activeId?.startsWith("ext:") ? externalFiles.get(activeId) : null;
+  const activeDoc =
+    activeId && !activeId.startsWith("ext:")
+      ? documents.find((d) => d.id === activeId)
+      : null;
+  const activeTitle = activeExt ? activeExt.name : (activeDoc?.title ?? "");
+  const activePath = activeExt ? activeExt.path : activeTitle;
+  const isPlainText = activeTitle.toLowerCase().endsWith(".txt");
+
   const handleSelectTab = useCallback(
     async (id: string | null) => {
       if (id === null) {
@@ -785,10 +794,14 @@ export default function App() {
   }, [activeContent, activeId, externalFiles, saveActive]);
 
   const handlePrint = useCallback(() => {
-    if (!printPreview()) {
+    if (!activeId) {
+      setToast({ message: "请先打开一篇笔记后再进行打印或导出 PDF", tone: "error" });
+      return;
+    }
+    if (!printPreview(activeTitle)) {
       setToast({ message: zh.toast.printUnavailable, tone: "error" });
     }
-  }, []);
+  }, [activeId, activeTitle]);
 
   const handlePasteImage = useCallback(async (file: File): Promise<string | null> => {
     try {
@@ -950,15 +963,6 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleNewDocument, handleSave, cycleTheme, activeId, handleCloseTab]);
-
-  const activeExt = activeId?.startsWith("ext:") ? externalFiles.get(activeId) : null;
-  const activeDoc =
-    activeId && !activeId.startsWith("ext:")
-      ? documents.find((d) => d.id === activeId)
-      : null;
-  const activeTitle = activeExt ? activeExt.name : (activeDoc?.title ?? "");
-  const activePath = activeExt ? activeExt.path : activeTitle;
-  const isPlainText = activeTitle.toLowerCase().endsWith(".txt");
 
   const tabsList = openTabIds.map((id) => {
     if (id.startsWith("ext:")) {

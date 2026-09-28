@@ -103,8 +103,18 @@
 }
 
 /* 移动：单栏。侧栏改为覆盖在内容之上，由工具栏按钮开关。 */
+/* 打印与导出 PDF 专属排版规则（出版级 A4 排版优化） */
 @media print {
-  @page { margin: 18mm 16mm; }
+  @page {
+    size: A4;
+    margin: 20mm 18mm 20mm 18mm;
+  }
+
+  /* 强制保留彩色 Callout 底色、代码块背景与矢量边框 */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 
   html, body, #root,
   .app-shell, .app-body, .app-main, .app-panes,
@@ -112,47 +122,127 @@
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
+    background: #ffffff !important;
   }
 
+  /* 彻底剥除所有与打印无关的 UI 控件、工具条、弹窗、气泡、面板 */
   .app-toolbar,
   .update-bar,
   .app-sidebar,
   .document-bar,
+  .app-tab-bar,
   .editor-toolbar,
   .editor-status,
   .app-pane--editor,
   .app-pane--outline,
   .app-error,
   .ui-toast,
-  .app-panes > .splitter {
+  .app-panes > .splitter,
+  .code-block__copy,
+  .table-bar,
+  .slash-menu,
+  .palette-overlay,
+  .palette,
+  .close-modal,
+  .ui-dialog-overlay,
+  .ui-dialog,
+  .ui-menu,
+  .ui-tooltip,
+  .cm-panels,
+  .cm-foldGutter,
+  .home-page {
     display: none !important;
   }
 
   .app-shell, .app-body, .app-main, .app-panes,
   .app-pane--preview, .app-print-preview {
     display: block !important;
-    background: #fff !important;
+    background: #ffffff !important;
     border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   .markdown-preview {
     display: block !important;
     max-width: none !important;
     padding: 0 !important;
+    margin: 0 !important;
     overflow: visible !important;
-    color: #111 !important;
-    background: #fff !important;
+    color: #1a1a1a !important;
+    background: #ffffff !important;
+    font-size: 11pt !important;
+    line-height: 1.6 !important;
   }
 
   .markdown-preview > * { max-width: none !important; }
-  .markdown-preview pre,
-  .markdown-preview table,
-  .markdown-preview blockquote,
-  .markdown-preview figure,
-  .markdown-preview .mermaid-diagram {
-    break-inside: avoid;
+
+  /* 打印分页保护：防止各级标题孤行孤立落在页面底部 */
+  h1, h2, h3, h4, h5, h6 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+    color: #000000 !important;
   }
-  .markdown-preview a { color: #111 !important; }
+
+  /* 正文孤行控制 */
+  p, li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* 块级结构防跨页截断 */
+  .code-block,
+  pre,
+  table,
+  blockquote,
+  .callout,
+  figure,
+  .mermaid-diagram {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .markdown-preview a {
+    color: #1d4ed8 !important;
+    text-decoration: underline !important;
+  }
+
+  /* 表格打印跨页重现表头 */
+  .markdown-preview table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  .markdown-preview table thead {
+    display: table-header-group !important;
+  }
+
+  .markdown-preview table tr {
+    break-inside: avoid !important;
+  }
+
+  /* 代码块在打印时的背景与文字处理 */
+  .markdown-preview .code-block {
+    background: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .markdown-preview .code-block__header {
+    background: #f1f5f9 !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+  }
+
+  .markdown-preview .code-block pre code {
+    color: #0f172a !important;
+  }
+
+  /* Callout 彩色提示块在打印时的优化 */
+  .markdown-preview .callout {
+    box-shadow: none !important;
+    border-radius: 4px !important;
+  }
 }
 
 @media (max-width: 599px) {
