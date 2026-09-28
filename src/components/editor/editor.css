@@ -1117,3 +1117,96 @@ button.cm-button.cm-search-close:focus-visible,
 .cm-live-task-checkbox:checked::before {
   opacity: 1;
 }
+
+/* 行内与独立数学公式 Widget */
+.cm-live-inline-math-widget {
+  display: inline-block;
+  vertical-align: middle;
+  padding: 0 4px;
+}
+
+.cm-live-block-math-widget {
+  display: flex;
+  justify-content: center;
+  padding: 12px 16px;
+  margin: 12px 0;
+  background-color: var(--bg-surface-elevated, var(--bg-surface));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+
+/* 实时所见即所得表格 Widget */
+.cm-live-table-widget {
+  margin: 14px 0;
+  overflow-x: auto;
+}
+
+.cm-live-table-widget table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--bg-surface);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+}
+
+.cm-live-table-widget th,
+.cm-live-table-widget td {
+  padding: 8px 14px;
+  border: 1px solid var(--border-subtle);
+}
+
+.cm-live-table-widget th {
+  background-color: var(--bg-surface-hover);
+  font-weight: 600;
+  text-align: left;
+}
+
+/* 围栏代码块卡片化排版 */
+.cm-live-code-line {
+  background-color: var(--bg-surface-hover, rgba(0, 0, 0, 0.03)) !important;
+  font-family: var(--preview-font-code, var(--font-mono)) !important;
+  padding-left: 14px !important;
+}
+
+.cm-live-code-line--header {
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+  margin-top: 10px !important;
+  background-color: var(--bg-surface-elevated, #f1f5f9) !important;
+  border: 1px solid var(--border-default);
+  border-bottom: none;
+}
+
+.cm-live-code-line--body {
+  border-left: 1px solid var(--border-default);
+  border-right: 1px solid var(--border-default);
+}
+
+.cm-live-code-line--footer {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+  margin-bottom: 10px !important;
+  border: 1px solid var(--border-default);
+  border-top: none;
+}
+
+.cm-live-code-line--editing {
+  background-color: rgba(37, 99, 235, 0.04) !important;
+  font-family: var(--preview-font-code, var(--font-mono)) !important;
+}
+
+.cm-live-code-header-widget {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 10px;
+}
+
+.cm-live-code-lang {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}

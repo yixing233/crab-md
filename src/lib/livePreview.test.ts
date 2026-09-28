@@ -93,6 +93,55 @@ describe("livePreview", () => {
     expect(headingMarkHidden).toBe(true);
   });
 
+  it("renders live widgets for math formulas, code blocks, and markdown tables when cursor is outside", () => {
+    const doc = [
+      "行内公式 $E=mc^2$ 测试",
+      "",
+      "$$",
+      "\\int_0^1 x dx",
+      "$$",
+      "",
+      "```typescript",
+      "const a: number = 42;",
+      "```",
+      "",
+      "| 姓名 | 年龄 |",
+      "| --- | --- |",
+      "| 张三 | 25 |",
+      "",
+      "光标在此",
+    ].join("\n");
+
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("光标在此")),
+    });
+
+    const view = new EditorView({ state });
+    const decos = buildLivePreviewDecorations(view);
+
+    let inlineMathFound = false;
+    let blockMathFound = false;
+    let codeHeaderFound = false;
+    let tableWidgetFound = false;
+
+    decos.between(0, doc.length, (_from, _to, deco) => {
+      const widget = deco.spec.widget;
+      if (widget) {
+        const name = widget.constructor.name;
+        if (name === "InlineMathWidget") inlineMathFound = true;
+        if (name === "BlockMathWidget") blockMathFound = true;
+        if (name === "CodeBlockHeaderWidget") codeHeaderFound = true;
+        if (name === "LiveTableWidget") tableWidgetFound = true;
+      }
+    });
+
+    expect(inlineMathFound).toBe(true);
+    expect(blockMathFound).toBe(true);
+    expect(codeHeaderFound).toBe(true);
+    expect(tableWidgetFound).toBe(true);
+  });
+
   it("provides livePreview extension that attaches to EditorState", () => {
     const state = EditorState.create({
       doc: "测试",
