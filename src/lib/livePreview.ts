@@ -140,15 +140,14 @@ class CodeBlockHeaderWidget extends WidgetType {
   }
 
   toDOM() {
-    const header = document.createElement("div");
-    header.className = "cm-live-code-header-widget";
+    const lang = document.createElement("span");
+    lang.className = "cm-live-code-lang";
     if (this.language) {
-      const lang = document.createElement("span");
-      lang.className = "cm-live-code-lang";
       lang.textContent = this.language;
-      header.appendChild(lang);
+    } else {
+      lang.style.display = "none";
     }
-    return header;
+    return lang;
   }
 }
 
