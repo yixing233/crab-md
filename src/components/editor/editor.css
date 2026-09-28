@@ -1163,7 +1163,7 @@ button.cm-button.cm-search-close:focus-visible,
   text-align: left;
 }
 
-/* 围栏代码块卡片化排版（精炼紧凑） */
+/* 围栏代码块卡片化排版（零偏移、原生坐标对准） */
 .cm-live-code-line {
   background-color: var(--bg-surface-hover, rgba(0, 0, 0, 0.03)) !important;
   font-family: var(--preview-font-code, var(--font-mono)) !important;
@@ -1175,32 +1175,30 @@ button.cm-button.cm-search-close:focus-visible,
   position: relative !important;
   border-top-left-radius: var(--radius-md, 6px);
   border-top-right-radius: var(--radius-md, 6px);
-  margin-top: 8px !important;
   background-color: var(--bg-surface-elevated, #f1f5f9) !important;
-  border: 1px solid var(--border-default);
-  border-bottom: 1px solid var(--border-subtle);
-  height: 24px !important;
-  min-height: 24px !important;
-  line-height: 24px !important;
-  padding: 0 10px !important;
+  border-left: 1px solid var(--border-default) !important;
+  border-right: 1px solid var(--border-default) !important;
+  border-top: 1px solid var(--border-default) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  padding-top: 3px !important;
+  padding-bottom: 3px !important;
 }
 
 .cm-live-code-line--body {
-  border-left: 1px solid var(--border-default);
-  border-right: 1px solid var(--border-default);
-  padding-top: 3px !important;
-  padding-bottom: 3px !important;
+  border-left: 1px solid var(--border-default) !important;
+  border-right: 1px solid var(--border-default) !important;
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
 }
 
 .cm-live-code-line--footer {
   border-bottom-left-radius: var(--radius-md, 6px);
   border-bottom-right-radius: var(--radius-md, 6px);
-  margin-bottom: 8px !important;
-  height: 6px !important;
-  min-height: 6px !important;
-  line-height: 6px !important;
-  border: 1px solid var(--border-default);
-  border-top: none;
+  border-left: 1px solid var(--border-default) !important;
+  border-right: 1px solid var(--border-default) !important;
+  border-bottom: 1px solid var(--border-default) !important;
+  padding-bottom: 3px !important;
+  opacity: 0.45;
 }
 
 .cm-live-code-line--editing {
@@ -1210,14 +1208,15 @@ button.cm-button.cm-search-close:focus-visible,
 
 .cm-live-code-lang {
   position: absolute !important;
-  top: 3px !important;
-  right: 8px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  right: 10px !important;
   font-size: 10px !important;
   font-weight: 600 !important;
   text-transform: uppercase !important;
   color: var(--text-muted) !important;
   letter-spacing: 0.06em !important;
-  padding: 0 6px !important;
+  padding: 1px 6px !important;
   line-height: 16px !important;
   border-radius: 3px !important;
   background: var(--bg-surface) !important;
