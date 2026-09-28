@@ -2,11 +2,9 @@ import {
   Decoration,
   type DecorationSet,
   EditorView,
-  ViewPlugin,
-  type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import { Compartment, type Extension, type Range } from "@codemirror/state";
+import { Compartment, type Extension, type Range, StateField, EditorState } from "@codemirror/state";
 import katex from "katex";
 import { renderMarkdown } from "./markdown";
 import { isMarkdownTableRow } from "./tableHelper";
@@ -175,9 +173,9 @@ class LiveTableWidget extends WidgetType {
  * 遍历可见文档并构建 Live Preview（即时渲染）装饰集。
  * 核心机制：光标所在的活跃行/块保留原始 Markdown 源码，离开后自动隐藏标记并呈现渲染效果。
  */
-export function buildLivePreviewDecorations(view: EditorView): DecorationSet {
+export function buildLivePreviewDecorations(stateOrView: EditorState | EditorView): DecorationSet {
   const decos: Range<Decoration>[] = [];
-  const state = view.state;
+  const state = "state" in stateOrView ? stateOrView.state : stateOrView;
   const doc = state.doc;
 
   // 1. 收集当前光标所处的全部行范围（含所有选区覆盖的行）
@@ -456,26 +454,21 @@ export function buildLivePreviewDecorations(view: EditorView): DecorationSet {
 }
 
 /**
- * CodeMirror 6 实时即时渲染 ViewPlugin
+ * 基于 CodeMirror 6 StateField 驱动的即时渲染状态字段。
+ * 允许包含块级（block: true）Widget（公式块、表格等），彻底消除 Block decorations may not be specified via plugins 异常。
  */
-export const livePreviewPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-
-    constructor(view: EditorView) {
-      this.decorations = buildLivePreviewDecorations(view);
-    }
-
-    update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
-        this.decorations = buildLivePreviewDecorations(update.view);
-      }
-    }
+export const livePreviewField = StateField.define<DecorationSet>({
+  create(state) {
+    return buildLivePreviewDecorations(state);
   },
-  {
-    decorations: (v) => v.decorations,
+  update(decorations, tr) {
+    if (tr.docChanged || tr.selection) {
+      return buildLivePreviewDecorations(tr.state);
+    }
+    return decorations.map(tr.changes);
   },
-);
+  provide: (field) => EditorView.decorations.from(field),
+});
 
 /**
  * 动态配置隔间，支持零延迟无缝开关 Live Preview
@@ -486,5 +479,5 @@ export const livePreviewCompartment = new Compartment();
  * 导出 Live Preview 扩展装配器
  */
 export function livePreview(enabled = true): Extension {
-  return livePreviewCompartment.of(enabled ? [livePreviewPlugin] : []);
+  return livePreviewCompartment.of(enabled ? [livePreviewField] : []);
 }

@@ -17,7 +17,7 @@ import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { applyMarkdownAction, type MarkdownActionId } from "../../lib/markdownActions";
-import { livePreview, livePreviewCompartment, livePreviewPlugin } from "../../lib/livePreview";
+import { livePreview, livePreviewCompartment, livePreviewField } from "../../lib/livePreview";
 import { cmPhrases, zh } from "../../lib/i18n";
 import {
   ContextMenu,
@@ -303,7 +303,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       const view = viewRef.current;
       if (!view) return;
       view.dispatch({
-        effects: livePreviewCompartment.reconfigure(isLivePreview ? [livePreviewPlugin] : []),
+        effects: livePreviewCompartment.reconfigure(isLivePreview ? [livePreviewField] : []),
       });
     }, [isLivePreview]);
 

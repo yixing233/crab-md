@@ -144,10 +144,15 @@ describe("livePreview", () => {
 
   it("provides livePreview extension that attaches to EditorState", () => {
     const state = EditorState.create({
-      doc: "测试",
+      doc: "| a | b |\n|---|---|\n| 1 | 2 |\n\n$$\nE=mc^2\n$$",
       extensions: [livePreview(true)],
     });
 
-    expect(state).toBeDefined();
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const view = new EditorView({ state, parent: host });
+    expect(view).toBeDefined();
+    view.destroy();
+    host.remove();
   });
 });
