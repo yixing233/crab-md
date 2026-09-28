@@ -115,6 +115,8 @@ const COMMANDS: SlashCommandItem[] = [
   },
 ];
 
+let lastUsedSlashCommandId: string | null = null;
+
 export function SlashMenu({
   open,
   x,
@@ -138,9 +140,31 @@ export function SlashMenu({
     );
   }, [query]);
 
-  // 重置选中索引
+  // 打开菜单时：如果有上一次使用的命令且当前无查询输入，恢复上次选中的位置并滚动可视
   useEffect(() => {
-    setSelectedIndex(0);
+    if (open) {
+      if (!query && lastUsedSlashCommandId) {
+        const foundIdx = COMMANDS.findIndex((c) => c.id === lastUsedSlashCommandId);
+        if (foundIdx !== -1) {
+          setSelectedIndex(foundIdx);
+          setTimeout(() => {
+            const list = listRef.current;
+            if (!list) return;
+            const selectedEl = list.querySelector<HTMLElement>('[data-selected="true"]');
+            selectedEl?.scrollIntoView?.({ block: "nearest" });
+          }, 30);
+          return;
+        }
+      }
+      setSelectedIndex(0);
+    }
+  }, [open]);
+
+  // 输入关键词变化时重置回第 0 项
+  useEffect(() => {
+    if (query) {
+      setSelectedIndex(0);
+    }
   }, [query]);
 
   // 键盘移动时确保可视项在滚动视区内
@@ -150,6 +174,11 @@ export function SlashMenu({
     const selectedEl = list.querySelector<HTMLElement>('[data-selected="true"]');
     selectedEl?.scrollIntoView?.({ block: "nearest" });
   }, [selectedIndex]);
+
+  const handleSelect = (cmd: SlashCommandItem) => {
+    lastUsedSlashCommandId = cmd.id;
+    onSelect(cmd);
+  };
 
   // 键盘操作监听
   useEffect(() => {
@@ -166,7 +195,7 @@ export function SlashMenu({
       } else if (e.key === "Enter") {
         e.preventDefault();
         if (filteredCommands[selectedIndex]) {
-          onSelect(filteredCommands[selectedIndex]);
+          handleSelect(filteredCommands[selectedIndex]);
         }
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -217,7 +246,7 @@ export function SlashMenu({
                 data-selected={isSelected ? "true" : undefined}
                 className="slash-menu__item"
                 onMouseEnter={() => setSelectedIndex(idx)}
-                onClick={() => onSelect(cmd)}
+                onClick={() => handleSelect(cmd)}
               >
                 <div className="slash-menu__icon">{cmd.icon}</div>
                 <div className="slash-menu__text">

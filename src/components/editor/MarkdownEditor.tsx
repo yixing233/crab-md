@@ -294,8 +294,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       open: boolean;
       x: number;
       y: number;
-      lineFrom: number;
+      slashPos: number;
       head: number;
+      query: string;
     } | null>(null);
 
     const [tableState, setTableState] = useState<{
@@ -339,8 +340,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       const view = viewRef.current;
       if (!view || !slashState) return;
       view.dispatch({
-        changes: { from: slashState.lineFrom, to: slashState.head, insert: item.insertText },
-        selection: CmSelection.cursor(slashState.lineFrom + (item.cursorOffset ?? item.insertText.length)),
+        changes: { from: slashState.slashPos, to: slashState.head, insert: item.insertText },
+        selection: CmSelection.cursor(slashState.slashPos + (item.cursorOffset ?? item.insertText.length)),
       });
       setSlashState(null);
       view.focus();
@@ -546,22 +547,40 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
                 onCursorRef.current?.(line, column);
               }
 
-              // 检测是否触发 / 斜杠快捷菜单（在行首或空行输入 /）
+              // 检测是否触发 / 斜杠快捷菜单（在行首或空行输入 /，支持后续键入关键词实时过滤）
               const head = update.state.selection.main.head;
               const curLine = update.state.doc.lineAt(head);
-              const textBefore = curLine.text.slice(0, head - curLine.from);
-              if (textBefore.trim() === "/") {
-                const coords = update.view.coordsAtPos(head);
-                if (coords) {
-                  setSlashState({
-                    open: true,
-                    x: coords.left,
-                    y: coords.bottom + 4,
-                    lineFrom: curLine.from,
-                    head,
-                  });
+              const textBeforeHead = curLine.text.slice(0, head - curLine.from);
+              const slashMatch = textBeforeHead.match(/^\s*\/(\S*)$/);
+
+              if (slashMatch) {
+                const queryWord = slashMatch[1];
+                const slashPos = curLine.from + textBeforeHead.indexOf("/");
+                if (!slashState?.open) {
+                  const coords = update.view.coordsAtPos(slashPos);
+                  if (coords) {
+                    setSlashState({
+                      open: true,
+                      x: coords.left,
+                      y: coords.bottom + 4,
+                      slashPos,
+                      head,
+                      query: queryWord,
+                    });
+                  }
+                } else {
+                  setSlashState((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          slashPos,
+                          head,
+                          query: queryWord,
+                        }
+                      : null,
+                  );
                 }
-              } else if (!textBefore.startsWith("/")) {
+              } else {
                 setSlashState(null);
               }
 
@@ -868,6 +887,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         open={slashState?.open ?? false}
         x={slashState?.x ?? 0}
         y={slashState?.y ?? 0}
+        query={slashState?.query ?? ""}
         onClose={() => setSlashState(null)}
         onSelect={handleSlashSelect}
       />

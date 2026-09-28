@@ -58,4 +58,20 @@ describe("SlashMenu", () => {
     await userEvent.keyboard("{Escape}");
     expect(props.onClose).toHaveBeenCalledOnce();
   });
+
+  it("remembers and restores the last used command on subsequent open", async () => {
+    const onSelect = vi.fn();
+    const { unmount } = render(
+      <SlashMenu open={true} x={100} y={100} onClose={vi.fn()} onSelect={onSelect} />,
+    );
+
+    await userEvent.click(screen.getByText("代码块"));
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: "code" }));
+
+    unmount();
+
+    render(<SlashMenu open={true} x={100} y={100} onClose={vi.fn()} onSelect={vi.fn()} />);
+    const codeItem = screen.getByText("代码块").closest('[role="menuitem"]');
+    expect(codeItem).toHaveAttribute("data-selected", "true");
+  });
 });
