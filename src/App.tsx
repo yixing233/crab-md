@@ -988,7 +988,6 @@ export default function App() {
         onToggleSidebar={() => setSidebarVisible((v) => !v)}
         sidebarVisible={sidebarVisible}
         onOpenSettings={() => setSettingsOpen(true)}
-        onPrint={handlePrint}
         pendingVersion={pendingUpdateVersion}
         onOpenUpdate={() => {
           // 直接落到「关于」分组 —— 用户点更新入口就是想安装。
@@ -1057,10 +1056,11 @@ export default function App() {
 
           {activeId ? (
             <>
-              {/* 格式工具栏：左侧格式化动作，右侧文档内查找、视图切换与同步滚动开关 */}
+              {/* 格式工具栏：左侧格式化动作，右侧文档内查找、导出 PDF、视图切换与同步滚动开关 */}
               <EditorToolbar
                 onAction={handleEditorAction}
                 onSearch={() => setFindNonce((n) => n + 1)}
+                onPrint={handlePrint}
                 viewMode={viewMode}
                 onChangeViewMode={setViewMode}
                 syncScroll={syncScroll}

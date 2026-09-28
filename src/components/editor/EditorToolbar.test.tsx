@@ -75,4 +75,16 @@ describe("EditorToolbar responsive overflow", () => {
 
     expect(onAction).toHaveBeenCalledWith("h3");
   });
+
+  it("renders onPrint button when provided and triggers on click", async () => {
+    toolbarWidth = 1000;
+    const onPrint = vi.fn();
+    const user = userEvent.setup();
+    render(<EditorToolbar onAction={() => {}} onPrint={onPrint} />);
+
+    const printBtn = screen.getByRole("button", { name: "导出 PDF" });
+    expect(printBtn).toBeInTheDocument();
+    await user.click(printBtn);
+    expect(onPrint).toHaveBeenCalledOnce();
+  });
 });

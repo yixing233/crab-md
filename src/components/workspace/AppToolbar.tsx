@@ -13,8 +13,8 @@ export interface AppToolbarProps {
   onOpenSettings: () => void;
   /** 可选：打开编辑器查找面板（若全局工具栏不需要则不传）。 */
   onSearch?: () => void;
-  /** 打开系统打印对话框，用户可选择另存为 PDF。 */
-  onPrint: () => void;
+  /** 可选：打开打印对话框（文档级操作优先放在 EditorToolbar）。 */
+  onPrint?: () => void;
   /**
    * 有新版本时显示常驻入口（含徽标）。
    * 传 null 表示无更新 —— 工具栏保持安静（§2.1）。
@@ -95,17 +95,19 @@ export function AppToolbar({
         </Tooltip>
       )}
 
-      <Tooltip content={zh.toolbar.printPdf}>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          aria-label={zh.toolbar.printPdf}
-          onClick={onPrint}
-        >
-          <Printer size={16} aria-hidden />
-        </Button>
-      </Tooltip>
+      {onPrint && (
+        <Tooltip content={zh.toolbar.printPdf}>
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            aria-label={zh.toolbar.printPdf}
+            onClick={onPrint}
+          >
+            <Printer size={16} aria-hidden />
+          </Button>
+        </Tooltip>
+      )}
 
       {/* 有更新时才出现的常驻入口：带徽标，一眼可见。
           没有更新时整块不渲染 —— 工具栏平时保持安静（§2.1）。 */}

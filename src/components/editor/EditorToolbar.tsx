@@ -17,6 +17,7 @@ import {
   Link as LinkIcon,
   List,
   ListOrdered,
+  Printer,
   Quote,
   Search,
   Sigma,
@@ -74,6 +75,8 @@ export interface EditorToolbarProps {
   showFormatting?: boolean;
   /** 文档内查找回调。 */
   onSearch?: () => void;
+  /** 导出 PDF / 打印回调。 */
+  onPrint?: () => void;
 }
 
 const GROUPS: ReadonlyArray<ReadonlyArray<MarkdownActionId>> = [
@@ -209,6 +212,7 @@ export function EditorToolbar({
   onToggleSyncScroll,
   showFormatting = true,
   onSearch,
+  onPrint,
 }: EditorToolbarProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [available, setAvailable] = useState(0);
@@ -224,8 +228,11 @@ export function EditorToolbar({
       const style = getComputedStyle(el);
       const padLeft = parseFloat(style.paddingLeft) || 0;
       const padRight = parseFloat(style.paddingRight) || 0;
-      // 预留右侧视图控制区域的大约空间
-      const rightReserved = viewMode ? (onSearch ? 190 : 160) : (onSearch ? 40 : 0);
+      // 预留右侧控制区域的大约空间
+      let extraRight = 0;
+      if (onSearch) extraRight += 34;
+      if (onPrint) extraRight += 34;
+      const rightReserved = viewMode ? 160 + extraRight : extraRight;
       setAvailable(Math.max(0, el.clientWidth - padLeft - padRight - rightReserved));
     };
 
@@ -238,7 +245,7 @@ export function EditorToolbar({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [viewMode]);
+  }, [viewMode, onSearch, onPrint]);
 
   const { visible, overflow } = computeToolbarLayout(GROUPS, available);
 
@@ -300,8 +307,8 @@ export function EditorToolbar({
       {/* 弹性占位：将视图控制推到右侧 */}
       <span className="editor-toolbar__spacer" />
 
-      {/* 右侧：文档内查找、视图模式切换与同步滚动开关 */}
-      {(viewMode || onSearch) && (
+      {/* 右侧：文档内查找、导出 PDF、视图模式切换与同步滚动开关 */}
+      {(viewMode || onSearch || onPrint) && (
         <div className="editor-toolbar__right">
           {onSearch && (
             <Tooltip content={`${zh.toolbar.search}　Ctrl+F`}>
@@ -313,6 +320,20 @@ export function EditorToolbar({
                 aria-label={zh.toolbar.search}
               >
                 <Search size={15} strokeWidth={2} aria-hidden />
+              </Button>
+            </Tooltip>
+          )}
+
+          {onPrint && (
+            <Tooltip content={zh.toolbar.printPdf}>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                onClick={onPrint}
+                aria-label={zh.toolbar.printPdf}
+              >
+                <Printer size={15} strokeWidth={2} aria-hidden />
               </Button>
             </Tooltip>
           )}
