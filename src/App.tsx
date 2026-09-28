@@ -152,6 +152,21 @@ export default function App() {
   const newDocumentIdsRef = useRef<Set<string>>(new Set());
   // 关闭文档时的确认 / 命名弹窗状态
   const [closePrompt, setClosePrompt] = useState<ClosePromptType | null>(null);
+  // 打开的外部物理磁盘文件映射表（原位查看/编辑，绝不拷贝进数据库）
+  const [externalFiles, setExternalFiles] = useState<
+    Map<
+      string,
+      {
+        path: string;
+        name: string;
+        content: string;
+        initialContent: string;
+        dirty: boolean;
+        size: number;
+        modifiedAt: string;
+      }
+    >
+  >(new Map());
 
   // 顶部多标签栏打开的文档 ID 列表
   const [openTabIds, setOpenTabIds] = useState<string[]>(() => {
@@ -178,11 +193,13 @@ export default function App() {
     }
   }, [activeId]);
 
-  // 清理已被删除的不存在文档
+  // 清理已被删除的不存在文档（排除原位打开的外部文件）
   useEffect(() => {
     if (documents.length > 0) {
       setOpenTabIds((prev) => {
-        const next = prev.filter((id) => documents.some((d) => d.id === id));
+        const next = prev.filter(
+          (id) => id.startsWith("ext:") || documents.some((d) => d.id === id),
+        );
         return next.length === prev.length ? prev : next;
       });
     }
@@ -496,15 +513,49 @@ export default function App() {
           await saveActive();
         }
         useWorkspaceStore.setState({ activeId: null, activeContent: "", dirty: false });
+      } else if (id.startsWith("ext:")) {
+        // 切换到外部原位文件
+        if (dirty && activeId) {
+          await saveActive();
+        }
+        const entry = externalFiles.get(id);
+        if (entry) {
+          useWorkspaceStore.setState({
+            activeId: id,
+            activeContent: entry.content,
+            dirty: entry.dirty,
+          });
+        }
       } else {
         await handleOpenDocument(id);
       }
     },
-    [activeId, dirty, handleOpenDocument, saveActive],
+    [activeId, dirty, externalFiles, handleOpenDocument, saveActive],
   );
 
   const handleCloseTab = useCallback(
     async (id: string) => {
+      // 场景 0：外部物理文件（原位编辑，不入库）
+      if (id.startsWith("ext:")) {
+        const entry = externalFiles.get(id);
+        const isModified = id === activeId ? dirty : (entry?.dirty ?? false);
+        if (isModified) {
+          setClosePrompt({
+            kind: "save-changes",
+            id,
+            title: entry?.name ?? "外部文件",
+          });
+          return;
+        }
+        setExternalFiles((prev) => {
+          const next = new Map(prev);
+          next.delete(id);
+          return next;
+        });
+        await finalizeCloseTab(id);
+        return;
+      }
+
       const doc = documents.find((d) => d.id === id);
       const isNewDoc = newDocumentIdsRef.current.has(id) || doc?.title === zh.app.untitled;
       let content = id === activeId ? activeContent : "";
@@ -566,6 +617,7 @@ export default function App() {
       activeContent,
       dirty,
       documents,
+      externalFiles,
       openTabIds,
       deleteDocument,
       finalizeCloseTab,
@@ -578,6 +630,25 @@ export default function App() {
       if (!closePrompt) return;
       const targetId = closePrompt.id;
 
+      if (targetId.startsWith("ext:")) {
+        const entry = externalFiles.get(targetId);
+        if (entry) {
+          try {
+            await api.saveExternalFile(entry.path, activeContent);
+          } catch {
+            setToast({ message: zh.toast.saveFailed, tone: "error" });
+          }
+        }
+        setExternalFiles((prev) => {
+          const next = new Map(prev);
+          next.delete(targetId);
+          return next;
+        });
+        setClosePrompt(null);
+        await finalizeCloseTab(targetId);
+        return;
+      }
+
       if (closePrompt.kind === "save-and-name" && name) {
         await renameDocument(targetId, name.trim());
       }
@@ -587,12 +658,23 @@ export default function App() {
       setClosePrompt(null);
       await finalizeCloseTab(targetId);
     },
-    [activeId, closePrompt, finalizeCloseTab, renameDocument, saveActive],
+    [activeContent, activeId, closePrompt, externalFiles, finalizeCloseTab, renameDocument, saveActive],
   );
 
   const handleDiscardAndClose = useCallback(async () => {
     if (!closePrompt) return;
     const targetId = closePrompt.id;
+
+    if (targetId.startsWith("ext:")) {
+      setExternalFiles((prev) => {
+        const next = new Map(prev);
+        next.delete(targetId);
+        return next;
+      });
+      setClosePrompt(null);
+      await finalizeCloseTab(targetId);
+      return;
+    }
 
     if (closePrompt.kind === "save-and-name") {
       // 新建未保存的草稿丢弃 -> 彻底删除
@@ -606,16 +688,35 @@ export default function App() {
     }
     setClosePrompt(null);
     await finalizeCloseTab(targetId);
-  }, [activeId, closePrompt, deleteDocument, finalizeCloseTab]);
+  }, [activeId, closePrompt, deleteDocument, externalFiles, finalizeCloseTab]);
+
+  const handleContentChange = useCallback(
+    (newContent: string) => {
+      setContent(newContent);
+      if (activeId?.startsWith("ext:")) {
+        setExternalFiles((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(activeId);
+          if (existing) {
+            const isDirty = newContent !== existing.initialContent;
+            next.set(activeId, { ...existing, content: newContent, dirty: isDirty });
+            useWorkspaceStore.setState({ dirty: isDirty });
+          }
+          return next;
+        });
+      }
+    },
+    [activeId, setContent],
+  );
 
   const handleCloseOtherTabs = useCallback(
     async (id: string) => {
       setOpenTabIds([id]);
       if (activeId !== id) {
-        await openDocument(id);
+        await handleSelectTab(id);
       }
     },
-    [activeId, openDocument],
+    [activeId, handleSelectTab],
   );
 
   const handleCloseRightTabs = useCallback(
@@ -625,10 +726,10 @@ export default function App() {
       const nextTabs = openTabIds.slice(0, idx + 1);
       setOpenTabIds(nextTabs);
       if (activeId && !nextTabs.includes(activeId)) {
-        await openDocument(id);
+        await handleSelectTab(id);
       }
     },
-    [activeId, openDocument, openTabIds],
+    [activeId, handleSelectTab, openTabIds],
   );
 
   const handleCloseAllTabs = useCallback(async () => {
@@ -642,20 +743,46 @@ export default function App() {
   const handleToggleTask = useCallback(
     (taskIndex: number) => {
       const updated = toggleTaskInSource(activeContent, taskIndex);
-      setContent(updated);
+      handleContentChange(updated);
     },
-    [activeContent, setContent],
+    [activeContent, handleContentChange],
   );
 
   // 保存并给出反馈（UI §33）。自动保存与 Ctrl+S 都经过这里。
   const handleSave = useCallback(async () => {
+    if (activeId?.startsWith("ext:")) {
+      const entry = externalFiles.get(activeId);
+      if (entry) {
+        try {
+          const saved = await api.saveExternalFile(entry.path, activeContent);
+          setExternalFiles((prev) => {
+            const next = new Map(prev);
+            next.set(activeId, {
+              ...entry,
+              content: activeContent,
+              initialContent: activeContent,
+              dirty: false,
+              size: saved.size,
+              modifiedAt: saved.modifiedAt,
+            });
+            return next;
+          });
+          useWorkspaceStore.setState({ dirty: false });
+          setToast({ message: zh.toast.saved, tone: "success" });
+        } catch {
+          setToast({ message: zh.toast.saveFailed, tone: "error" });
+        }
+        return;
+      }
+    }
+
     await saveActive();
     if (useWorkspaceStore.getState().error) {
       setToast({ message: zh.toast.saveFailed, tone: "error" });
     } else {
       setToast({ message: zh.toast.saved, tone: "success" });
     }
-  }, [saveActive]);
+  }, [activeContent, activeId, externalFiles, saveActive]);
 
   const handlePrint = useCallback(() => {
     if (!printPreview()) {
@@ -711,17 +838,39 @@ export default function App() {
     }
   }, []);
 
-  /** 打开指定路径：由 Rust 收进工作区并打开。取消时不提示。 */
+  /** 打开指定路径：保留原始磁盘位置原位查看/编辑，绝不拷贝进数据库。 */
   const handleOpenPath = useCallback(async (sourcePath: string) => {
-    const store = useWorkspaceStore.getState();
-    const outcome = await runOpenFile({
-      pickOpenFile: async () => sourcePath,
-      openFile: store.importDocument,
-    });
-    if (outcome.kind === "ok") {
-      setToast({ message: zh.toast.opened(outcome.title), tone: "success" });
-    } else if (outcome.kind === "failed") {
-      setToast({ message: zh.toast.openFailed, tone: "error" });
+    try {
+      const file = await api.readExternalFile(sourcePath);
+      const tabId = `ext:${file.path}`;
+      setExternalFiles((prev) => {
+        const next = new Map(prev);
+        next.set(tabId, {
+          path: file.path,
+          name: file.name,
+          content: file.content,
+          initialContent: file.content,
+          dirty: false,
+          size: file.size,
+          modifiedAt: file.modifiedAt,
+        });
+        return next;
+      });
+      setOpenTabIds((prev) => (prev.includes(tabId) ? prev : [...prev, tabId]));
+      useWorkspaceStore.setState({ activeId: tabId, activeContent: file.content, dirty: false });
+      setToast({ message: zh.toast.opened(file.name), tone: "success" });
+    } catch {
+      // 降级：若在无 Tauri IPC 的单测环境中，回退兼容
+      const store = useWorkspaceStore.getState();
+      const outcome = await runOpenFile({
+        pickOpenFile: async () => sourcePath,
+        openFile: store.importDocument,
+      });
+      if (outcome.kind === "ok") {
+        setToast({ message: zh.toast.opened(outcome.title), tone: "success" });
+      } else if (outcome.kind === "failed") {
+        setToast({ message: zh.toast.openFailed, tone: "error" });
+      }
     }
   }, []);
 
@@ -802,11 +951,24 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleNewDocument, handleSave, cycleTheme, activeId, handleCloseTab]);
 
-  const activeDoc = documents.find((d) => d.id === activeId);
-  const activeTitle = activeDoc?.title ?? "";
+  const activeExt = activeId?.startsWith("ext:") ? externalFiles.get(activeId) : null;
+  const activeDoc =
+    activeId && !activeId.startsWith("ext:")
+      ? documents.find((d) => d.id === activeId)
+      : null;
+  const activeTitle = activeExt ? activeExt.name : (activeDoc?.title ?? "");
+  const activePath = activeExt ? activeExt.path : activeTitle;
   const isPlainText = activeTitle.toLowerCase().endsWith(".txt");
 
   const tabsList = openTabIds.map((id) => {
+    if (id.startsWith("ext:")) {
+      const ext = externalFiles.get(id);
+      return {
+        id,
+        title: ext?.name ?? id.replace(/^ext:/, ""),
+        dirty: id === activeId ? dirty : (ext?.dirty ?? false),
+      };
+    }
     const doc = documents.find((d) => d.id === id);
     return {
       id,
@@ -922,7 +1084,7 @@ export default function App() {
                       showToolbar={false}
                       documentId={activeId}
                       value={activeContent}
-                      onChange={setContent}
+                      onChange={handleContentChange}
                       onSave={() => void handleSave()}
                       onPasteImage={handlePasteImage}
                       onCursor={(line, column, selectedText) =>
@@ -966,7 +1128,7 @@ export default function App() {
                 dirty={dirty}
                 line={cursor.line}
                 column={cursor.column}
-                path={activeTitle}
+                path={activePath}
                 content={activeContent}
                 selectedText={cursor.selectedText}
               />

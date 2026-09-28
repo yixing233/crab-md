@@ -22,6 +22,15 @@ export interface SearchHit {
   snippet: string;
 }
 
+/** 外部磁盘文件（原位查看/编辑，不进行拷贝）。 */
+export interface ExternalFilePayload {
+  path: string;
+  name: string;
+  content: string;
+  size: number;
+  modifiedAt: string;
+}
+
 /** 服务端错误信封（ARCHITECTURE.md §16.1）。 */
 export interface AppErrorShape {
   code: string;

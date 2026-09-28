@@ -149,6 +149,8 @@ pub fn run() {
             commands::documents::default_workspace_root,
             commands::documents::export_document,
             commands::documents::import_document,
+            commands::documents::read_external_file,
+            commands::documents::save_external_file,
             opened_files,
             app_version,
             close_window,

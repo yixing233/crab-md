@@ -24,6 +24,17 @@ pub struct DocumentPayload {
     pub content: String,
 }
 
+/// 外部文件载荷（直接查看/编辑外部文件，不进行数据库拷贝）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalFilePayload {
+    pub path: String,
+    pub name: String,
+    pub content: String,
+    pub size: i64,
+    pub modified_at: String,
+}
+
 /// 新建文档的请求体。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

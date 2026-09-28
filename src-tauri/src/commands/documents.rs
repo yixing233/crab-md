@@ -433,6 +433,63 @@ pub fn import_document(
     )
 }
 
+/// 直接读取外部磁盘文件内容（原位查看/编辑，不进行拷贝）。
+#[tauri::command]
+pub fn read_external_file(path: String) -> AppResult<crate::model::ExternalFilePayload> {
+    let p = Path::new(&path);
+    let meta = std::fs::metadata(p)?;
+    if !meta.is_file() {
+        return Err(AppError::InvalidInput("path is not a file".into()));
+    }
+    check_transfer_size(meta.len())?;
+    let content = std::fs::read_to_string(p)?;
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "document".into());
+    let modified_at = meta
+        .modified()
+        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+        .unwrap_or_else(|_| workspace::now_iso8601());
+
+    Ok(crate::model::ExternalFilePayload {
+        path,
+        name,
+        content,
+        size: meta.len() as i64,
+        modified_at,
+    })
+}
+
+/// 直接保存写回外部磁盘文件（原位保存，不拷贝进工作区）。
+#[tauri::command]
+pub fn save_external_file(path: String, content: String) -> AppResult<crate::model::ExternalFilePayload> {
+    let p = Path::new(&path);
+    if let Some(parent) = p.parent() {
+        if !parent.exists() {
+            return Err(AppError::InvalidInput("parent directory does not exist".into()));
+        }
+    }
+    std::fs::write(p, content.as_bytes())?;
+    let meta = std::fs::metadata(p)?;
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "document".into());
+    let modified_at = meta
+        .modified()
+        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+        .unwrap_or_else(|_| workspace::now_iso8601());
+
+    Ok(crate::model::ExternalFilePayload {
+        path,
+        name,
+        content,
+        size: meta.len() as i64,
+        modified_at,
+    })
+}
+
 // ---- 应用设置（UI_DESIGN_SYSTEM.md §34）----
 //
 // 配置与应用状态的关系：

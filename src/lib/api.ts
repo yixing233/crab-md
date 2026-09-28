@@ -7,6 +7,7 @@ import type {
   AttachmentMimeType,
   DocumentPayload,
   DocumentSummary,
+  ExternalFilePayload,
   SearchHit,
 } from "../types/document";
 
@@ -76,6 +77,14 @@ export const api = {
       title: title ?? null,
       virtualPath,
     }),
+
+  /** 原位读取外部磁盘文件，不做数据库拷贝。 */
+  readExternalFile: (path: string) =>
+    call<ExternalFilePayload>("read_external_file", { path }),
+
+  /** 原位保存写回外部磁盘文件。 */
+  saveExternalFile: (path: string, content: string) =>
+    call<ExternalFilePayload>("save_external_file", { path, content }),
 
   // ---- 附件 ----
   //
