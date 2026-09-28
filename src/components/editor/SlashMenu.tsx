@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  AlertTriangle,
   Code,
   Heading1,
   Heading2,
   Heading3,
-  Info,
-  Lightbulb,
   ListTodo,
   Quote,
   Sigma,
@@ -83,27 +80,6 @@ const COMMANDS: SlashCommandItem[] = [
     description: "插入引用块 >",
     icon: <Quote size={15} />,
     insertText: "> ",
-  },
-  {
-    id: "callout-note",
-    label: "提示块 (Note)",
-    description: "信息补充卡片 > [!NOTE]",
-    icon: <Info size={15} />,
-    insertText: "> [!NOTE] 提示\n> ",
-  },
-  {
-    id: "callout-tip",
-    label: "技巧块 (Tip)",
-    description: "实用操作建议 > [!TIP]",
-    icon: <Lightbulb size={15} />,
-    insertText: "> [!TIP] 技巧\n> ",
-  },
-  {
-    id: "callout-warning",
-    label: "警告块 (Warning)",
-    description: "关键注意事项 > [!WARNING]",
-    icon: <AlertTriangle size={15} />,
-    insertText: "> [!WARNING] 注意\n> ",
   },
   {
     id: "math",

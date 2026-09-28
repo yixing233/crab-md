@@ -253,7 +253,6 @@
   pre,
   table,
   blockquote,
-  .callout,
   figure,
   .mermaid-diagram {
     break-inside: avoid !important;
@@ -305,13 +304,6 @@
     color: #0f172a !important;
     font-family: var(--preview-font-code, var(--font-mono)) !important;
     font-size: 9.5pt !important;
-  }
-
-  /* Callout 彩色提示块在打印时的优化 */
-  .markdown-preview .callout {
-    box-shadow: none !important;
-    border-radius: 4px !important;
-    padding: 8pt 12pt !important;
   }
 }
 

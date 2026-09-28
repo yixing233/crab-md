@@ -32,7 +32,7 @@ describe("SlashMenu", () => {
     expect(screen.getByText("表格")).toBeInTheDocument();
     expect(screen.getByText("代码块")).toBeInTheDocument();
     expect(screen.getByText("任务清单")).toBeInTheDocument();
-    expect(screen.getByText("提示块 (Note)")).toBeInTheDocument();
+    expect(screen.getByText("引用段落")).toBeInTheDocument();
   });
 
   it("filters commands by search query", () => {
