@@ -52,7 +52,6 @@ const WRAP_MARKERS: Partial<Record<MarkdownActionId, string>> = {
 
 /** 行首前缀型动作；再次触发即移除。 */
 const LINE_PREFIXES: Partial<Record<MarkdownActionId, string>> = {
-  heading: "## ",
   bulletList: "- ",
   quote: "> ",
 };
@@ -126,6 +125,15 @@ function applyLinePrefix(sel: EditorSelection, prefix: string): EditorChange {
   const { start, end, lines } = expandToLines(sel);
   const text = sel.text;
 
+  // 单行空行触发时直接插入前缀并定位光标
+  if (lines.length === 1 && lines[0].trim() === "") {
+    return {
+      text: text.slice(0, start) + prefix + text.slice(end),
+      from: start + prefix.length,
+      to: start + prefix.length,
+    };
+  }
+
   const allHave = lines.every((l) => l.trim() === "" || hasPrefix(l, prefix));
   const next = lines
     .map((l) => {
@@ -152,6 +160,15 @@ function applyHeadingLevel(sel: EditorSelection, level: number): EditorChange {
   const targetPrefix = "#".repeat(level) + " ";
   const headingRegex = /^#{1,6}\s+/;
 
+  // 单行空行触发时直接插入标题前缀并定位光标
+  if (lines.length === 1 && lines[0].trim() === "") {
+    return {
+      text: text.slice(0, start) + targetPrefix + text.slice(end),
+      from: start + targetPrefix.length,
+      to: start + targetPrefix.length,
+    };
+  }
+
   // 判断是否所有非空行都已经正好是当前目标层级
   const allMatchTarget = lines.every((l) => l.trim() === "" || l.startsWith(targetPrefix));
 
@@ -160,7 +177,7 @@ function applyHeadingLevel(sel: EditorSelection, level: number): EditorChange {
       if (allMatchTarget) {
         return l.replace(headingRegex, "");
       }
-      if (l.trim() === "") return l;
+      if (l.trim() === "") return targetPrefix;
       return targetPrefix + l.replace(headingRegex, "");
     })
     .join("\n");
@@ -173,6 +190,15 @@ function applyOrderedList(sel: EditorSelection): EditorChange {
   const { start, end, lines } = expandToLines(sel);
   const text = sel.text;
   const numbered = /^\d+\.\s/;
+
+  // 单行空行触发时直接插入 1. 并定位光标
+  if (lines.length === 1 && lines[0].trim() === "") {
+    return {
+      text: text.slice(0, start) + "1. " + text.slice(end),
+      from: start + 3,
+      to: start + 3,
+    };
+  }
   const allNumbered = lines.every((l) => l.trim() === "" || numbered.test(l));
 
   let n = 1;
@@ -281,6 +307,8 @@ export function applyMarkdownAction(sel: EditorSelection, action: MarkdownAction
   if (linePrefix) return applyLinePrefix(sel, linePrefix);
 
   switch (action) {
+    case "heading":
+      return applyHeadingLevel(sel, 2);
     case "h1":
       return applyHeadingLevel(sel, 1);
     case "h2":

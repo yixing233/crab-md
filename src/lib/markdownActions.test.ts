@@ -102,6 +102,25 @@ describe("line prefix actions", () => {
     expect(r6.text).toBe("###### Title");
   });
 
+  it("inserts heading prefixes on empty lines and places the caret", () => {
+    const rEmptyHeading = applyMarkdownAction(sel("", 0, 0), "heading");
+    expect(rEmptyHeading.text).toBe("## ");
+    expect(rEmptyHeading.from).toBe(3);
+    expect(rEmptyHeading.to).toBe(3);
+
+    const rEmptyH1 = applyMarkdownAction(sel("", 0, 0), "h1");
+    expect(rEmptyH1.text).toBe("# ");
+    expect(rEmptyH1.from).toBe(2);
+
+    const rEmptyBullet = applyMarkdownAction(sel("", 0, 0), "bulletList");
+    expect(rEmptyBullet.text).toBe("- ");
+    expect(rEmptyBullet.from).toBe(2);
+
+    const rEmptyOrdered = applyMarkdownAction(sel("", 0, 0), "orderedList");
+    expect(rEmptyOrdered.text).toBe("1. ");
+    expect(rEmptyOrdered.from).toBe(3);
+  });
+
   it("applies a bullet list to every selected line", () => {
     const r = applyMarkdownAction(sel("one\ntwo", 0, 7), "bulletList");
     expect(r.text).toBe("- one\n- two");
