@@ -47,7 +47,7 @@ export function EditorStatusBar({
       )}
 
       <span>{zh.statusBar.lineColumn(line, column)}</span>
-      <span>{zh.statusBar.markdown}</span>
+      <span>{path.toLowerCase().endsWith(".txt") ? "纯文本 (TXT)" : zh.statusBar.markdown}</span>
       <span>{zh.statusBar.encoding}</span>
       <span data-dirty={dirty || undefined}>
         {dirty ? zh.statusBar.unsaved : zh.statusBar.saved}

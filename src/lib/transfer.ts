@@ -24,6 +24,7 @@ export function suggestedFileName(title: string): string {
     .replace(/\s+/g, " ")
     .trim();
   const base = cleaned === "" ? "未命名" : cleaned;
+  if (base.toLowerCase().endsWith(".txt")) return base;
   return base.toLowerCase().endsWith(".md") ? base : `${base}.md`;
 }
 
@@ -33,12 +34,15 @@ export function suggestedFileName(title: string): string {
  * 单独导出是为了能在没有 Tauri 的环境里被测到「取消」这条路。
  */
 export async function pickExportPath(title: string): Promise<string | null> {
+  const isTxt = title.toLowerCase().endsWith(".txt");
   try {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const picked = await save({
       title: zh.transfer.exportTitle,
       defaultPath: suggestedFileName(title),
-      filters: [{ name: zh.transfer.markdownFilterName, extensions: ["md", "markdown"] }],
+      filters: isTxt
+        ? [{ name: "文本文件 (*.txt)", extensions: ["txt"] }]
+        : [{ name: zh.transfer.markdownFilterName, extensions: ["md", "markdown"] }],
     });
     return typeof picked === "string" ? picked : null;
   } catch {

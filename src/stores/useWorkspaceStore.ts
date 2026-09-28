@@ -235,7 +235,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!(await get().flushActive())) return null;
     set({ error: null });
     try {
-      const created = await api.importDocument(sourcePath);
+      const fileName = sourcePath.split(/[\\/]/).pop() || undefined;
+      const created = await api.importDocument(sourcePath, fileName);
       await get().loadDocuments();
       await get().openDocument(created.id);
       return created;

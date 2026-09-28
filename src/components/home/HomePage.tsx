@@ -16,6 +16,7 @@ import {
 import type { DocumentSummary, SearchHit } from "../../types/document";
 import { api } from "../../lib/api";
 import { Button } from "../ui/Button";
+import { FileIcon } from "../ui/FileIcon";
 import { zh } from "../../lib/i18n";
 import "./home.css";
 
@@ -270,7 +271,11 @@ export function HomePage({
               <div className="home-notes-list">
                 {searchResults.map((hit) => {
                   const doc = documents.find((d) => d.id === hit.id);
-                  const displayName = hit.title.endsWith(".md") ? hit.title : `${hit.title}.md`;
+                  const displayName = hit.title.toLowerCase().endsWith(".txt")
+                    ? hit.title
+                    : hit.title.endsWith(".md")
+                      ? hit.title
+                      : `${hit.title}.md`;
                   const folder = doc?.virtualPath && doc.virtualPath !== "/" ? doc.virtualPath : "/";
                   return (
                     <div
@@ -288,7 +293,7 @@ export function HomePage({
                     >
                       <div className="home-note-row__left">
                         <div className="home-note-row__icon-wrap">
-                          <FileText size={16} />
+                          <FileIcon filename={displayName} size={16} />
                         </div>
                         <div className="home-note-row__info">
                           <span className="home-note-row__title" title={displayName}>
@@ -325,7 +330,11 @@ export function HomePage({
               /* 常态最近笔记列表 */
               <div className="home-notes-list">
                 {recentDocs.slice(0, 10).map((doc) => {
-                  const displayName = doc.title.endsWith(".md") ? doc.title : `${doc.title}.md`;
+                  const displayName = doc.title.toLowerCase().endsWith(".txt")
+                    ? doc.title
+                    : doc.title.endsWith(".md")
+                      ? doc.title
+                      : `${doc.title}.md`;
                   const folder = doc.virtualPath && doc.virtualPath !== "/" ? doc.virtualPath : "/";
                   return (
                     <div
@@ -343,7 +352,7 @@ export function HomePage({
                     >
                       <div className="home-note-row__left">
                         <div className="home-note-row__icon-wrap">
-                          <FileText size={16} />
+                          <FileIcon filename={displayName} size={16} />
                         </div>
                         <div className="home-note-row__info">
                           <span className="home-note-row__title" title={displayName}>

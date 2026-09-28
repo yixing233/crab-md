@@ -52,9 +52,11 @@ export interface MarkdownPreviewProps {
   onScrollDOM?: (el: HTMLElement | null) => void;
   /** 点击任务清单复选框时触发，用于切换源码中的 [ ] ↔ [x]。 */
   onToggleTask?: (taskIndex: number) => void;
+  /** 是否为纯文本格式（.txt）：若是，原样保留文本排版展示，不渲染 Markdown。 */
+  isPlainText?: boolean;
 }
 
-export function MarkdownPreview({ source, onScrollDOM, onToggleTask }: MarkdownPreviewProps) {
+export function MarkdownPreview({ source, onScrollDOM, onToggleTask, isPlainText = false }: MarkdownPreviewProps) {
   const ids = useMemo(() => attachmentIds(source), [source]);
   const idsKey = ids.join("|");
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
@@ -209,6 +211,17 @@ export function MarkdownPreview({ source, onScrollDOM, onToggleTask }: MarkdownP
       }
     }
   };
+
+  if (isPlainText) {
+    return (
+      <div
+        ref={setPreviewRef}
+        className="markdown-preview markdown-preview--plain-text"
+      >
+        <pre className="plain-text-body">{source}</pre>
+      </div>
+    );
+  }
 
   if (!html) {
     return (

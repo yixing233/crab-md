@@ -780,6 +780,24 @@ button.cm-button.cm-search-close:focus-visible,
   background: transparent !important;
 }
 
+/* 纯文本预览样式（.txt 文件原样展示，不强行解析为 Markdown） */
+.markdown-preview--plain-text {
+  padding: var(--space-4) var(--space-6);
+}
+
+.plain-text-body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--editor-font-family, var(--font-mono, monospace));
+  font-size: var(--editor-font-size, 14px);
+  line-height: var(--leading-normal, 1.6);
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-primary);
+  background: transparent !important;
+  border: none !important;
+}
+
 /* ---------------------------------------------------------------------------
    彩色 Callout / 提示引用块（Admonitions）
    --------------------------------------------------------------------------- */

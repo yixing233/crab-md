@@ -804,6 +804,7 @@ export default function App() {
 
   const activeDoc = documents.find((d) => d.id === activeId);
   const activeTitle = activeDoc?.title ?? "";
+  const isPlainText = activeTitle.toLowerCase().endsWith(".txt");
 
   const tabsList = openTabIds.map((id) => {
     const doc = documents.find((d) => d.id === id);
@@ -898,7 +899,7 @@ export default function App() {
                 onChangeViewMode={setViewMode}
                 syncScroll={syncScroll}
                 onToggleSyncScroll={() => setSyncScroll((s) => !s)}
-                showFormatting={showsEditor(viewMode)}
+                showFormatting={showsEditor(viewMode) && !isPlainText}
               />
 
               {/* 隐藏的无障碍路径面包屑导航 */}
@@ -955,6 +956,7 @@ export default function App() {
                         source={activeContent}
                         onScrollDOM={setPreviewScrollEl}
                         onToggleTask={handleToggleTask}
+                        isPlainText={isPlainText}
                       />
                     </div>
                   </>
@@ -971,7 +973,7 @@ export default function App() {
               {/* 编辑模式也必须能导出：平时隐藏的打印副本避免切换视图时打印空白。 */}
               {!showsPreview(viewMode) && (
                 <div className="app-print-preview" aria-hidden="true">
-                  <MarkdownPreview source={activeContent} />
+                  <MarkdownPreview source={activeContent} isPlainText={isPlainText} />
                 </div>
               )}
             </>

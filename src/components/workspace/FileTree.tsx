@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { FileText, Folder, MoreHorizontal, Plus } from "lucide-react";
+import { Folder, MoreHorizontal, Plus } from "lucide-react";
 import { buildFileTree, type TreeNode } from "../../lib/fileTree";
 import type { DocumentSummary } from "../../types/document";
 import { zh } from "../../lib/i18n";
@@ -8,6 +8,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { Tooltip } from "../ui/Tooltip";
 import { ContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
 import { InlineEdit } from "../ui/InlineEdit";
+import { FileIcon } from "../ui/FileIcon";
 import "./workspace.css";
 
 export interface FileTreeProps {
@@ -221,7 +222,7 @@ function TreeItem({
           }
         }}
       >
-        <FileText size={14} aria-hidden />
+        <FileIcon filename={node.name} size={14} aria-hidden />
         <span className="file-tree__label">{node.name}</span>
       </button>
 

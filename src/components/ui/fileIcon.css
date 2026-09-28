@@ -1,0 +1,19 @@
+/* ---------------------------------------------------------------------------
+   文件类型图标差异化（Markdown vs Plain Text）
+   --------------------------------------------------------------------------- */
+
+.file-icon {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Markdown 图标：主题高亮蓝 */
+.file-icon--md {
+  color: var(--accent-solid, #2563eb);
+}
+
+/* TXT 纯文本图标：低饱和中性灰 */
+.file-icon--txt {
+  color: var(--text-muted, #94a3b8);
+}

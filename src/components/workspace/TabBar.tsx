@@ -1,8 +1,9 @@
 import { useState, type MouseEvent } from "react";
-import { FileText, Home, Plus, X } from "lucide-react";
+import { Home, Plus, X } from "lucide-react";
 import { Tooltip } from "../ui/Tooltip";
 import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
 import { InlineEdit } from "../ui/InlineEdit";
+import { FileIcon } from "../ui/FileIcon";
 import { zh } from "../../lib/i18n";
 import "./tabBar.css";
 
@@ -172,7 +173,7 @@ export function TabBar({
               onContextMenu={(e) => handleContextMenu(e, tab.id)}
               title={tab.title}
             >
-              <FileText size={13} className="app-tab__icon" aria-hidden />
+              <FileIcon filename={tab.title} size={13} className="app-tab__icon" aria-hidden />
 
               {isRenaming ? (
                 <InlineEdit

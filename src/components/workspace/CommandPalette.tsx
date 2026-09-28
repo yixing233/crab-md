@@ -5,7 +5,6 @@ import {
   Columns2,
   FileEdit,
   FilePlus,
-  FileText,
   FolderOpen,
   PanelLeft,
   Printer,
@@ -17,6 +16,7 @@ import {
 import type { DocumentSummary } from "../../types/document";
 import type { ViewMode } from "../../lib/viewMode";
 import type { SettingsSection } from "../settings/SettingsPage";
+import { FileIcon } from "../ui/FileIcon";
 import { zh } from "../../lib/i18n";
 import "./palette.css";
 
@@ -232,10 +232,14 @@ export function CommandPalette({
       .filter((d) => !q || d.title.toLowerCase().includes(q) || d.virtualPath.toLowerCase().includes(q))
       .map((d) => ({
         id: `doc-${d.id}`,
-        title: d.title.endsWith(".md") ? d.title : `${d.title}.md`,
+        title: d.title.toLowerCase().endsWith(".txt")
+          ? d.title
+          : d.title.endsWith(".md")
+            ? d.title
+            : `${d.title}.md`,
         subtitle: d.virtualPath && d.virtualPath !== "/" ? d.virtualPath : undefined,
         category: "文档",
-        icon: <FileText size={16} />,
+        icon: <FileIcon filename={d.title} size={16} />,
         onSelect: () => {
           onClose();
           onOpenDocument(d.id);
