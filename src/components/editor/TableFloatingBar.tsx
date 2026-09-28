@@ -3,7 +3,6 @@ import {
   AlignCenter,
   Columns,
   Minus,
-  Plus,
   Rows,
 } from "lucide-react";
 import { Button } from "../ui/Button";

@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Code,
-  FileText,
   Heading1,
   Heading2,
   Heading3,
@@ -126,6 +125,7 @@ export function SlashMenu({
 }: SlashMenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   const filteredCommands = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -142,6 +142,14 @@ export function SlashMenu({
   useEffect(() => {
     setSelectedIndex(0);
   }, [query]);
+
+  // 键盘移动时确保可视项在滚动视区内
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const selectedEl = list.querySelector<HTMLElement>('[data-selected="true"]');
+    selectedEl?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedIndex]);
 
   // 键盘操作监听
   useEffect(() => {
@@ -196,7 +204,7 @@ export function SlashMenu({
       }}
     >
       <div className="slash-menu__header">快捷插入块</div>
-      <div className="slash-menu__list">
+      <div ref={listRef} className="slash-menu__list">
         {filteredCommands.length === 0 ? (
           <div className="slash-menu__empty">无匹配命令</div>
         ) : (
@@ -206,7 +214,7 @@ export function SlashMenu({
               <div
                 key={cmd.id}
                 role="menuitem"
-                data-selected={isSelected || undefined}
+                data-selected={isSelected ? "true" : undefined}
                 className="slash-menu__item"
                 onMouseEnter={() => setSelectedIndex(idx)}
                 onClick={() => onSelect(cmd)}
