@@ -38,6 +38,9 @@ export type ContextMenuEntry = ContextMenuItem | ContextMenuSeparator | ContextM
 export interface ContextMenuSubmenu {
   id: string;
   label: string;
+  shortcut?: string;
+  /** 可选：直接点击该菜单项时执行的回调（默认动作）。 */
+  onSelect?: () => void;
   submenu: Array<ContextMenuEntry>;
 }
 
@@ -271,6 +274,7 @@ function MenuPanel({
                 role="menuitem"
                 aria-haspopup="menu"
                 aria-expanded={expanded}
+                aria-keyshortcuts={item.shortcut}
                 className="ui-menu__item ui-menu__item--submenu"
                 data-submenu-id={item.id}
                 ref={(element) => {
@@ -281,13 +285,32 @@ function MenuPanel({
                     showChildSubmenu(item, e.currentTarget, false);
                   }
                 }}
-                onClick={(e) => showChildSubmenu(item, e.currentTarget, true)}
+                onClick={(e) => {
+                  if (item.onSelect) {
+                    item.onSelect();
+                    onClose();
+                  } else {
+                    showChildSubmenu(item, e.currentTarget, true);
+                  }
+                }}
               >
                 <span className="ui-menu__label">{item.label}</span>
+                {item.shortcut && (
+                  <span className="ui-menu__shortcut" aria-hidden>
+                    {item.shortcut}
+                  </span>
+                )}
                 <ChevronRight
                   size={14}
                   aria-hidden
                   className="ui-menu__submenu-indicator"
+                  onClick={(e) => {
+                    if (item.onSelect) {
+                      e.stopPropagation();
+                      const btn = (e.currentTarget as unknown as Element).closest("button");
+                      if (btn) showChildSubmenu(item, btn, true);
+                    }
+                  }}
                 />
               </button>
             );

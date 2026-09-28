@@ -121,11 +121,29 @@ describe("TabBar", () => {
     const tab = screen.getByText("笔记一.md");
     fireEvent.contextMenu(tab, { clientX: 50, clientY: 50 });
 
-    await userEvent.click(screen.getByRole("menuitem", { name: "关闭标签页" }));
-    const closeCurrent = await screen.findByRole("menuitem", { name: "关闭当前标签页" });
-    expect(closeCurrent).toBeInTheDocument();
+    const closeItem = screen.getByRole("menuitem", { name: /关闭标签页/ });
+    expect(closeItem).toBeInTheDocument();
 
-    await userEvent.click(closeCurrent);
+    // 直接点击“关闭标签页”，默认触发关闭当前标签页
+    await userEvent.click(closeItem);
     expect(props.onCloseTab).toHaveBeenCalledWith("1");
+  });
+
+  it("expands close submenu on arrow click to reveal other close options", async () => {
+    const props = renderTabBar({
+      onCloseOtherTabs: vi.fn(),
+    });
+
+    const tab = screen.getByText("笔记一.md");
+    fireEvent.contextMenu(tab, { clientX: 50, clientY: 50 });
+
+    const arrow = screen.getByRole("menuitem", { name: /关闭标签页/ }).querySelector(".ui-menu__submenu-indicator") as HTMLElement;
+    expect(arrow).not.toBeNull();
+    await userEvent.click(arrow);
+
+    const closeOthers = await screen.findByRole("menuitem", { name: "关闭其他标签页" });
+    expect(closeOthers).toBeInTheDocument();
+    await userEvent.click(closeOthers);
+    expect(props.onCloseOtherTabs).toHaveBeenCalledWith("1");
   });
 });

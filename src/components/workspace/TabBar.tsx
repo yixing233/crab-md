@@ -97,6 +97,8 @@ export function TabBar({
           {
             id: "close-submenu",
             label: "关闭标签页",
+            shortcut: "Ctrl+W",
+            onSelect: () => onCloseTab(targetTab.id),
             submenu: [
               {
                 id: "close-current",
