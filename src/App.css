@@ -121,12 +121,12 @@
     print-color-adjust: exact !important;
   }
 
+  /* 打印字体跟随用户在设置中自定义的排版配置（预览排版 / 字体偏好） */
   html, body, #root,
   .app-shell, .app-body, .app-main, .app-panes,
   .app-pane, .app-pane--preview,
-  .markdown-preview,
-  .markdown-preview * {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif !important;
+  .markdown-preview {
+    font-family: var(--preview-font-body, var(--font-ui));
   }
 
   /* 打印专属文档题头：大号粗体标题 + 日期元信息 + 优雅分割线 */
@@ -143,12 +143,14 @@
     color: #0f172a !important;
     line-height: 1.25 !important;
     letter-spacing: -0.01em !important;
+    font-family: var(--preview-font-h1, var(--preview-font-body, var(--font-ui))) !important;
   }
 
   .print-header__meta {
     font-size: 9.5pt !important;
     color: #64748b !important;
     margin-bottom: 12px !important;
+    font-family: var(--preview-font-body, var(--font-ui));
   }
 
   .print-header__divider {
@@ -220,12 +222,12 @@
     margin-bottom: 8pt !important;
   }
 
-  .markdown-preview h1 { font-size: 18pt !important; }
-  .markdown-preview h2 { font-size: 15pt !important; }
-  .markdown-preview h3 { font-size: 13pt !important; }
-  .markdown-preview h4 { font-size: 12pt !important; }
-  .markdown-preview h5 { font-size: 11pt !important; }
-  .markdown-preview h6 { font-size: 10.5pt !important; }
+  .markdown-preview h1 { font-family: var(--preview-font-h1, var(--font-ui)) !important; font-size: 18pt !important; }
+  .markdown-preview h2 { font-family: var(--preview-font-h2, var(--font-ui)) !important; font-size: 15pt !important; }
+  .markdown-preview h3 { font-family: var(--preview-font-h3, var(--font-ui)) !important; font-size: 13pt !important; }
+  .markdown-preview h4 { font-family: var(--preview-font-h4, var(--font-ui)) !important; font-size: 12pt !important; }
+  .markdown-preview h5 { font-family: var(--preview-font-h5, var(--font-ui)) !important; font-size: 11pt !important; }
+  .markdown-preview h6 { font-family: var(--preview-font-h6, var(--font-ui)) !important; font-size: 10.5pt !important; }
 
   /* 列表项美化 */
   .markdown-preview ul,
@@ -259,8 +261,13 @@
     margin: 12pt 0 !important;
   }
 
+  .markdown-preview blockquote {
+    font-family: var(--preview-font-quote, var(--font-ui)) !important;
+  }
+
   /* 表格打印跨页重现表头 */
   .markdown-preview table {
+    font-family: var(--preview-font-table, var(--font-ui)) !important;
     width: 100% !important;
     border-collapse: collapse !important;
     font-size: 10pt !important;
@@ -296,6 +303,7 @@
 
   .markdown-preview .code-block pre code {
     color: #0f172a !important;
+    font-family: var(--preview-font-code, var(--font-mono)) !important;
     font-size: 9.5pt !important;
   }
 
