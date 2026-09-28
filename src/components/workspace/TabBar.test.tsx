@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { TabBar, type TabBarProps } from "./TabBar";
@@ -74,5 +74,58 @@ describe("TabBar", () => {
     const newBtn = screen.getByRole("button", { name: "新建" });
     await userEvent.click(newBtn);
     expect(props.onNewTab).toHaveBeenCalledOnce();
+  });
+
+  it("opens context menu with rename, duplicate, export, and close submenu", async () => {
+    const props = renderTabBar({
+      onDuplicateTab: vi.fn(),
+      onExportTab: vi.fn(),
+      onRenameTab: vi.fn(),
+    });
+
+    const tab = screen.getByText("笔记一.md");
+    fireEvent.contextMenu(tab, { clientX: 50, clientY: 50 });
+
+    expect(screen.getByRole("menuitem", { name: "重命名" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "另存为副本" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "导出为 Markdown…" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "关闭标签页" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "另存为副本" }));
+    expect(props.onDuplicateTab).toHaveBeenCalledWith("1", "笔记一.md");
+  });
+
+  it("handles inline renaming from context menu", async () => {
+    const props = renderTabBar({
+      onRenameTab: vi.fn(),
+    });
+
+    const tab = screen.getByText("笔记一.md");
+    fireEvent.contextMenu(tab, { clientX: 50, clientY: 50 });
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "重命名" }));
+
+    const input = screen.getByLabelText("笔记名称");
+    expect(input).toBeInTheDocument();
+    await userEvent.clear(input);
+    await userEvent.type(input, "新名字.md{Enter}");
+
+    expect(props.onRenameTab).toHaveBeenCalledWith("1", "新名字.md");
+  });
+
+  it("opens close submenu and executes close actions", async () => {
+    const props = renderTabBar({
+      onCloseTab: vi.fn(),
+    });
+
+    const tab = screen.getByText("笔记一.md");
+    fireEvent.contextMenu(tab, { clientX: 50, clientY: 50 });
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "关闭标签页" }));
+    const closeCurrent = await screen.findByRole("menuitem", { name: "关闭当前标签页" });
+    expect(closeCurrent).toBeInTheDocument();
+
+    await userEvent.click(closeCurrent);
+    expect(props.onCloseTab).toHaveBeenCalledWith("1");
   });
 });

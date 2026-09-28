@@ -883,6 +883,9 @@ export default function App() {
             onCloseOtherTabs={(id) => void handleCloseOtherTabs(id)}
             onCloseRightTabs={(id) => void handleCloseRightTabs(id)}
             onCloseAllTabs={() => void handleCloseAllTabs()}
+            onRenameTab={(id, title) => void renameDocument(id, title)}
+            onDuplicateTab={(id, title) => void handleDuplicate(id, title)}
+            onExportTab={(id, title) => void handleExport(id, title)}
           />
 
           {activeId ? (
