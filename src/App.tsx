@@ -9,6 +9,7 @@ import { UpdateBar } from "./components/workspace/UpdateBar";
 import { Breadcrumb } from "./components/workspace/Breadcrumb";
 import { TabBar } from "./components/workspace/TabBar";
 import { HomePage } from "./components/home/HomePage";
+import { CommandPalette } from "./components/workspace/CommandPalette";
 import {
   CloseDocumentModal,
   type ClosePromptType,
@@ -26,6 +27,7 @@ import { zh } from "./lib/i18n";
 import { checkForUpdate, readLastCheck, shouldAutoCheck, writeLastCheck } from "./lib/updater";
 import { tauriUpdaterBridge } from "./lib/updaterBridge";
 import { printPreview } from "./lib/print";
+import { toggleTaskInSource } from "./lib/markdown";
 import { useUpdateStore } from "./stores/useUpdateStore";
 import type { MarkdownActionId } from "./lib/markdownActions";
 import {
@@ -191,6 +193,8 @@ export default function App() {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   // Ctrl+F 的触发计数；递增即请求编辑器打开查找面板。
   const [findNonce, setFindNonce] = useState(0);
+  // 命令面板 / 快速打开开关（Ctrl+P / Ctrl+K）
+  const [paletteOpen, setPaletteOpen] = useState(false);
   // 设置页开关（UI §34）。
   const [settingsOpen, setSettingsOpen] = useState(false);
   // 打开设置时要落到哪个分组。工具栏的更新入口需要直达「关于」，
@@ -635,6 +639,14 @@ export default function App() {
     useWorkspaceStore.setState({ activeId: null, activeContent: "", dirty: false });
   }, [activeId, dirty, saveActive]);
 
+  const handleToggleTask = useCallback(
+    (taskIndex: number) => {
+      const updated = toggleTaskInSource(activeContent, taskIndex);
+      setContent(updated);
+    },
+    [activeContent, setContent],
+  );
+
   // 保存并给出反馈（UI §33）。自动保存与 Ctrl+S 都经过这里。
   const handleSave = useCallback(async () => {
     await saveActive();
@@ -750,7 +762,11 @@ export default function App() {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
 
-      if (e.key.toLowerCase() === "n") {
+      if (e.key.toLowerCase() === "p" || e.key.toLowerCase() === "k") {
+        // Ctrl+P / Ctrl+K：全局命令面板 / 快速跳转
+        e.preventDefault();
+        setPaletteOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === "n") {
         e.preventDefault();
         handleNewDocument();
       } else if (e.key.toLowerCase() === "s") {
@@ -935,6 +951,7 @@ export default function App() {
                       <MarkdownPreview
                         source={activeContent}
                         onScrollDOM={setPreviewScrollEl}
+                        onToggleTask={handleToggleTask}
                       />
                     </div>
                   </>
@@ -1011,6 +1028,24 @@ export default function App() {
         onSave={handleConfirmSaveAndClose}
         onDiscard={handleDiscardAndClose}
         onCancel={() => setClosePrompt(null)}
+      />
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        documents={documents}
+        onOpenDocument={(id) => void handleOpenDocument(id)}
+        onNewDocument={handleNewDocument}
+        onOpenFile={() => void handleOpenFile()}
+        onSaveActive={activeId ? () => void handleSave() : undefined}
+        onToggleSidebar={() => setSidebarVisible((v) => !v)}
+        onCycleTheme={cycleTheme}
+        onChangeViewMode={setViewMode}
+        onOpenSettings={(section?: SettingsSection) => {
+          if (section) setSettingsSection(section);
+          setSettingsOpen(true);
+        }}
+        onPrint={handlePrint}
       />
 
       <Toast

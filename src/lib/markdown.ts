@@ -153,6 +153,139 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
   ].join("\n");
 };
 
+const CALLOUT_ICONS: Record<string, string> = {
+  note: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
+  tip: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>',
+  warning: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+  caution: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+  important: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>',
+  success: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>',
+};
+
+const CALLOUT_METAS: Record<string, { title: string; icon: string }> = {
+  note: { title: "提示", icon: CALLOUT_ICONS.note },
+  info: { title: "信息", icon: CALLOUT_ICONS.note },
+  tip: { title: "技巧", icon: CALLOUT_ICONS.tip },
+  hint: { title: "提示", icon: CALLOUT_ICONS.tip },
+  warning: { title: "注意", icon: CALLOUT_ICONS.warning },
+  warn: { title: "注意", icon: CALLOUT_ICONS.warning },
+  caution: { title: "危险", icon: CALLOUT_ICONS.caution },
+  danger: { title: "危险", icon: CALLOUT_ICONS.caution },
+  important: { title: "重要", icon: CALLOUT_ICONS.important },
+  success: { title: "完成", icon: CALLOUT_ICONS.success },
+  done: { title: "完成", icon: CALLOUT_ICONS.success },
+};
+
+/** Callout 块解析器（支持 > [!NOTE], [!TIP], [!WARNING], [!CAUTION], [!IMPORTANT]） */
+md.core.ruler.after("inline", "callout", (state) => {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type !== "blockquote_open") continue;
+
+    let inlineIdx = -1;
+    for (let j = i + 1; j < tokens.length; j++) {
+      if (tokens[j].type === "blockquote_close") break;
+      if (tokens[j].type === "inline") {
+        inlineIdx = j;
+        break;
+      }
+    }
+    if (inlineIdx === -1) continue;
+
+    const inlineToken = tokens[inlineIdx];
+    if (!inlineToken.children || inlineToken.children.length === 0) continue;
+    const firstChild = inlineToken.children[0];
+    if (!firstChild || firstChild.type !== "text") continue;
+
+    const match = firstChild.content.match(/^\[!([a-zA-Z]+)\](?:\s+(.*))?$/);
+    if (!match) continue;
+
+    const rawType = match[1].toLowerCase();
+    const meta = CALLOUT_METAS[rawType] || { title: rawType.toUpperCase(), icon: CALLOUT_ICONS.note };
+    const title = match[2]?.trim() || meta.title;
+
+    tokens[i].tag = "div";
+    tokens[i].attrSet("class", `callout callout--${rawType}`);
+
+    let depth = 1;
+    for (let j = i + 1; j < tokens.length; j++) {
+      if (tokens[j].type === "blockquote_open") depth++;
+      if (tokens[j].type === "blockquote_close") {
+        depth--;
+        if (depth === 0) {
+          tokens[j].tag = "div";
+          break;
+        }
+      }
+    }
+
+    firstChild.content = "";
+    if (
+      inlineToken.children[1] &&
+      (inlineToken.children[1].type === "softbreak" || inlineToken.children[1].type === "hardbreak")
+    ) {
+      inlineToken.children.splice(1, 1);
+    }
+    inlineToken.children = inlineToken.children.filter((c) => c.content || c.type !== "text");
+
+    const headerToken = new state.Token("html_block", "", 0);
+    headerToken.content = `<div class="callout__header"><span class="callout__icon">${meta.icon}</span><span class="callout__title">${md.utils.escapeHtml(title)}</span></div>`;
+    tokens.splice(i + 1, 0, headerToken);
+  }
+});
+
+/** 任务清单解析器（- [ ] 与 - [x] 渲染为可交互复选框） */
+md.core.ruler.after("inline", "task_list", (state) => {
+  let taskIndex = 0;
+  const tokens = state.tokens;
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type !== "list_item_open") continue;
+
+    let inlineIdx = -1;
+    for (let j = i + 1; j < tokens.length; j++) {
+      if (tokens[j].type === "list_item_close") break;
+      if (tokens[j].type === "inline") {
+        inlineIdx = j;
+        break;
+      }
+    }
+    if (inlineIdx === -1) continue;
+
+    const inlineToken = tokens[inlineIdx];
+    if (!inlineToken.children || inlineToken.children.length === 0) continue;
+    const firstChild = inlineToken.children[0];
+    if (!firstChild || firstChild.type !== "text") continue;
+
+    const match = firstChild.content.match(/^\[([ xX])\](?:\s+(.*))?$/);
+    if (!match) continue;
+
+    const checked = match[1] === "x" || match[1] === "X";
+    tokens[i].attrJoin("class", "task-list-item");
+    firstChild.content = match[2] ?? "";
+
+    const checkboxToken = new state.Token("html_inline", "", 0);
+    checkboxToken.content = `<input type="checkbox" class="task-list-item-checkbox" data-task-index="${taskIndex++}" ${checked ? 'checked="checked"' : ""} /> `;
+    inlineToken.children.unshift(checkboxToken);
+  }
+});
+
+/**
+ * 切换 Markdown 源码中第 taskIndex 个复选框的状态（[ ] ↔ [x]）。
+ */
+export function toggleTaskInSource(source: string, taskIndex: number): string {
+  let count = 0;
+  return source.replace(/^(\s*[-*+]|\s*\d+\.)\s+\[([ xX])\]/gm, (match, prefix, check) => {
+    if (count === taskIndex) {
+      count++;
+      const next = check === " " ? "x" : " ";
+      return `${prefix} [${next}]`;
+    }
+    count++;
+    return match;
+  });
+}
+
 /** A deliberately small surface for Mermaid, so jsdom tests can mock it. */
 export interface MermaidRenderer {
   initialize(config: {
@@ -296,6 +429,16 @@ function filterStyleDeclarations(raw: string): string {
 function installStyleFilter(): void {
   DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
     if (node.nodeType !== 1) return;
+
+    // 仅允许复选框类型的 input，其他表单输入一律剥除
+    if (node.tagName.toLowerCase() === "input") {
+      const type = node.getAttribute("type");
+      if (type !== "checkbox") {
+        node.remove();
+        return;
+      }
+    }
+
     const raw = node.getAttribute("style");
     if (raw === null) return;
     const kept = filterStyleDeclarations(raw);
@@ -321,8 +464,18 @@ export function renderMarkdown(source: string): string {
   }
   const raw = md.render(source);
   return DOMPurify.sanitize(raw, {
-    USE_PROFILES: { html: true, mathMl: true },
-    FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "input"],
+    USE_PROFILES: { html: true, mathMl: true, svg: true },
+    FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form"],
+    ADD_ATTR: [
+      "data-task-index",
+      "checked",
+      "disabled",
+      "data-language",
+      "viewBox",
+      "stroke-width",
+      "stroke-linecap",
+      "stroke-linejoin",
+    ],
     // 注意：这里**不再**禁止 style。KaTeX 依赖它做排版，
     // 改用 ALLOWED_STYLE_PROPS 按属性名精确放行（见上）。
     FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover", "onfocus"],

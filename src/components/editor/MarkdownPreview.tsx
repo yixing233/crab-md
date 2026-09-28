@@ -50,9 +50,11 @@ export interface MarkdownPreviewProps {
   source: string;
   /** 上报可滚动的根 DOM 容器，供编辑/预览同步滚动机制监听。 */
   onScrollDOM?: (el: HTMLElement | null) => void;
+  /** 点击任务清单复选框时触发，用于切换源码中的 [ ] ↔ [x]。 */
+  onToggleTask?: (taskIndex: number) => void;
 }
 
-export function MarkdownPreview({ source, onScrollDOM }: MarkdownPreviewProps) {
+export function MarkdownPreview({ source, onScrollDOM, onToggleTask }: MarkdownPreviewProps) {
   const ids = useMemo(() => attachmentIds(source), [source]);
   const idsKey = ids.join("|");
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
@@ -168,6 +170,21 @@ export function MarkdownPreview({ source, onScrollDOM }: MarkdownPreviewProps) {
 
   const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
+
+    // 交互式任务列表复选框点击
+    const checkbox = target.closest<HTMLInputElement>(".task-list-item-checkbox");
+    if (checkbox) {
+      e.stopPropagation();
+      const idxStr = checkbox.dataset.taskIndex;
+      if (idxStr !== undefined) {
+        const taskIdx = parseInt(idxStr, 10);
+        if (!isNaN(taskIdx)) {
+          onToggleTask?.(taskIdx);
+        }
+      }
+      return;
+    }
+
     const copyBtn = target.closest<HTMLButtonElement>(".code-block__copy");
     if (!copyBtn) return;
 

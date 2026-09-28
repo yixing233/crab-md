@@ -3,6 +3,7 @@ import {
   renderMarkdown,
   resolveKatexPlugin,
   sanitizeMermaidSvg,
+  toggleTaskInSource,
 } from "./markdown";
 
 describe("renderMarkdown", () => {
@@ -292,5 +293,40 @@ describe("renderMarkdown style safety", () => {
     // 放行列表要足够用，否则公式排版会被误伤。
     const html = renderMarkdown('<span style="font-weight:bold;margin-left:4px">x</span>');
     expect(html).toContain("font-weight");
+  });
+});
+
+describe("Callouts and Task Lists", () => {
+  it("renders callout blockquotes into styled alert containers", () => {
+    const html = renderMarkdown("> [!NOTE] 提示标题\n> 正文补充说明");
+    expect(html).toContain('class="callout callout--note"');
+    expect(html).toContain('class="callout__title"');
+    expect(html).toContain("提示标题");
+    expect(html).toContain("正文补充说明");
+  });
+
+  it("renders callout with default title when no custom title is given", () => {
+    const html = renderMarkdown("> [!WARNING]\n> 注意风险");
+    expect(html).toContain('class="callout callout--warning"');
+    expect(html).toContain("注意");
+    expect(html).toContain("注意风险");
+  });
+
+  it("renders task list items with interactive checkboxes", () => {
+    const html = renderMarkdown("- [ ] 未完成\n- [x] 已完成");
+    expect(html).toContain('class="task-list-item"');
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('data-task-index="0"');
+    expect(html).toContain('data-task-index="1"');
+    expect(html).toContain("checked");
+  });
+
+  it("toggles task item between checked and unchecked in source text", () => {
+    const src = "- [ ] 任务一\n- [x] 任务二";
+    const toggled0 = toggleTaskInSource(src, 0);
+    expect(toggled0).toBe("- [x] 任务一\n- [x] 任务二");
+
+    const toggled1 = toggleTaskInSource(toggled0, 1);
+    expect(toggled1).toBe("- [x] 任务一\n- [ ] 任务二");
   });
 });

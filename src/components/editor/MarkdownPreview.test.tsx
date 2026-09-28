@@ -81,4 +81,25 @@ describe("MarkdownPreview Mermaid diagrams", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("triggers onToggleTask when clicking task checkbox in preview", () => {
+    const onToggleTask = vi.fn();
+    const { container } = render(
+      <MarkdownPreview
+        source={"- [ ] 任务一\n- [x] 任务二"}
+        onToggleTask={onToggleTask}
+      />,
+    );
+
+    const checkboxes = container.querySelectorAll<HTMLInputElement>(".task-list-item-checkbox");
+    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes[0].checked).toBe(false);
+    expect(checkboxes[1].checked).toBe(true);
+
+    checkboxes[0].click();
+    expect(onToggleTask).toHaveBeenCalledWith(0);
+
+    checkboxes[1].click();
+    expect(onToggleTask).toHaveBeenCalledWith(1);
+  });
 });

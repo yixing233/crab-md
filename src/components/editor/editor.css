@@ -781,6 +781,138 @@ button.cm-button.cm-search-close:focus-visible,
 }
 
 /* ---------------------------------------------------------------------------
+   彩色 Callout / 提示引用块（Admonitions）
+   --------------------------------------------------------------------------- */
+
+.markdown-preview .callout {
+  margin: var(--space-4) 0;
+  padding: 12px 16px;
+  border-left: 4px solid var(--callout-color, var(--accent-solid));
+  background-color: var(--callout-bg, var(--accent-soft));
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  box-sizing: border-box;
+}
+
+.markdown-preview .callout__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--callout-color, var(--accent-solid));
+  margin-bottom: 6px;
+  user-select: none;
+}
+
+.markdown-preview .callout__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.markdown-preview .callout__icon svg {
+  display: block;
+}
+
+.markdown-preview .callout__title {
+  font-weight: 600;
+}
+
+.markdown-preview .callout p {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+}
+
+.markdown-preview .callout p + p {
+  margin-top: 6px;
+}
+
+/* Callout 各类配色 */
+.markdown-preview .callout--note,
+.markdown-preview .callout--info {
+  --callout-color: #2563eb;
+  --callout-bg: rgba(37, 99, 235, 0.08);
+}
+
+.markdown-preview .callout--tip,
+.markdown-preview .callout--hint {
+  --callout-color: #16a34a;
+  --callout-bg: rgba(22, 163, 74, 0.08);
+}
+
+.markdown-preview .callout--warning,
+.markdown-preview .callout--warn {
+  --callout-color: #d97706;
+  --callout-bg: rgba(217, 119, 6, 0.08);
+}
+
+.markdown-preview .callout--caution,
+.markdown-preview .callout--danger {
+  --callout-color: #dc2626;
+  --callout-bg: rgba(220, 38, 38, 0.08);
+}
+
+.markdown-preview .callout--important {
+  --callout-color: #9333ea;
+  --callout-bg: rgba(147, 51, 234, 0.08);
+}
+
+.markdown-preview .callout--success,
+.markdown-preview .callout--done {
+  --callout-color: #059669;
+  --callout-bg: rgba(5, 150, 105, 0.08);
+}
+
+/* ---------------------------------------------------------------------------
+   交互式任务清单（Interactive Task List）
+   --------------------------------------------------------------------------- */
+
+.markdown-preview .task-list-item {
+  list-style-type: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-left: -1.2em;
+}
+
+.markdown-preview .task-list-item-checkbox {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  margin: 0;
+  vertical-align: middle;
+  flex-shrink: 0;
+  transition: all var(--duration-fast) ease;
+}
+
+.markdown-preview .task-list-item-checkbox:hover {
+  border-color: var(--accent-solid);
+}
+
+.markdown-preview .task-list-item-checkbox:checked {
+  background-color: var(--accent-solid);
+  border-color: var(--accent-solid);
+}
+
+.markdown-preview .task-list-item-checkbox:checked::before {
+  content: "";
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+
+/* ---------------------------------------------------------------------------
    CodeMirror 标题/代码折叠（Heading Folding）
    --------------------------------------------------------------------------- */
 
