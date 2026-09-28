@@ -54,9 +54,17 @@ export interface MarkdownPreviewProps {
   onToggleTask?: (taskIndex: number) => void;
   /** 是否为纯文本格式（.txt）：若是，原样保留文本排版展示，不渲染 Markdown。 */
   isPlainText?: boolean;
+  /** 文档标题，供打印时自动生成出版级题头。 */
+  documentTitle?: string;
 }
 
-export function MarkdownPreview({ source, onScrollDOM, onToggleTask, isPlainText = false }: MarkdownPreviewProps) {
+export function MarkdownPreview({
+  source,
+  onScrollDOM,
+  onToggleTask,
+  isPlainText = false,
+  documentTitle,
+}: MarkdownPreviewProps) {
   const ids = useMemo(() => attachmentIds(source), [source]);
   const idsKey = ids.join("|");
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
@@ -212,12 +220,23 @@ export function MarkdownPreview({ source, onScrollDOM, onToggleTask, isPlainText
     }
   };
 
+  const printHeader = documentTitle ? (
+    <div className="print-header" aria-hidden="true">
+      <h1 className="print-header__title">{documentTitle.replace(/\.(md|txt)$/i, "")}</h1>
+      <div className="print-header__meta">
+        <span>导出时间：{new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" })}</span>
+      </div>
+      <hr className="print-header__divider" />
+    </div>
+  ) : null;
+
   if (isPlainText) {
     return (
       <div
         ref={setPreviewRef}
         className="markdown-preview markdown-preview--plain-text"
       >
+        {printHeader}
         <pre className="plain-text-body">{source}</pre>
       </div>
     );
@@ -239,8 +258,13 @@ export function MarkdownPreview({ source, onScrollDOM, onToggleTask, isPlainText
       ref={setPreviewRef}
       className="markdown-preview"
       onClick={handlePreviewClick}
-      // 内容已由 DOMPurify 消毒，见 lib/markdown.ts。
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    >
+      {printHeader}
+      <div
+        className="markdown-preview-content"
+        // 内容已由 DOMPurify 消毒，见 lib/markdown.ts。
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
   );
 }

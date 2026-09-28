@@ -103,11 +103,16 @@
 }
 
 /* 移动：单栏。侧栏改为覆盖在内容之上，由工具栏按钮开关。 */
+/* 屏幕常态隐藏打印专属题头 */
+.print-header {
+  display: none;
+}
+
 /* 打印与导出 PDF 专属排版规则（出版级 A4 排版优化） */
 @media print {
   @page {
     size: A4;
-    margin: 20mm 18mm 20mm 18mm;
+    margin: 18mm 20mm;
   }
 
   /* 强制保留彩色 Callout 底色、代码块背景与矢量边框 */
@@ -118,11 +123,38 @@
 
   html, body, #root,
   .app-shell, .app-body, .app-main, .app-panes,
-  .app-pane, .app-pane--preview {
-    height: auto !important;
-    min-height: 0 !important;
-    overflow: visible !important;
-    background: #ffffff !important;
+  .app-pane, .app-pane--preview,
+  .markdown-preview,
+  .markdown-preview * {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif !important;
+  }
+
+  /* 打印专属文档题头：大号粗体标题 + 日期元信息 + 优雅分割线 */
+  .print-header {
+    display: block !important;
+    margin-bottom: 20px !important;
+    padding-bottom: 12px !important;
+  }
+
+  .print-header__title {
+    margin: 0 0 8px 0 !important;
+    font-size: 24pt !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+    line-height: 1.25 !important;
+    letter-spacing: -0.01em !important;
+  }
+
+  .print-header__meta {
+    font-size: 9.5pt !important;
+    color: #64748b !important;
+    margin-bottom: 12px !important;
+  }
+
+  .print-header__divider {
+    border: none !important;
+    border-top: 1.5px solid #cbd5e1 !important;
+    margin: 0 !important;
   }
 
   /* 彻底剥除所有与打印无关的 UI 控件、工具条、弹窗、气泡、面板 */
@@ -173,7 +205,7 @@
     color: #1a1a1a !important;
     background: #ffffff !important;
     font-size: 11pt !important;
-    line-height: 1.6 !important;
+    line-height: 1.75 !important;
   }
 
   .markdown-preview > * { max-width: none !important; }
@@ -182,13 +214,36 @@
   h1, h2, h3, h4, h5, h6 {
     break-after: avoid !important;
     page-break-after: avoid !important;
-    color: #000000 !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    margin-top: 18pt !important;
+    margin-bottom: 8pt !important;
   }
 
-  /* 正文孤行控制 */
-  p, li {
-    orphans: 3;
-    widows: 3;
+  .markdown-preview h1 { font-size: 18pt !important; }
+  .markdown-preview h2 { font-size: 15pt !important; }
+  .markdown-preview h3 { font-size: 13pt !important; }
+  .markdown-preview h4 { font-size: 12pt !important; }
+  .markdown-preview h5 { font-size: 11pt !important; }
+  .markdown-preview h6 { font-size: 10.5pt !important; }
+
+  /* 列表项美化 */
+  .markdown-preview ul,
+  .markdown-preview ol {
+    margin: 8pt 0 12pt !important;
+    padding-left: 22pt !important;
+  }
+
+  .markdown-preview li {
+    margin-bottom: 5pt !important;
+    line-height: 1.7 !important;
+  }
+
+  /* 链接优雅化（深蓝沉稳色，加细下划线） */
+  .markdown-preview a {
+    color: #1e40af !important;
+    text-decoration: underline !important;
+    text-underline-offset: 2px !important;
   }
 
   /* 块级结构防跨页截断 */
@@ -201,21 +256,25 @@
   .mermaid-diagram {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
-  }
-
-  .markdown-preview a {
-    color: #1d4ed8 !important;
-    text-decoration: underline !important;
+    margin: 12pt 0 !important;
   }
 
   /* 表格打印跨页重现表头 */
   .markdown-preview table {
     width: 100% !important;
     border-collapse: collapse !important;
+    font-size: 10pt !important;
   }
 
   .markdown-preview table thead {
     display: table-header-group !important;
+    background: #f1f5f9 !important;
+  }
+
+  .markdown-preview table th,
+  .markdown-preview table td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 6pt 10pt !important;
   }
 
   .markdown-preview table tr {
@@ -232,16 +291,19 @@
   .markdown-preview .code-block__header {
     background: #f1f5f9 !important;
     border-bottom: 1px solid #cbd5e1 !important;
+    padding: 4pt 8pt !important;
   }
 
   .markdown-preview .code-block pre code {
     color: #0f172a !important;
+    font-size: 9.5pt !important;
   }
 
   /* Callout 彩色提示块在打印时的优化 */
   .markdown-preview .callout {
     box-shadow: none !important;
     border-radius: 4px !important;
+    padding: 8pt 12pt !important;
   }
 }
 

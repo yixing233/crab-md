@@ -1123,6 +1123,7 @@ export default function App() {
                         onScrollDOM={setPreviewScrollEl}
                         onToggleTask={handleToggleTask}
                         isPlainText={isPlainText}
+                        documentTitle={activeTitle}
                       />
                     </div>
                   </>
@@ -1139,7 +1140,11 @@ export default function App() {
               {/* 编辑模式也必须能导出：平时隐藏的打印副本避免切换视图时打印空白。 */}
               {!showsPreview(viewMode) && (
                 <div className="app-print-preview" aria-hidden="true">
-                  <MarkdownPreview source={activeContent} isPlainText={isPlainText} />
+                  <MarkdownPreview
+                    source={activeContent}
+                    isPlainText={isPlainText}
+                    documentTitle={activeTitle}
+                  />
                 </div>
               )}
             </>
