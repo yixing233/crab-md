@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileDown, Printer, X } from "lucide-react";
-import { ConfigProvider, Select, theme as antdTheme } from "antd";
+import { Checkbox, ConfigProvider, Select, theme as antdTheme } from "antd";
 import { renderMarkdown } from "../../lib/markdown";
 import { printPreview } from "../../lib/print";
 import { Button } from "../ui/Button";
@@ -249,35 +249,29 @@ export function PrintExportModal({
                   />
                 </div>
 
-                {/* 题头与信息 */}
+                {/* 题头与信息 - 使用 Ant Design 复选框组件 */}
                 <div className="print-modal__group">
                   <span className="print-modal__group-title">文档题头与页脚</span>
                   <div className="print-modal__checkbox-list">
-                    <label className="print-modal__checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={showTitle}
-                        onChange={(e) => setShowTitle(e.target.checked)}
-                      />
-                      <span>包含文档正式大标题</span>
-                    </label>
-                    <label className="print-modal__checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={showDate}
-                        disabled={!showTitle}
-                        onChange={(e) => setShowDate(e.target.checked)}
-                      />
-                      <span>显示导出时间信息</span>
-                    </label>
-                    <label className="print-modal__checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={showPageNumbers}
-                        onChange={(e) => setShowPageNumbers(e.target.checked)}
-                      />
-                      <span>显示底部居中页码</span>
-                    </label>
+                    <Checkbox
+                      checked={showTitle}
+                      onChange={(e) => setShowTitle(e.target.checked)}
+                    >
+                      包含文档正式大标题
+                    </Checkbox>
+                    <Checkbox
+                      checked={showDate}
+                      disabled={!showTitle}
+                      onChange={(e) => setShowDate(e.target.checked)}
+                    >
+                      显示导出时间信息
+                    </Checkbox>
+                    <Checkbox
+                      checked={showPageNumbers}
+                      onChange={(e) => setShowPageNumbers(e.target.checked)}
+                    >
+                      显示底部居中页码
+                    </Checkbox>
                   </div>
                 </div>
               </div>
