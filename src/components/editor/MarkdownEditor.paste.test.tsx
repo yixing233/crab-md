@@ -58,4 +58,35 @@ describe("MarkdownEditor image paste", () => {
 
     expect(onPasteImage).not.toHaveBeenCalled();
   });
+
+  it("intercepts dropped image and inserts its attachment reference", async () => {
+    const onChange = vi.fn();
+    const onPasteImage = vi.fn().mockResolvedValue("01993ab2-0000-7000-8000-000000000001");
+    const { getByTestId } = render(
+      <MarkdownEditor
+        documentId="d1"
+        value="drop-before "
+        onChange={onChange}
+        onPasteImage={onPasteImage}
+      />,
+    );
+    const content = getByTestId("markdown-editor").querySelector(".cm-content") as HTMLElement;
+    const view = EditorView.findFromDOM(content);
+    view!.dispatch({ selection: { anchor: 12 } });
+
+    const file = new File([new Uint8Array([4, 5, 6])], "dropped.jpg", { type: "image/jpeg" });
+    fireEvent.drop(content, {
+      dataTransfer: {
+        files: [file],
+        types: ["Files"],
+      },
+    });
+
+    await waitFor(() => expect(onPasteImage).toHaveBeenCalledWith(file));
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith(
+        "drop-before ![图片](attachment://01993ab2-0000-7000-8000-000000000001)",
+      ),
+    );
+  });
 });

@@ -1,0 +1,55 @@
+/* ---------------------------------------------------------------------------
+   表格悬浮快捷工具条（Table Floating Bar）
+   --------------------------------------------------------------------------- */
+
+.table-bar {
+  position: fixed;
+  z-index: 1200;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  user-select: none;
+  animation: ui-fade-in var(--duration-fast) ease-out;
+}
+
+.table-bar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.table-bar__btn {
+  height: 24px !important;
+  padding: 0 6px !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  border-radius: var(--radius-full) !important;
+  color: var(--text-secondary) !important;
+  gap: 3px !important;
+}
+
+.table-bar__btn:hover {
+  background-color: var(--bg-surface-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.table-bar__btn--primary {
+  color: var(--accent-solid) !important;
+}
+
+.table-bar__btn--primary:hover {
+  background-color: var(--accent-soft) !important;
+  color: var(--accent-solid-hover) !important;
+}
+
+.table-bar__separator {
+  width: 1px;
+  height: 14px;
+  background-color: var(--border-subtle);
+  margin: 0 2px;
+}

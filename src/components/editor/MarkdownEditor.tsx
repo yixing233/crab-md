@@ -23,6 +23,16 @@ import {
   type ContextMenuEntry,
   type ContextMenuItem,
 } from "../ui/ContextMenu";
+import { SlashMenu, type SlashCommandItem } from "./SlashMenu";
+import { TableFloatingBar } from "./TableFloatingBar";
+import {
+  isMarkdownTableRow,
+  alignMarkdownTable,
+  insertTableRow,
+  deleteTableRow,
+  insertTableColumn,
+  deleteTableColumn,
+} from "../../lib/tableHelper";
 import { createCustomSearchPanel, openSearchWithReplace } from "./customSearchPanel";
 import { EditorToolbar } from "./EditorToolbar";
 import "./editor.css";
@@ -231,6 +241,18 @@ function clipboardImage(event: ClipboardEvent): File | null {
   return null;
 }
 
+/** 从拖放事件中提取支持的图片文件。 */
+function droppedImage(event: DragEvent): File | null {
+  const data = event.dataTransfer;
+  if (!data) return null;
+  for (const file of Array.from(data.files)) {
+    if (SUPPORTED_PASTE_IMAGE_TYPES.has(file.type.toLowerCase())) return file;
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext && ["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return file;
+  }
+  return null;
+}
+
 const LUCIDE_CHEVRON_DOWN =
   '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 const LUCIDE_CHEVRON_RIGHT =
@@ -268,6 +290,25 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const [contextMenu, setContextMenu] = useState<EditorContextMenuState | null>(null);
+    const [slashState, setSlashState] = useState<{
+      open: boolean;
+      x: number;
+      y: number;
+      lineFrom: number;
+      head: number;
+    } | null>(null);
+
+    const [tableState, setTableState] = useState<{
+      visible: boolean;
+      x: number;
+      y: number;
+      tableFrom: number;
+      tableTo: number;
+      tableLines: string[];
+      currentLineIdx: number;
+      currentColIdx: number;
+    } | null>(null);
+
     // 用 ref 持有最新回调，避免每次渲染都重建编辑器。
     const onChangeRef = useRef(onChange);
     const onSaveRef = useRef(onSave);
@@ -293,6 +334,77 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       }),
       [],
     );
+
+    const handleSlashSelect = (item: SlashCommandItem) => {
+      const view = viewRef.current;
+      if (!view || !slashState) return;
+      view.dispatch({
+        changes: { from: slashState.lineFrom, to: slashState.head, insert: item.insertText },
+        selection: CmSelection.cursor(slashState.lineFrom + (item.cursorOffset ?? item.insertText.length)),
+      });
+      setSlashState(null);
+      view.focus();
+    };
+
+    const handleApplyTable = (newLines: string[]) => {
+      const view = viewRef.current;
+      if (!view || !tableState) return;
+      view.dispatch({
+        changes: { from: tableState.tableFrom, to: tableState.tableTo, insert: newLines.join("\n") },
+      });
+      view.focus();
+    };
+
+    const handleAddRow = () => {
+      if (!tableState) return;
+      handleApplyTable(insertTableRow(tableState.tableLines, tableState.currentLineIdx));
+    };
+
+    const handleDeleteRow = () => {
+      if (!tableState) return;
+      handleApplyTable(deleteTableRow(tableState.tableLines, tableState.currentLineIdx));
+    };
+
+    const handleAddCol = () => {
+      if (!tableState) return;
+      handleApplyTable(insertTableColumn(tableState.tableLines, tableState.currentColIdx));
+    };
+
+    const handleDeleteCol = () => {
+      if (!tableState) return;
+      handleApplyTable(deleteTableColumn(tableState.tableLines, tableState.currentColIdx));
+    };
+
+    const handleAlignTable = () => {
+      if (!tableState) return;
+      handleApplyTable(alignMarkdownTable(tableState.tableLines));
+    };
+
+    const handleDrop = (event: DragEvent, editor: EditorView): boolean => {
+      const file = droppedImage(event);
+      if (!file) return false;
+      event.preventDefault();
+      let pos = editor.state.selection.main.head;
+      try {
+        if (event.clientX && event.clientY) {
+          const atCoords = editor.posAtCoords({ x: event.clientX, y: event.clientY });
+          if (atCoords !== null) pos = atCoords;
+        }
+      } catch {
+        pos = editor.state.selection.main.head;
+      }
+      void saveClipboardImage(file, editor, pos, pos);
+      return true;
+    };
+
+    const handleDragOver = (event: DragEvent): boolean => {
+      if (event.dataTransfer?.types.includes("Files")) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        return true;
+      }
+      return false;
+    };
 
   const insertAttachmentReference = (
     editor: EditorView,
@@ -395,6 +507,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           ]),
           EditorView.domEventHandlers({
             paste: (event, editor) => handlePasteImage(event, editor),
+            drop: (event, editor) => handleDrop(event, editor),
+            dragover: (event) => handleDragOver(event),
             contextmenu: (event, editor) => {
               event.preventDefault();
               const position = editor.posAtCoords({ x: event.clientX, y: event.clientY });
@@ -430,6 +544,58 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
                 onCursorRef.current?.(line, column, selectedText);
               } else {
                 onCursorRef.current?.(line, column);
+              }
+
+              // 检测是否触发 / 斜杠快捷菜单（在行首或空行输入 /）
+              const head = update.state.selection.main.head;
+              const curLine = update.state.doc.lineAt(head);
+              const textBefore = curLine.text.slice(0, head - curLine.from);
+              if (textBefore.trim() === "/") {
+                const coords = update.view.coordsAtPos(head);
+                if (coords) {
+                  setSlashState({
+                    open: true,
+                    x: coords.left,
+                    y: coords.bottom + 4,
+                    lineFrom: curLine.from,
+                    head,
+                  });
+                }
+              } else if (!textBefore.startsWith("/")) {
+                setSlashState(null);
+              }
+
+              // 检测是否在 Markdown 表格中触发表格悬浮操作条
+              if (isMarkdownTableRow(curLine.text)) {
+                let startLn = curLine.number;
+                while (startLn > 1 && isMarkdownTableRow(update.state.doc.line(startLn - 1).text)) {
+                  startLn--;
+                }
+                let endLn = curLine.number;
+                while (endLn < update.state.doc.lines && isMarkdownTableRow(update.state.doc.line(endLn + 1).text)) {
+                  endLn++;
+                }
+
+                const lines: string[] = [];
+                for (let ln = startLn; ln <= endLn; ln++) {
+                  lines.push(update.state.doc.line(ln).text);
+                }
+
+                const coords = update.view.coordsAtPos(head);
+                if (coords) {
+                  setTableState({
+                    visible: true,
+                    x: coords.left,
+                    y: coords.top,
+                    tableFrom: update.state.doc.line(startLn).from,
+                    tableTo: update.state.doc.line(endLn).to,
+                    tableLines: lines,
+                    currentLineIdx: curLine.number - startLn,
+                    currentColIdx: Math.max(0, curLine.text.slice(0, head - curLine.from).split("|").length - 2),
+                  });
+                }
+              } else {
+                setTableState(null);
               }
             }
           }),
@@ -697,6 +863,23 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         items={contextMenuItems}
         ariaLabel={zh.editor.contextMenu.ariaLabel}
         onClose={() => setContextMenu(null)}
+      />
+      <SlashMenu
+        open={slashState?.open ?? false}
+        x={slashState?.x ?? 0}
+        y={slashState?.y ?? 0}
+        onClose={() => setSlashState(null)}
+        onSelect={handleSlashSelect}
+      />
+      <TableFloatingBar
+        visible={tableState?.visible ?? false}
+        x={tableState?.x ?? 0}
+        y={tableState?.y ?? 0}
+        onAddRow={handleAddRow}
+        onDeleteRow={handleDeleteRow}
+        onAddCol={handleAddCol}
+        onDeleteCol={handleDeleteCol}
+        onAlign={handleAlignTable}
       />
     </div>
   );
