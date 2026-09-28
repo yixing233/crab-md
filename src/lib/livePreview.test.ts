@@ -1,0 +1,104 @@
+import { describe, expect, it } from "vitest";
+import { EditorState, EditorSelection } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { buildLivePreviewDecorations, livePreview } from "./livePreview";
+
+describe("livePreview", () => {
+  it("decorates inactive lines and leaves active lines in raw markdown", () => {
+    const doc = [
+      "# 一级标题",
+      "",
+      "**加粗内容**",
+      "",
+      "- [ ] 任务待办",
+      "",
+      "---",
+    ].join("\n");
+
+    // 光标位于第 1 行（字符 0，第一行激活）
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(0),
+    });
+
+    const view = new EditorView({ state });
+    const decos = buildLivePreviewDecorations(view);
+
+    // 活跃的第 1 行：保留 # 源码供编辑，但挂载 cm-live-h1 行样式
+    let line1HasLineDeco = false;
+    let line1ReplacedMark = false;
+    let boldMarkFound = false;
+    let boldMarkerHidden = false;
+    let taskWidgetFound = false;
+    let hrWidgetFound = false;
+
+    decos.between(0, doc.length, (from, to, deco) => {
+      const spec = deco.spec;
+      if (spec.class?.includes("cm-live-h1")) {
+        line1HasLineDeco = true;
+      }
+      // 第 1 行的前 2 个字符（# ）是否被 replace 折叠
+      if (from === 0 && to === 2 && (deco as any).value?.spec?.widget === undefined) {
+        line1ReplacedMark = true;
+      }
+      if (spec.class?.includes("cm-live-bold")) {
+        boldMarkFound = true;
+      }
+      if (from === doc.indexOf("**加粗内容**") && to === doc.indexOf("**加粗内容**") + 2) {
+        boldMarkerHidden = true;
+      }
+      if (spec.widget && spec.widget.constructor.name === "TaskCheckboxWidget") {
+        taskWidgetFound = true;
+      }
+      if (spec.widget && spec.widget.constructor.name === "HorizontalRuleWidget") {
+        hrWidgetFound = true;
+      }
+    });
+
+    expect(line1HasLineDeco).toBe(true);
+    // 因为光标在第 1 行，# 标记绝对不应该被隐藏，必须可见供编辑
+    expect(line1ReplacedMark).toBe(false);
+
+    // 非活跃的第 3 行（加粗）：星号被折叠，文字加粗
+    expect(boldMarkFound).toBe(true);
+    expect(boldMarkerHidden).toBe(true);
+
+    // 非活跃的第 5 行：任务复选框被替换为可交互 Widget
+    expect(taskWidgetFound).toBe(true);
+
+    // 非活跃的第 7 行：--- 被替换为水平线 Widget
+    expect(hrWidgetFound).toBe(true);
+  });
+
+  it("folds heading mark when cursor leaves the heading line", () => {
+    const doc = "# 标题行\n\n正文行";
+
+    // 光标位于正文行（第 3 行）
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("正文行")),
+    });
+
+    const view = new EditorView({ state });
+    const decos = buildLivePreviewDecorations(view);
+
+    let headingMarkHidden = false;
+    decos.between(0, 2, (from, to) => {
+      if (from === 0 && to === 2) {
+        headingMarkHidden = true;
+      }
+    });
+
+    // 光标离开标题行后，# 标记自动折叠隐藏
+    expect(headingMarkHidden).toBe(true);
+  });
+
+  it("provides livePreview extension that attaches to EditorState", () => {
+    const state = EditorState.create({
+      doc: "测试",
+      extensions: [livePreview(true)],
+    });
+
+    expect(state).toBeDefined();
+  });
+});

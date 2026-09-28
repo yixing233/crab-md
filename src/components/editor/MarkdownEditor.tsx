@@ -17,6 +17,7 @@ import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { applyMarkdownAction, type MarkdownActionId } from "../../lib/markdownActions";
+import { livePreview, livePreviewCompartment, livePreviewPlugin } from "../../lib/livePreview";
 import { cmPhrases, zh } from "../../lib/i18n";
 import {
   ContextMenu,
@@ -66,6 +67,8 @@ export interface MarkdownEditorProps {
   showToolbar?: boolean;
   /** 上报 CodeMirror 可滚动的根 DOM 容器（cm-scroller），供编辑/预览同步滚动机制监听。 */
   onScrollDOM?: (el: HTMLElement | null) => void;
+  /** 是否启用混合即时渲染（Hybrid WYSIWYG / Live Preview），默认开启。 */
+  livePreviewEnabled?: boolean;
 }
 
 /** 让 CodeMirror 读取应用主题令牌，避免出现与外壳无关的配色。 */
@@ -284,11 +287,26 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       findNonce,
       showToolbar = true,
       onScrollDOM,
+      livePreviewEnabled = true,
     }: MarkdownEditorProps,
     ref,
   ) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
+    const [isLivePreview, setIsLivePreview] = useState(livePreviewEnabled);
+
+    useEffect(() => {
+      setIsLivePreview(livePreviewEnabled);
+    }, [livePreviewEnabled]);
+
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        effects: livePreviewCompartment.reconfigure(isLivePreview ? [livePreviewPlugin] : []),
+      });
+    }, [isLivePreview]);
+
     const [contextMenu, setContextMenu] = useState<EditorContextMenuState | null>(null);
     const [slashState, setSlashState] = useState<{
       open: boolean;
@@ -479,6 +497,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           foldGutter({ markerDOM: (open) => createFoldMarker(open) }),
           EditorView.lineWrapping,
           search({ top: true, createPanel: createCustomSearchPanel }),
+          livePreview(isLivePreview),
           appTheme,
           // CodeMirror 内置面板（查找/替换）默认英文，注入中文词表（UI §2.5）。
           EditorState.phrases.of(cmPhrases),
@@ -488,6 +507,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
               preventDefault: true,
               run: () => {
                 onSaveRef.current?.();
+                return true;
+              },
+            },
+            // Typora 标配快捷键：Ctrl+/ 切换即时渲染与纯源码模式
+            {
+              key: "Mod-/",
+              preventDefault: true,
+              run: () => {
+                setIsLivePreview((prev) => !prev);
                 return true;
               },
             },
