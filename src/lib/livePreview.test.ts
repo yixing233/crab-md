@@ -143,16 +143,39 @@ describe("livePreview", () => {
   });
 
   it("provides livePreview extension that attaches to EditorState", () => {
+    const doc = "| a | b |\n|---|---|\n| 1 | 2 |\n\n$$\nE=mc^2\n$$\n\n外部文本";
     const state = EditorState.create({
-      doc: "| a | b |\n|---|---|\n| 1 | 2 |\n\n$$\nE=mc^2\n$$",
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("外部文本")),
       extensions: [livePreview(true)],
     });
 
     const host = document.createElement("div");
     document.body.appendChild(host);
     const view = new EditorView({ state, parent: host });
+
+    expect(host.querySelector("table")).toBeInTheDocument();
+    expect(host.querySelector(".katex")).toBeInTheDocument();
     expect(view).toBeDefined();
     view.destroy();
     host.remove();
+  });
+
+  it("renders single-line block math $$ formula $$", () => {
+    const doc = "$$x^2 + y^2 = 1$$\n\n外部文本";
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("外部文本")),
+    });
+
+    const decos = buildLivePreviewDecorations(state);
+    let found = false;
+    decos.between(0, doc.length, (_from, _to, deco) => {
+      if (deco.spec.widget?.constructor.name === "BlockMathWidget") {
+        found = true;
+      }
+    });
+
+    expect(found).toBe(true);
   });
 });

@@ -193,7 +193,27 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
     const line = doc.line(ln);
     const lineText = line.text;
 
-    // A. 块级数学公式识别：$$\n...\n$$
+    // A.1 单行独立数学公式：$$ formula $$
+    const singleLineMath = lineText.match(/^\s*\$\$(.+?)\$\$\s*$/);
+    if (singleLineMath) {
+      const formula = singleLineMath[1];
+      const touchesCaret = state.selection.ranges.some(
+        (r) => r.from <= line.to && r.to >= line.from,
+      );
+      if (!touchesCaret) {
+        const blockTo = ln < doc.lines ? doc.line(ln + 1).from : line.to;
+        decos.push(
+          Decoration.replace({
+            widget: new BlockMathWidget(formula),
+            block: true,
+          }).range(line.from, blockTo),
+        );
+      }
+      ln++;
+      continue;
+    }
+
+    // A.2 多行独立数学公式识别：$$\n...\n$$
     if (lineText.trim() === "$$") {
       let endLn = ln + 1;
       while (endLn <= doc.lines && doc.line(endLn).text.trim() !== "$$") {
@@ -212,11 +232,12 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
             formulaLines.push(doc.line(k).text);
           }
           const formula = formulaLines.join("\n");
+          const blockTo = endLn < doc.lines ? doc.line(endLn + 1).from : endLine.to;
           decos.push(
             Decoration.replace({
               widget: new BlockMathWidget(formula),
               block: true,
-            }).range(startLine.from, endLine.to),
+            }).range(startLine.from, blockTo),
           );
         }
         ln = endLn + 1;
@@ -295,11 +316,12 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
             tableLines.push(doc.line(k).text);
           }
           const tableMarkdown = tableLines.join("\n");
+          const blockTo = endLn < doc.lines ? doc.line(endLn + 1).from : endLine.to;
           decos.push(
             Decoration.replace({
               widget: new LiveTableWidget(tableMarkdown),
               block: true,
-            }).range(startLine.from, endLine.to),
+            }).range(startLine.from, blockTo),
           );
         }
         ln = endLn + 1;
@@ -374,24 +396,32 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
       }
     }
 
-    // D.5 行内样式渲染（仅当光标不在该行时折叠前后标记并美化）：
-    if (!isActive) {
-      // D.5.1 行内数学公式：$formula$
-      const mathRegex = /(?<!\$)\$([^\$\n]+?)\$(?!\$)/g;
-      let match: RegExpExecArray | null;
-      while ((match = mathRegex.exec(lineText)) !== null) {
-        const start = line.from + match.index;
-        const end = start + match[0].length;
-        const formula = match[1];
+    // D.5 行内数学公式：$formula$（只要光标不在该公式字符内部即刻渲染，无需离开当前行）
+    const mathRegex = /(?<!\$)\$([^\$\n]+?)\$(?!\$)/g;
+    let mathMatch: RegExpExecArray | null;
+    while ((mathMatch = mathRegex.exec(lineText)) !== null) {
+      const start = line.from + mathMatch.index;
+      const end = start + mathMatch[0].length;
+      const formula = mathMatch[1];
 
+      const touchesFormula = state.selection.ranges.some(
+        (r) => r.from <= end && r.to >= start,
+      );
+
+      if (!touchesFormula) {
         decos.push(
           Decoration.replace({
             widget: new InlineMathWidget(formula),
           }).range(start, end),
         );
       }
+    }
 
-      // D.5.2 加粗：**文本** 或 __文本__
+    // D.6 行内格式渲染（仅当光标离开当前行时折叠前后标记并美化）：
+    if (!isActive) {
+      let match: RegExpExecArray | null;
+
+      // D.6.1 加粗：**文本** 或 __文本__
       const boldRegex = /(\*\*|__)(?!\s)(.+?)(?<!\s)\1/g;
       while ((match = boldRegex.exec(lineText)) !== null) {
         const markerLen = match[1].length;
