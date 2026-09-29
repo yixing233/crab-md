@@ -1175,6 +1175,60 @@ button.cm-button.cm-search-close:focus-visible,
 }
 
 /* ---------------------------------------------------------------------------
+   CodeMirror 6 Live Preview - 真实所见即所得可视化表格 Widget
+   --------------------------------------------------------------------------- */
+
+.cm-live-table-widget {
+  margin: 0 !important;
+  padding: 6px 0 !important;
+  cursor: text !important;
+  user-select: text !important;
+  width: 100%;
+}
+
+.cm-live-table-widget table {
+  width: 100% !important;
+  margin: 0 !important;
+  border-collapse: collapse !important;
+  background-color: var(--bg-surface) !important;
+  border: 1px solid var(--border-default, #d8d8dc) !important;
+  border-radius: var(--radius-md, 6px) !important;
+  overflow: hidden !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.cm-live-table-widget thead {
+  background-color: var(--bg-surface-elevated, #f1f5f9) !important;
+  border-bottom: 2px solid var(--border-strong, #bfbfc4) !important;
+}
+
+.cm-live-table-widget th {
+  padding: 8px 14px !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  text-align: left !important;
+  border: 1px solid var(--border-default, #d8d8dc) !important;
+  background-color: var(--bg-surface-elevated, #f1f5f9) !important;
+  cursor: text !important;
+}
+
+.cm-live-table-widget td {
+  padding: 8px 14px !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default, #d8d8dc) !important;
+  background-color: var(--bg-app, #ffffff);
+  cursor: text !important;
+}
+
+.cm-live-table-widget tbody tr:nth-child(even) td {
+  background-color: var(--bg-surface, #f8fafc) !important;
+}
+
+.cm-live-table-widget tbody tr:hover td {
+  background-color: var(--bg-surface-hover, #f1f5f9) !important;
+}
+
+/* ---------------------------------------------------------------------------
    CodeMirror 6 Live Preview - 原生零位移表格排版
    --------------------------------------------------------------------------- */
 

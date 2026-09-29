@@ -123,7 +123,7 @@ describe("livePreview", () => {
     let inlineMathFound = false;
     let blockMathFound = false;
     let codeHeaderFound = false;
-    let tableLineFound = false;
+    let tableWidgetFound = false;
 
     decos.between(0, doc.length, (_from, _to, deco) => {
       const widget = deco.spec.widget;
@@ -132,16 +132,14 @@ describe("livePreview", () => {
         if (name === "InlineMathWidget") inlineMathFound = true;
         if (name === "BlockMathWidget") blockMathFound = true;
         if (name === "CodeBlockHeaderWidget") codeHeaderFound = true;
-      }
-      if (deco.spec.class?.includes("cm-live-table-line")) {
-        tableLineFound = true;
+        if (name === "LiveTableWidget") tableWidgetFound = true;
       }
     });
 
     expect(inlineMathFound).toBe(true);
     expect(blockMathFound).toBe(true);
     expect(codeHeaderFound).toBe(true);
-    expect(tableLineFound).toBe(true);
+    expect(tableWidgetFound).toBe(true);
   });
 
   it("provides livePreview extension that attaches to EditorState", () => {
@@ -156,7 +154,7 @@ describe("livePreview", () => {
     document.body.appendChild(host);
     const view = new EditorView({ state, parent: host });
 
-    expect(host.querySelector(".cm-live-table-line")).toBeInTheDocument();
+    expect(host.querySelector("table")).toBeInTheDocument();
     expect(host.querySelector(".katex")).toBeInTheDocument();
     expect(view).toBeDefined();
     view.destroy();

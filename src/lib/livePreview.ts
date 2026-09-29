@@ -6,6 +6,7 @@ import {
 } from "@codemirror/view";
 import { Compartment, type Extension, type Range, StateField, EditorState } from "@codemirror/state";
 import katex from "katex";
+import { renderMarkdown } from "./markdown";
 import { isMarkdownTableRow } from "./tableHelper";
 
 /**
@@ -171,6 +172,59 @@ class CodeBlockHeaderWidget extends WidgetType {
 }
 
 /**
+ * 所见即所得真实可视化表格 Widget
+ */
+class LiveTableWidget extends WidgetType {
+  constructor(
+    readonly markdown: string,
+    readonly startLn: number,
+    readonly tableFrom: number,
+    readonly tableLines: string[],
+  ) {
+    super();
+  }
+
+  eq(other: LiveTableWidget) {
+    return this.markdown === other.markdown && this.tableFrom === other.tableFrom;
+  }
+
+  ignoreEvent() {
+    return false;
+  }
+
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-live-table-widget";
+    wrap.innerHTML = renderMarkdown(this.markdown);
+
+    // 为每个单元格添加点击侦听，精确导航到对应的行列
+    const cells = wrap.querySelectorAll("th, td");
+    cells.forEach((cell) => {
+      cell.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+        const tr = cell.closest("tr");
+        if (!tr) return;
+        const rowIndex = (tr as HTMLTableRowElement).rowIndex;
+        // 在 Markdown 中，第 0 行是表头，第 1 行是分隔行 |---|，第 2 行起是数据行
+        let docLineNumber = this.startLn + rowIndex;
+        if (rowIndex > 0) {
+          docLineNumber += 1; // 跨过分隔行
+        }
+        if (docLineNumber <= view.state.doc.lines) {
+          const line = view.state.doc.line(docLineNumber);
+          view.dispatch({
+            selection: { anchor: Math.min(line.from + 2, line.to) },
+          });
+          view.focus();
+        }
+      });
+    });
+
+    return wrap;
+  }
+}
+
+/**
  * 遍历可见文档并构建 Live Preview（即时渲染）装饰集。
  * 核心机制：光标所在的活跃行/块保留原始 Markdown 源码，离开后自动隐藏标记并呈现渲染效果。
  */
@@ -297,39 +351,60 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
       }
     }
 
-    // C. Markdown 表格优雅行内就地渲染（零纵向位移，保留完美坐标判定）
+    // C. Markdown 表格多行识别与所见即所得实时表格渲染
     if (isMarkdownTableRow(lineText)) {
       let endLn = ln;
       while (endLn < doc.lines && isMarkdownTableRow(doc.line(endLn + 1).text)) {
         endLn++;
       }
       if (endLn >= ln + 1) {
-        for (let k = ln; k <= endLn; k++) {
-          const curLine = doc.line(k);
-          const curText = curLine.text;
-          const isHeader = k === ln;
-          const isSep = k === ln + 1;
-          const isLast = k === endLn;
+        const startLine = doc.line(ln);
+        const endLine = doc.line(endLn);
+        const touchesCaret = state.selection.ranges.some(
+          (r) => r.from <= endLine.to && r.to >= startLine.from,
+        );
 
-          let lineClass = "cm-live-table-line";
-          if (isHeader) lineClass += " cm-live-table-line--header";
-          else if (isSep) lineClass += " cm-live-table-line--sep";
-          else lineClass += " cm-live-table-line--row";
+        if (!touchesCaret) {
+          const tableLines: string[] = [];
+          for (let k = ln; k <= endLn; k++) {
+            tableLines.push(doc.line(k).text);
+          }
+          const tableMarkdown = tableLines.join("\n");
+          const blockTo = endLn < doc.lines ? doc.line(endLn + 1).from : endLine.to;
+          decos.push(
+            Decoration.replace({
+              widget: new LiveTableWidget(tableMarkdown, ln, startLine.from, tableLines),
+              block: true,
+            }).range(startLine.from, blockTo),
+          );
+        } else {
+          // 光标在表格内部时：保持源码展开并提供行内卡片排版
+          for (let k = ln; k <= endLn; k++) {
+            const curLine = doc.line(k);
+            const curText = curLine.text;
+            const isHeader = k === ln;
+            const isSep = k === ln + 1;
+            const isLast = k === endLn;
 
-          if (isLast) lineClass += " cm-live-table-line--last";
+            let lineClass = "cm-live-table-line";
+            if (isHeader) lineClass += " cm-live-table-line--header";
+            else if (isSep) lineClass += " cm-live-table-line--sep";
+            else lineClass += " cm-live-table-line--row";
 
-          decos.push(Decoration.line({ class: lineClass }).range(curLine.from));
+            if (isLast) lineClass += " cm-live-table-line--last";
 
-          // 为表格中的每一个 | 竖线添加高亮边框样式
-          let pipeIdx = curText.indexOf("|");
-          while (pipeIdx !== -1) {
-            decos.push(
-              Decoration.mark({ class: "cm-live-table-pipe" }).range(
-                curLine.from + pipeIdx,
-                curLine.from + pipeIdx + 1,
-              ),
-            );
-            pipeIdx = curText.indexOf("|", pipeIdx + 1);
+            decos.push(Decoration.line({ class: lineClass }).range(curLine.from));
+
+            let pipeIdx = curText.indexOf("|");
+            while (pipeIdx !== -1) {
+              decos.push(
+                Decoration.mark({ class: "cm-live-table-pipe" }).range(
+                  curLine.from + pipeIdx,
+                  curLine.from + pipeIdx + 1,
+                ),
+              );
+              pipeIdx = curText.indexOf("|", pipeIdx + 1);
+            }
           }
         }
 
