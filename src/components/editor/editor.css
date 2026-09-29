@@ -931,18 +931,52 @@ button.cm-button.cm-search-close:focus-visible,
   font-size: var(--preview-size-quote, 16px);
 }
 
-/* 窄屏表格横向滚动而非撑破布局（UI §22）。 */
+/* 现代高质感表格设计（对标 GitHub / Notion / Typora） */
 .markdown-preview table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  border-collapse: collapse;
-  font-family: var(--preview-font-table, var(--font-ui));
-  font-size: var(--preview-size-table, 15px);
+  display: table !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: var(--space-4) 0 !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  border: 1px solid var(--border-default, #d8d8dc) !important;
+  border-radius: var(--radius-md, 6px) !important;
+  overflow: hidden !important;
+  font-family: var(--preview-font-table, var(--font-ui)) !important;
+  font-size: var(--preview-size-table, 15px) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
-.markdown-preview th, .markdown-preview td {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
+
+.markdown-preview thead {
+  background-color: var(--bg-surface-elevated, var(--bg-surface-hover, #f1f5f9)) !important;
+  border-bottom: 2px solid var(--border-strong, #bfbfc4) !important;
+}
+
+.markdown-preview th {
+  padding: 10px 16px !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  text-align: left !important;
+  border: 1px solid var(--border-default, #d8d8dc) !important;
+  background-color: var(--bg-surface-elevated, #f1f5f9) !important;
+}
+
+.markdown-preview td {
+  padding: 8px 16px !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default, #d8d8dc) !important;
+  background-color: var(--bg-app, #ffffff);
+  line-height: 1.5;
+}
+
+/* 斑马纹交替行背景 */
+.markdown-preview tbody tr:nth-child(even) td {
+  background-color: var(--bg-surface, #f8fafc) !important;
+}
+
+/* 悬停行高亮 */
+.markdown-preview tbody tr:hover td {
+  background-color: var(--bg-surface-hover, #f1f5f9) !important;
 }
 
 /* 公式：KaTeX 自己生成内部结构，这里只控制外层字号与字体，
@@ -1149,8 +1183,8 @@ button.cm-button.cm-search-close:focus-visible,
   font-family: var(--preview-font-table, var(--font-mono)) !important;
   border-left: 1px solid var(--border-default) !important;
   border-right: 1px solid var(--border-default) !important;
-  padding-left: 10px !important;
-  padding-right: 10px !important;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
   line-height: 1.6 !important;
   cursor: text !important;
 }
@@ -1161,36 +1195,36 @@ button.cm-button.cm-search-close:focus-visible,
   border-top: 1px solid var(--border-default) !important;
   border-top-left-radius: var(--radius-md, 6px) !important;
   border-top-right-radius: var(--radius-md, 6px) !important;
-  padding-top: 4px !important;
-  padding-bottom: 2px !important;
+  padding-top: 6px !important;
+  padding-bottom: 3px !important;
 }
 
 .cm-live-table-line--sep {
-  border-bottom: 1.5px solid var(--border-strong) !important;
+  border-bottom: 2px solid var(--border-strong, #bfbfc4) !important;
   color: var(--border-strong) !important;
-  opacity: 0.65;
+  opacity: 0.7;
   font-size: 0.9em;
-  padding-top: 1px !important;
-  padding-bottom: 1px !important;
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
 }
 
 .cm-live-table-line--row {
   border-bottom: 1px solid var(--border-subtle) !important;
-  padding-top: 2px !important;
-  padding-bottom: 2px !important;
+  padding-top: 3px !important;
+  padding-bottom: 3px !important;
 }
 
 .cm-live-table-line--last {
   border-bottom: 1px solid var(--border-default) !important;
   border-bottom-left-radius: var(--radius-md, 6px) !important;
   border-bottom-right-radius: var(--radius-md, 6px) !important;
-  padding-bottom: 4px !important;
+  padding-bottom: 6px !important;
 }
 
 .cm-live-table-pipe {
   color: var(--accent-solid, #2563eb) !important;
   font-weight: 700 !important;
-  opacity: 0.75;
+  padding: 0 4px !important;
 }
 
 /* 围栏代码块卡片化排版（无缝一体化、紧凑紧实、零偏移） */
