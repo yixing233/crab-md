@@ -1123,6 +1123,8 @@ button.cm-button.cm-search-close:focus-visible,
   display: inline-block;
   vertical-align: middle;
   padding: 0 4px;
+  cursor: text !important;
+  user-select: text !important;
 }
 
 .cm-live-block-math-widget {
@@ -1134,12 +1136,16 @@ button.cm-button.cm-search-close:focus-visible,
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   overflow-x: auto;
+  cursor: text !important;
+  user-select: text !important;
 }
 
 /* 实时所见即所得表格 Widget */
 .cm-live-table-widget {
   margin: 14px 0;
   overflow-x: auto;
+  cursor: text !important;
+  user-select: text !important;
 }
 
 .cm-live-table-widget table {
@@ -1149,12 +1155,14 @@ button.cm-button.cm-search-close:focus-visible,
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid var(--border-default);
+  cursor: text !important;
 }
 
 .cm-live-table-widget th,
 .cm-live-table-widget td {
   padding: 8px 14px;
   border: 1px solid var(--border-subtle);
+  cursor: text !important;
 }
 
 .cm-live-table-widget th {

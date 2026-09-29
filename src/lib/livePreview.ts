@@ -75,15 +75,22 @@ class HorizontalRuleWidget extends WidgetType {
  * 行内数学公式 Widget ($formula$)
  */
 class InlineMathWidget extends WidgetType {
-  constructor(readonly formula: string) {
+  constructor(
+    readonly formula: string,
+    readonly from: number,
+  ) {
     super();
   }
 
   eq(other: InlineMathWidget) {
-    return this.formula === other.formula;
+    return this.formula === other.formula && this.from === other.from;
   }
 
-  toDOM() {
+  ignoreEvent() {
+    return false;
+  }
+
+  toDOM(view: EditorView) {
     const span = document.createElement("span");
     span.className = "cm-live-inline-math-widget";
     try {
@@ -94,6 +101,10 @@ class InlineMathWidget extends WidgetType {
     } catch {
       span.textContent = `$${this.formula}$`;
     }
+    span.addEventListener("mousedown", () => {
+      view.dispatch({ selection: { anchor: this.from } });
+      view.focus();
+    });
     return span;
   }
 }
@@ -102,15 +113,22 @@ class InlineMathWidget extends WidgetType {
  * 块级独立数学公式 Widget ($$\n...\n$$)
  */
 class BlockMathWidget extends WidgetType {
-  constructor(readonly formula: string) {
+  constructor(
+    readonly formula: string,
+    readonly from: number,
+  ) {
     super();
   }
 
   eq(other: BlockMathWidget) {
-    return this.formula === other.formula;
+    return this.formula === other.formula && this.from === other.from;
   }
 
-  toDOM() {
+  ignoreEvent() {
+    return false;
+  }
+
+  toDOM(view: EditorView) {
     const div = document.createElement("div");
     div.className = "cm-live-block-math-widget";
     try {
@@ -121,6 +139,10 @@ class BlockMathWidget extends WidgetType {
     } catch {
       div.textContent = `$$ ${this.formula} $$`;
     }
+    div.addEventListener("mousedown", () => {
+      view.dispatch({ selection: { anchor: this.from } });
+      view.focus();
+    });
     return div;
   }
 }
@@ -153,18 +175,29 @@ class CodeBlockHeaderWidget extends WidgetType {
  * 所见即所得实时表格 Widget
  */
 class LiveTableWidget extends WidgetType {
-  constructor(readonly markdown: string) {
+  constructor(
+    readonly markdown: string,
+    readonly from: number,
+  ) {
     super();
   }
 
   eq(other: LiveTableWidget) {
-    return this.markdown === other.markdown;
+    return this.markdown === other.markdown && this.from === other.from;
   }
 
-  toDOM() {
+  ignoreEvent() {
+    return false;
+  }
+
+  toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-live-table-widget";
     wrap.innerHTML = renderMarkdown(this.markdown);
+    wrap.addEventListener("mousedown", () => {
+      view.dispatch({ selection: { anchor: this.from } });
+      view.focus();
+    });
     return wrap;
   }
 }
@@ -204,7 +237,7 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
         const blockTo = ln < doc.lines ? doc.line(ln + 1).from : line.to;
         decos.push(
           Decoration.replace({
-            widget: new BlockMathWidget(formula),
+            widget: new BlockMathWidget(formula, line.from),
             block: true,
           }).range(line.from, blockTo),
         );
@@ -235,7 +268,7 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
           const blockTo = endLn < doc.lines ? doc.line(endLn + 1).from : endLine.to;
           decos.push(
             Decoration.replace({
-              widget: new BlockMathWidget(formula),
+              widget: new BlockMathWidget(formula, startLine.from),
               block: true,
             }).range(startLine.from, blockTo),
           );
@@ -319,7 +352,7 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
           const blockTo = endLn < doc.lines ? doc.line(endLn + 1).from : endLine.to;
           decos.push(
             Decoration.replace({
-              widget: new LiveTableWidget(tableMarkdown),
+              widget: new LiveTableWidget(tableMarkdown, startLine.from),
               block: true,
             }).range(startLine.from, blockTo),
           );
@@ -411,7 +444,7 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
       if (!touchesFormula) {
         decos.push(
           Decoration.replace({
-            widget: new InlineMathWidget(formula),
+            widget: new InlineMathWidget(formula, start),
           }).range(start, end),
         );
       }
