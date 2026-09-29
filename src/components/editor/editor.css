@@ -1152,23 +1152,25 @@ button.cm-button.cm-search-close:focus-visible,
   opacity: 1;
 }
 
-/* 行内与独立数学公式 Widget */
+/* 行内与独立数学公式 Widget（纯净透明无多余底色与边框，优雅原生居中） */
 .cm-live-inline-math-widget {
   display: inline-block;
   vertical-align: middle;
-  padding: 0 4px;
+  padding: 0 2px;
   cursor: text !important;
   user-select: text !important;
+  background: transparent !important;
 }
 
 .cm-live-block-math-widget {
   display: flex;
   justify-content: center;
-  padding: 12px 16px;
-  margin: 12px 0;
-  background-color: var(--bg-surface-elevated, var(--bg-surface));
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  align-items: center;
+  padding: 8px 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
   overflow-x: auto;
   cursor: text !important;
   user-select: text !important;
