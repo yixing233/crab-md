@@ -1140,35 +1140,57 @@ button.cm-button.cm-search-close:focus-visible,
   user-select: text !important;
 }
 
-/* 实时所见即所得表格 Widget */
-.cm-live-table-widget {
-  margin: 14px 0;
-  overflow-x: auto;
-  cursor: text !important;
-  user-select: text !important;
-}
+/* ---------------------------------------------------------------------------
+   CodeMirror 6 Live Preview - 原生零位移表格排版
+   --------------------------------------------------------------------------- */
 
-.cm-live-table-widget table {
-  width: 100%;
-  border-collapse: collapse;
-  background-color: var(--bg-surface);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  border: 1px solid var(--border-default);
+.cm-live-table-line {
+  background-color: var(--bg-surface) !important;
+  font-family: var(--preview-font-table, var(--font-mono)) !important;
+  border-left: 1px solid var(--border-default) !important;
+  border-right: 1px solid var(--border-default) !important;
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+  line-height: 1.6 !important;
   cursor: text !important;
 }
 
-.cm-live-table-widget th,
-.cm-live-table-widget td {
-  padding: 8px 14px;
-  border: 1px solid var(--border-subtle);
-  cursor: text !important;
+.cm-live-table-line--header {
+  background-color: var(--bg-surface-elevated, #f1f5f9) !important;
+  font-weight: 600 !important;
+  border-top: 1px solid var(--border-default) !important;
+  border-top-left-radius: var(--radius-md, 6px) !important;
+  border-top-right-radius: var(--radius-md, 6px) !important;
+  padding-top: 4px !important;
+  padding-bottom: 2px !important;
 }
 
-.cm-live-table-widget th {
-  background-color: var(--bg-surface-hover);
-  font-weight: 600;
-  text-align: left;
+.cm-live-table-line--sep {
+  border-bottom: 1.5px solid var(--border-strong) !important;
+  color: var(--border-strong) !important;
+  opacity: 0.65;
+  font-size: 0.9em;
+  padding-top: 1px !important;
+  padding-bottom: 1px !important;
+}
+
+.cm-live-table-line--row {
+  border-bottom: 1px solid var(--border-subtle) !important;
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+}
+
+.cm-live-table-line--last {
+  border-bottom: 1px solid var(--border-default) !important;
+  border-bottom-left-radius: var(--radius-md, 6px) !important;
+  border-bottom-right-radius: var(--radius-md, 6px) !important;
+  padding-bottom: 4px !important;
+}
+
+.cm-live-table-pipe {
+  color: var(--accent-solid, #2563eb) !important;
+  font-weight: 700 !important;
+  opacity: 0.75;
 }
 
 /* 围栏代码块卡片化排版（无缝一体化、紧凑紧实、零偏移） */

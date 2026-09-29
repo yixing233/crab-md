@@ -6,7 +6,6 @@ import {
 } from "@codemirror/view";
 import { Compartment, type Extension, type Range, StateField, EditorState } from "@codemirror/state";
 import katex from "katex";
-import { renderMarkdown } from "./markdown";
 import { isMarkdownTableRow } from "./tableHelper";
 
 /**
@@ -172,37 +171,6 @@ class CodeBlockHeaderWidget extends WidgetType {
 }
 
 /**
- * 所见即所得实时表格 Widget
- */
-class LiveTableWidget extends WidgetType {
-  constructor(
-    readonly markdown: string,
-    readonly from: number,
-  ) {
-    super();
-  }
-
-  eq(other: LiveTableWidget) {
-    return this.markdown === other.markdown && this.from === other.from;
-  }
-
-  ignoreEvent() {
-    return false;
-  }
-
-  toDOM(view: EditorView) {
-    const wrap = document.createElement("div");
-    wrap.className = "cm-live-table-widget";
-    wrap.innerHTML = renderMarkdown(this.markdown);
-    wrap.addEventListener("mousedown", () => {
-      view.dispatch({ selection: { anchor: this.from } });
-      view.focus();
-    });
-    return wrap;
-  }
-}
-
-/**
  * 遍历可见文档并构建 Live Preview（即时渲染）装饰集。
  * 核心机制：光标所在的活跃行/块保留原始 Markdown 源码，离开后自动隐藏标记并呈现渲染效果。
  */
@@ -329,34 +297,42 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
       }
     }
 
-    // C. Markdown 表格多行识别
+    // C. Markdown 表格优雅行内就地渲染（零纵向位移，保留完美坐标判定）
     if (isMarkdownTableRow(lineText)) {
       let endLn = ln;
       while (endLn < doc.lines && isMarkdownTableRow(doc.line(endLn + 1).text)) {
         endLn++;
       }
-      // 表格至少要有表头和分隔行（2行以上）
       if (endLn >= ln + 1) {
-        const startLine = doc.line(ln);
-        const endLine = doc.line(endLn);
-        const touchesCaret = state.selection.ranges.some(
-          (r) => r.from <= endLine.to && r.to >= startLine.from,
-        );
+        for (let k = ln; k <= endLn; k++) {
+          const curLine = doc.line(k);
+          const curText = curLine.text;
+          const isHeader = k === ln;
+          const isSep = k === ln + 1;
+          const isLast = k === endLn;
 
-        if (!touchesCaret) {
-          const tableLines: string[] = [];
-          for (let k = ln; k <= endLn; k++) {
-            tableLines.push(doc.line(k).text);
+          let lineClass = "cm-live-table-line";
+          if (isHeader) lineClass += " cm-live-table-line--header";
+          else if (isSep) lineClass += " cm-live-table-line--sep";
+          else lineClass += " cm-live-table-line--row";
+
+          if (isLast) lineClass += " cm-live-table-line--last";
+
+          decos.push(Decoration.line({ class: lineClass }).range(curLine.from));
+
+          // 为表格中的每一个 | 竖线添加高亮边框样式
+          let pipeIdx = curText.indexOf("|");
+          while (pipeIdx !== -1) {
+            decos.push(
+              Decoration.mark({ class: "cm-live-table-pipe" }).range(
+                curLine.from + pipeIdx,
+                curLine.from + pipeIdx + 1,
+              ),
+            );
+            pipeIdx = curText.indexOf("|", pipeIdx + 1);
           }
-          const tableMarkdown = tableLines.join("\n");
-          const blockTo = endLn < doc.lines ? doc.line(endLn + 1).from : endLine.to;
-          decos.push(
-            Decoration.replace({
-              widget: new LiveTableWidget(tableMarkdown, startLine.from),
-              block: true,
-            }).range(startLine.from, blockTo),
-          );
         }
+
         ln = endLn + 1;
         continue;
       }
