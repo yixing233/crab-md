@@ -1182,7 +1182,7 @@ button.cm-button.cm-search-close:focus-visible,
 
 .cm-live-table-widget {
   margin: 0 !important;
-  padding: 6px 0 !important;
+  padding: 2px 0 !important;
   cursor: text !important;
   user-select: text !important;
   width: 100%;
