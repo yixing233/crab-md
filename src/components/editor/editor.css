@@ -975,9 +975,11 @@ button.cm-button.cm-search-close:focus-visible,
   background-color: var(--bg-surface, #f8fafc) !important;
 }
 
-/* 单个单元格悬停高亮（单格独立响应，不联动整行） */
-.markdown-preview th:hover,
-.markdown-preview td:hover {
+/* 单个单元格悬停高亮（单格独立响应，不联动整行）。
+   同权重（0,2,3）且位置在斑马纹规则之后，靠顺序取胜；
+   若写成 `.markdown-preview td:hover` 则权重更低，会被斑马纹压制。 */
+.markdown-preview tbody tr th:hover,
+.markdown-preview tbody tr td:hover {
   background-color: var(--bg-surface-hover, #ebebed) !important;
 }
 
@@ -1237,9 +1239,12 @@ button.cm-button.cm-search-close:focus-visible,
   background-color: var(--bg-surface, #f8fafc) !important;
 }
 
-/* 单个单元格悬停高亮（单格独立响应，不联动整行） */
-.cm-live-table-widget th:hover,
-.cm-live-table-widget td:hover {
+/* 单个单元格悬停高亮（单格独立响应，不联动整行）。
+   刻意用 tbody tr 提高选择器权重，否则会输给上面斑马纹
+   `tbody tr:nth-child(even)`（同为 !important 时权重高者胜），
+   导致偶数行（表格最后一行）悬停失效。 */
+.cm-live-table-widget tbody tr th:hover,
+.cm-live-table-widget tbody tr td:hover {
   background-color: var(--bg-surface-hover, #ebebed) !important;
 }
 
