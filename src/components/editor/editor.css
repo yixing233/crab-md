@@ -1213,7 +1213,8 @@ button.cm-button.cm-search-close:focus-visible,
 }
 
 .cm-live-table-widget th {
-  padding: 8px 14px !important;
+  padding: 4px 12px !important;
+  line-height: 22px !important;
   font-weight: 600 !important;
   color: var(--text-primary) !important;
   text-align: left !important;
@@ -1223,7 +1224,8 @@ button.cm-button.cm-search-close:focus-visible,
 }
 
 .cm-live-table-widget td {
-  padding: 8px 14px !important;
+  padding: 4px 12px !important;
+  line-height: 22px !important;
   color: var(--text-primary) !important;
   border: 1px solid var(--border-default, #d8d8dc) !important;
   background-color: var(--bg-app, #ffffff);

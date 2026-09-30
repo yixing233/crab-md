@@ -357,19 +357,8 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
       while (endLn < doc.lines && isMarkdownTableRow(doc.line(endLn + 1).text)) {
         endLn++;
       }
+      // 表格至少要有表头和分隔行（2行以上）
       if (endLn >= ln + 1) {
-        // 如果表格紧跟着一行空行（Markdown 语法中用于隔开表格与后续列表/段落的空行），
-        // 且光标不在该空行上，将该空行一并纳入折叠，避免渲染后出现巨大的空白断层！
-        let hasTrailingEmpty = false;
-        if (
-          endLn + 1 <= doc.lines &&
-          doc.line(endLn + 1).text.trim() === "" &&
-          !activeLineNumbers.has(endLn + 1)
-        ) {
-          hasTrailingEmpty = true;
-          endLn++;
-        }
-
         const startLine = doc.line(ln);
         const endLine = doc.line(endLn);
         const touchesCaret = state.selection.ranges.some(
@@ -378,8 +367,7 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
 
         if (!touchesCaret) {
           const tableLines: string[] = [];
-          const actualTableEnd = hasTrailingEmpty ? endLn - 1 : endLn;
-          for (let k = ln; k <= actualTableEnd; k++) {
+          for (let k = ln; k <= endLn; k++) {
             tableLines.push(doc.line(k).text);
           }
           const tableMarkdown = tableLines.join("\n");
