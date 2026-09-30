@@ -35,7 +35,7 @@
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border-subtle);
-  background-color: var(--bg-surface-elevated, var(--bg-surface));
+  background-color: var(--bg-surface);
   flex-shrink: 0;
 }
 
@@ -206,7 +206,7 @@
 .print-modal__actions {
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border-subtle);
-  background-color: var(--bg-surface-elevated, var(--bg-surface));
+  background-color: var(--bg-surface);
   display: flex;
   align-items: center;
   justify-content: flex-end;

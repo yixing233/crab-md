@@ -264,23 +264,40 @@
     font-family: var(--preview-font-quote, var(--font-ui)) !important;
   }
 
-  /* 表格打印跨页重现表头 */
+  /* 表格打印跨页重现表头。
+     打印始终是白纸：这里必须把主题令牌产生的底色一并压掉，
+     否则深色主题下斑马纹会解析成 --bg-surface(#232326)，
+     印出「深底 + 近黑字」的不可读表格。 */
   .markdown-preview table {
     font-family: var(--preview-font-table, var(--font-ui)) !important;
     width: 100% !important;
     border-collapse: collapse !important;
+    border-radius: 0 !important;
+    border: 1px solid #cbd5e1 !important;
     font-size: 10pt !important;
+    background: #ffffff !important;
   }
 
-  .markdown-preview table thead {
+  .markdown-preview table thead,
+  .markdown-preview table thead th {
     display: table-header-group !important;
     background: #f1f5f9 !important;
   }
 
+  /* 打印统一用浅色网格，覆盖屏显的令牌化边框与斑马纹。 */
+  .markdown-preview table tbody tr:nth-child(even) td {
+    background: #f8fafc !important;
+  }
+
+  /* 权重必须压过屏显的 `.markdown-preview tr > *:last-child`
+     （(0,2,1) > (0,1,2)），否则打印时最后一列/行的边框会消失。 */
   .markdown-preview table th,
-  .markdown-preview table td {
+  .markdown-preview table td,
+  .markdown-preview table tr > *:last-child,
+  .markdown-preview table tbody tr:last-child > * {
     border: 1px solid #cbd5e1 !important;
     padding: 6pt 10pt !important;
+    color: #1a1a1a !important;
   }
 
   .markdown-preview table tr {

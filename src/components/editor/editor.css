@@ -931,56 +931,117 @@ button.cm-button.cm-search-close:focus-visible,
   font-size: var(--preview-size-quote, 16px);
 }
 
-/* 现代高质感表格设计（对标 GitHub / Notion / Typora） */
-.markdown-preview table {
+/* ---------------------------------------------------------------------------
+   表格（MarkdownPreview 与 Live Preview 共用同一套视觉）
+   ---------------------------------------------------------------------------
+   只允许引用 theme-*.css / tokens.css 里真实存在的令牌。
+   注意：`--bg-surface-elevated` 在本项目里从未被定义过（只有 `--bg-elevated`），
+   `var()` 遇到未定义变量会静默退回兜底值，于是深色模式下表头变成
+   「近白底 + 近白字」，完全不可读。
+
+   圆角必须配 `border-collapse: separate`：CSS 规范规定 collapse 模式下
+   `border-radius` 不生效，否则会出现「外框圆角、内部方角」的错位观感。
+   这里用 separate + spacing 0，只给单元格画右/下边框，再去掉最后一列/行
+   的重复边框 —— 既得到干净的 1px 网格，又让外层圆角真正生效。
+
+   另按 UI §2.3，表格是内容而非浮动层，因此不加 box-shadow。
+   --------------------------------------------------------------------------- */
+
+.markdown-preview table,
+.cm-live-table-widget table {
   display: table !important;
+  /* max-content：按内容撑开、不折行。Live Preview 的 Widget 必须这样，
+     否则长单元格折行会改变高度，聚焦/失焦切换又会出现上下跳动。
+     宽度由 max-width 兜住，过宽时回到容器内。 */
   width: max-content !important;
-  min-width: 260px !important;
   max-width: 100% !important;
-  margin: var(--space-3) 0 !important;
-  border-collapse: collapse !important;
+  border-collapse: separate !important;
   border-spacing: 0 !important;
-  border: 1px solid var(--border-default, #d8d8dc) !important;
-  border-radius: var(--radius-md, 6px) !important;
+  background-color: var(--bg-app) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-md) !important;
   overflow: hidden !important;
+}
+
+/* 排版变量只挂在预览表格上。
+   Live Preview 的 Widget 必须继续沿用编辑器字号：它要和聚焦后展开的
+   Markdown 源码行（.cm-live-table-line，随编辑器字号）逐像素对齐，
+   否则「聚焦 / 失焦切换时内容上下跳动」的老问题会立刻复发。 */
+.markdown-preview table {
+  margin: var(--space-3) 0 !important;
   font-family: var(--preview-font-table, var(--font-ui)) !important;
   font-size: var(--preview-size-table, 15px) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
-.markdown-preview thead {
-  background-color: var(--bg-surface-elevated, var(--bg-surface-hover, #f1f5f9)) !important;
-  border-bottom: 2px solid var(--border-strong, #bfbfc4) !important;
+/* 表头用 surface-active：比斑马纹的 surface 再深/亮一档，层次清楚，
+   且在明暗两套主题下都与 --text-primary 有足够对比度。 */
+.markdown-preview thead,
+.cm-live-table-widget thead {
+  background-color: var(--bg-surface-active) !important;
 }
 
-.markdown-preview th {
-  padding: 10px 16px !important;
-  font-weight: 600 !important;
+.markdown-preview th,
+.markdown-preview td,
+.cm-live-table-widget th,
+.cm-live-table-widget td {
   color: var(--text-primary) !important;
   text-align: left !important;
-  border: 1px solid var(--border-default, #d8d8dc) !important;
-  background-color: var(--bg-surface-elevated, #f1f5f9) !important;
+  background-color: transparent !important;
+  /* 只画右/下边框，避免相邻单元格叠出 2px 双线。
+     用 --border-default 而非 --border-subtle：后者在浅色下是 #e8e8ea，
+     做网格线几乎看不见。 */
+  border: none !important;
+  border-right: 1px solid var(--border-default) !important;
+  border-bottom: 1px solid var(--border-default) !important;
 }
 
+.markdown-preview th,
+.cm-live-table-widget th {
+  font-weight: 600 !important;
+  /* 表头与数据之间用更强的分隔线强调结构。 */
+  border-bottom: 1px solid var(--border-strong) !important;
+}
+
+.markdown-preview th,
 .markdown-preview td {
-  padding: 8px 16px !important;
-  color: var(--text-primary) !important;
-  border: 1px solid var(--border-default, #d8d8dc) !important;
-  background-color: var(--bg-app, #ffffff);
-  line-height: 1.5;
+  padding: 8px 14px !important;
+  line-height: 1.5 !important;
+}
+
+.cm-live-table-widget th,
+.cm-live-table-widget td {
+  padding: 4px 12px !important;
+  line-height: 22px !important;
+  cursor: text !important;
+}
+
+/* 去掉最后一列/行的重复边框，收口交给表格外框。 */
+.markdown-preview tr > *:last-child,
+.cm-live-table-widget tr > *:last-child {
+  border-right: none !important;
+}
+
+.markdown-preview tbody tr:last-child > *,
+.cm-live-table-widget tbody tr:last-child > * {
+  border-bottom: none !important;
 }
 
 /* 斑马纹交替行背景 */
-.markdown-preview tbody tr:nth-child(even) td {
-  background-color: var(--bg-surface, #f8fafc) !important;
+.markdown-preview tbody tr:nth-child(even) td,
+.cm-live-table-widget tbody tr:nth-child(even) td {
+  background-color: var(--bg-surface) !important;
 }
 
 /* 单个单元格悬停高亮（单格独立响应，不联动整行）。
-   同权重（0,2,3）且位置在斑马纹规则之后，靠顺序取胜；
-   若写成 `.markdown-preview td:hover` 则权重更低，会被斑马纹压制。 */
+   选择器刻意带 `tbody tr` / `thead tr` 提高权重：斑马纹也是 !important，
+   同权重时靠源码顺序取胜，权重不足则偶数行（表格最后一行）会悬停失效。 */
+.markdown-preview thead tr th:hover,
 .markdown-preview tbody tr th:hover,
-.markdown-preview tbody tr td:hover {
-  background-color: var(--bg-surface-hover, #ebebed) !important;
+.markdown-preview tbody tr td:hover,
+.cm-live-table-widget thead tr th:hover,
+.cm-live-table-widget tbody tr th:hover,
+.cm-live-table-widget tbody tr td:hover {
+  background-color: var(--bg-surface-hover) !important;
 }
 
 /* 公式：KaTeX 自己生成内部结构，这里只控制外层字号与字体，
@@ -1186,6 +1247,8 @@ button.cm-button.cm-search-close:focus-visible,
 
 /* ---------------------------------------------------------------------------
    CodeMirror 6 Live Preview - 真实所见即所得可视化表格 Widget
+   （表格本体样式与 Preview 共用，见文件上方「表格」区块；
+     这里只放 Widget 容器自身的定位与交互规则）
    --------------------------------------------------------------------------- */
 
 .cm-live-table-widget {
@@ -1194,58 +1257,6 @@ button.cm-button.cm-search-close:focus-visible,
   cursor: text !important;
   user-select: text !important;
   width: 100%;
-}
-
-.cm-live-table-widget table {
-  display: table !important;
-  width: max-content !important;
-  min-width: 260px !important;
-  max-width: 100% !important;
-  margin: 0 !important;
-  border-collapse: collapse !important;
-  background-color: var(--bg-surface) !important;
-  border: 1px solid var(--border-default, #d8d8dc) !important;
-  border-radius: var(--radius-md, 6px) !important;
-  overflow: hidden !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.cm-live-table-widget thead {
-  background-color: var(--bg-surface-elevated, #f1f5f9) !important;
-  border-bottom: 2px solid var(--border-strong, #bfbfc4) !important;
-}
-
-.cm-live-table-widget th {
-  padding: 4px 12px !important;
-  line-height: 22px !important;
-  font-weight: 600 !important;
-  color: var(--text-primary) !important;
-  text-align: left !important;
-  border: 1px solid var(--border-default, #d8d8dc) !important;
-  background-color: var(--bg-surface-elevated, #f1f5f9) !important;
-  cursor: text !important;
-}
-
-.cm-live-table-widget td {
-  padding: 4px 12px !important;
-  line-height: 22px !important;
-  color: var(--text-primary) !important;
-  border: 1px solid var(--border-default, #d8d8dc) !important;
-  background-color: var(--bg-app, #ffffff);
-  cursor: text !important;
-}
-
-.cm-live-table-widget tbody tr:nth-child(even) td {
-  background-color: var(--bg-surface, #f8fafc) !important;
-}
-
-/* 单个单元格悬停高亮（单格独立响应，不联动整行）。
-   刻意用 tbody tr 提高选择器权重，否则会输给上面斑马纹
-   `tbody tr:nth-child(even)`（同为 !important 时权重高者胜），
-   导致偶数行（表格最后一行）悬停失效。 */
-.cm-live-table-widget tbody tr th:hover,
-.cm-live-table-widget tbody tr td:hover {
-  background-color: var(--bg-surface-hover, #ebebed) !important;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1263,19 +1274,18 @@ button.cm-button.cm-search-close:focus-visible,
 }
 
 .cm-live-table-line--sep {
-  color: var(--border-strong, #bfbfc4) !important;
-  opacity: 0.6;
+  color: var(--text-muted) !important;
 }
 
 .cm-live-table-pipe {
-  color: var(--accent-solid, #2563eb) !important;
+  color: var(--accent-solid) !important;
   font-weight: 700 !important;
   padding: 0 2px !important;
 }
 
 /* 围栏代码块卡片化排版（无缝一体化、紧凑紧实、零偏移） */
 .cm-live-code-line {
-  background-color: var(--bg-surface-elevated, var(--bg-surface)) !important;
+  background-color: var(--bg-surface) !important;
   font-family: var(--preview-font-code, var(--font-mono)) !important;
   padding-left: 14px !important;
   padding-right: 14px !important;
@@ -1315,7 +1325,7 @@ button.cm-button.cm-search-close:focus-visible,
 }
 
 .cm-live-code-line--editing {
-  background-color: var(--bg-surface-elevated, var(--bg-surface)) !important;
+  background-color: var(--bg-surface) !important;
   font-family: var(--preview-font-code, var(--font-mono)) !important;
 }
 
