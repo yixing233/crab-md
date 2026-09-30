@@ -178,4 +178,62 @@ describe("livePreview", () => {
 
     expect(found).toBe(true);
   });
+
+  /**
+   * 回归：渲染表格底部凭空多出一大段空白。
+   *
+   * 成因：`.cm-content` 是 `white-space: pre`（CodeMirror 基础主题），
+   * markdown-it 的输出形如 `<table>…</table>\n`，这个末尾换行会被当成
+   * **真实的换行**渲染，在表格下方撑出整整一行（约 24px）。
+   * 实测 Widget 高 122px，而内部 table 只有 94px。
+   *
+   * 修复要同时满足两点，缺一不可：
+   *   1. innerHTML 用 trim() 去掉首尾空白；
+   *   2. Widget 自己声明 white-space: normal，不再继承 pre。
+   */
+  it("does not add trailing whitespace height to the table widget", async () => {
+    const doc = "| a | b |\n| - | - |\n| 1 | 2 |\n\n外部文本";
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("外部文本")),
+      extensions: [livePreview(true)],
+    });
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const view = new EditorView({ state, parent: host });
+
+    const wrap = host.querySelector(".cm-live-table-widget") as HTMLElement;
+    expect(wrap).not.toBeNull();
+
+    // 1) 渲染结果首尾不能残留空白文本（换行在 white-space: pre 下会占一整行）
+    const leadingOrTrailing = /^\s|\s$/.test(wrap.innerHTML);
+    expect(
+      leadingOrTrailing,
+      `table widget HTML must not start/end with whitespace, got: ${JSON.stringify(
+        wrap.innerHTML.slice(-24),
+      )}`,
+    ).toBe(false);
+
+    // 2) 直接子节点里不能有纯空白文本节点
+    const blankTextChildren = Array.from(wrap.childNodes).filter(
+      (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() === "",
+    );
+    expect(blankTextChildren).toHaveLength(0);
+
+    // 3) CSS 必须把 white-space 还原为 normal，阻断 pre 的继承
+    const css = (await import("node:fs")).readFileSync(
+      (await import("node:path")).resolve(__dirname, "../components/editor/editor.css"),
+      "utf8",
+    );
+    const block = css.match(/\.cm-live-table-widget\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(block, "missing .cm-live-table-widget rule").not.toBe("");
+    expect(
+      block,
+      "the table widget must reset white-space so the inherited `pre` cannot render stray newlines",
+    ).toMatch(/white-space:\s*normal/);
+
+    view.destroy();
+    host.remove();
+  });
 });

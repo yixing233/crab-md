@@ -195,7 +195,11 @@ class LiveTableWidget extends WidgetType {
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-live-table-widget";
-    wrap.innerHTML = renderMarkdown(this.markdown);
+    // 必须去掉首尾空白：`.cm-content` 是 `white-space: pre`（CodeMirror 基础主题），
+    // markdown-it 的输出形如 `<table>…</table>\n`，那个末尾换行会被当成
+    // **真实的一次换行**渲染出来，于是表格下方凭空多出整整一行（约 24px）。
+    // 这就是「渲染后的表格底部总是有一大段间距」的成因。
+    wrap.innerHTML = renderMarkdown(this.markdown).trim();
 
     // 为每个单元格添加点击侦听，精确导航到对应的行列
     const cells = wrap.querySelectorAll("th, td");

@@ -1257,6 +1257,11 @@ button.cm-button.cm-search-close:focus-visible,
   cursor: text !important;
   user-select: text !important;
   width: 100%;
+  /* Widget 里放的是**渲染后的 HTML**，不是待保留空白的源码。
+     而 `.cm-content` 是 `white-space: pre`，会继承下来 —— 那样渲染结果里
+     任何换行（例如 markdown-it 输出末尾的 "\n"）都会被当成真实换行渲染，
+     在表格下方撑出整整一行空白。这里显式还原为正常折叠。 */
+  white-space: normal !important;
 }
 
 /* ---------------------------------------------------------------------------
