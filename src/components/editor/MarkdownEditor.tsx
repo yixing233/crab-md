@@ -1,4 +1,4 @@
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorSelection as CmSelection, EditorState } from "@codemirror/state";
@@ -17,6 +17,7 @@ import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { applyMarkdownAction, type MarkdownActionId } from "../../lib/markdownActions";
+import { markdownFoldLanguage } from "../../lib/markdownFoldLanguage";
 import { livePreview, livePreviewCompartment, livePreviewField } from "../../lib/livePreview";
 import { cmPhrases, zh } from "../../lib/i18n";
 import {
@@ -491,7 +492,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           history(),
           // codeLanguages 让围栏代码块按语言高亮；此前该依赖已在
           // package.json 里却从未被引用（UI §20）。
-          markdown({ base: markdownLanguage, codeLanguages: languages }),
+          // base 用 markdownFoldLanguage：在 GFM 基础上收紧了列表内的折叠范围，
+          // 避免懒惰续行文本旁出现无从理解的折叠箭头（详见该模块注释）。
+          markdown({ base: markdownFoldLanguage, codeLanguages: languages }),
           syntaxHighlighting(markdownHighlight),
           bracketMatching(),
           foldGutter({ markerDOM: (open) => createFoldMarker(open) }),
