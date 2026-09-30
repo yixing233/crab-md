@@ -934,9 +934,10 @@ button.cm-button.cm-search-close:focus-visible,
 /* 现代高质感表格设计（对标 GitHub / Notion / Typora） */
 .markdown-preview table {
   display: table !important;
-  width: 100% !important;
+  width: max-content !important;
+  min-width: 260px !important;
   max-width: 100% !important;
-  margin: var(--space-4) 0 !important;
+  margin: var(--space-3) 0 !important;
   border-collapse: collapse !important;
   border-spacing: 0 !important;
   border: 1px solid var(--border-default, #d8d8dc) !important;
@@ -1166,7 +1167,7 @@ button.cm-button.cm-search-close:focus-visible,
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 8px 0 !important;
+  padding: 4px 0 !important;
   margin: 0 !important;
   background: transparent !important;
   border: none !important;
@@ -1174,6 +1175,10 @@ button.cm-button.cm-search-close:focus-visible,
   overflow-x: auto;
   cursor: text !important;
   user-select: text !important;
+}
+
+.cm-live-block-math-widget .katex-display {
+  margin: 0.3em 0 !important;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1189,7 +1194,10 @@ button.cm-button.cm-search-close:focus-visible,
 }
 
 .cm-live-table-widget table {
-  width: 100% !important;
+  display: table !important;
+  width: max-content !important;
+  min-width: 260px !important;
+  max-width: 100% !important;
   margin: 0 !important;
   border-collapse: collapse !important;
   background-color: var(--bg-surface) !important;
@@ -1231,56 +1239,28 @@ button.cm-button.cm-search-close:focus-visible,
 }
 
 /* ---------------------------------------------------------------------------
-   CodeMirror 6 Live Preview - 原生零位移表格排版
+   CodeMirror 6 Live Preview - 原生零位移表格源码编辑排版
    --------------------------------------------------------------------------- */
 
 .cm-live-table-line {
-  background-color: var(--bg-surface) !important;
   font-family: var(--preview-font-table, var(--font-mono)) !important;
-  border-left: 1px solid var(--border-default) !important;
-  border-right: 1px solid var(--border-default) !important;
-  padding-left: 12px !important;
-  padding-right: 12px !important;
   line-height: 1.6 !important;
   cursor: text !important;
 }
 
 .cm-live-table-line--header {
-  background-color: var(--bg-surface-elevated, #f1f5f9) !important;
   font-weight: 600 !important;
-  border-top: 1px solid var(--border-default) !important;
-  border-top-left-radius: var(--radius-md, 6px) !important;
-  border-top-right-radius: var(--radius-md, 6px) !important;
-  padding-top: 6px !important;
-  padding-bottom: 3px !important;
 }
 
 .cm-live-table-line--sep {
-  border-bottom: 2px solid var(--border-strong, #bfbfc4) !important;
-  color: var(--border-strong) !important;
-  opacity: 0.7;
-  font-size: 0.9em;
-  padding-top: 2px !important;
-  padding-bottom: 2px !important;
-}
-
-.cm-live-table-line--row {
-  border-bottom: 1px solid var(--border-subtle) !important;
-  padding-top: 3px !important;
-  padding-bottom: 3px !important;
-}
-
-.cm-live-table-line--last {
-  border-bottom: 1px solid var(--border-default) !important;
-  border-bottom-left-radius: var(--radius-md, 6px) !important;
-  border-bottom-right-radius: var(--radius-md, 6px) !important;
-  padding-bottom: 6px !important;
+  color: var(--border-strong, #bfbfc4) !important;
+  opacity: 0.6;
 }
 
 .cm-live-table-pipe {
   color: var(--accent-solid, #2563eb) !important;
   font-weight: 700 !important;
-  padding: 0 4px !important;
+  padding: 0 2px !important;
 }
 
 /* 围栏代码块卡片化排版（无缝一体化、紧凑紧实、零偏移） */

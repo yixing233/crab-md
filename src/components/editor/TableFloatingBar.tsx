@@ -38,7 +38,7 @@ export function TableFloatingBar({
       role="toolbar"
       aria-label="表格快捷操作工具条"
       style={{
-        top: Math.max(10, y - 38),
+        top: Math.max(8, y - 42),
         left: Math.max(10, Math.min(x, window.innerWidth - 300)),
       }}
       onMouseDown={(e) => {

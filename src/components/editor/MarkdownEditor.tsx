@@ -628,7 +628,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
                   lines.push(update.state.doc.line(ln).text);
                 }
 
-                const coords = update.view.coordsAtPos(head);
+                const tableTopCoords = update.view.coordsAtPos(update.state.doc.line(startLn).from);
+                const coords = tableTopCoords ?? update.view.coordsAtPos(head);
                 if (coords) {
                   setTableState({
                     visible: true,
