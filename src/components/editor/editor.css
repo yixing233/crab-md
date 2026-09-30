@@ -975,9 +975,10 @@ button.cm-button.cm-search-close:focus-visible,
   background-color: var(--bg-surface, #f8fafc) !important;
 }
 
-/* 悬停行高亮 */
-.markdown-preview tbody tr:hover td {
-  background-color: var(--bg-surface-hover, #f1f5f9) !important;
+/* 单个单元格悬停高亮（单格独立响应，不联动整行） */
+.markdown-preview th:hover,
+.markdown-preview td:hover {
+  background-color: var(--bg-surface-hover, #ebebed) !important;
 }
 
 /* 公式：KaTeX 自己生成内部结构，这里只控制外层字号与字体，
@@ -1236,8 +1237,10 @@ button.cm-button.cm-search-close:focus-visible,
   background-color: var(--bg-surface, #f8fafc) !important;
 }
 
-.cm-live-table-widget tbody tr:hover td {
-  background-color: var(--bg-surface-hover, #f1f5f9) !important;
+/* 单个单元格悬停高亮（单格独立响应，不联动整行） */
+.cm-live-table-widget th:hover,
+.cm-live-table-widget td:hover {
+  background-color: var(--bg-surface-hover, #ebebed) !important;
 }
 
 /* ---------------------------------------------------------------------------
