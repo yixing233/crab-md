@@ -207,16 +207,12 @@ export function MarkdownPreview({
 
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(codeText);
-      const textSpan = copyBtn.querySelector<HTMLElement>(".code-block__copy-text");
-      if (textSpan) {
-        const originalText = textSpan.textContent;
-        textSpan.textContent = "已复制";
-        copyBtn.dataset.copied = "true";
-        setTimeout(() => {
-          textSpan.textContent = originalText;
-          delete copyBtn.dataset.copied;
-        }, 1500);
-      }
+      // 按钮已改为纯图标，反馈只能靠 data-copied 驱动颜色变化
+      // （见 .code-block__copy[data-copied="true"]）。
+      copyBtn.dataset.copied = "true";
+      setTimeout(() => {
+        delete copyBtn.dataset.copied;
+      }, 1500);
     }
   };
 

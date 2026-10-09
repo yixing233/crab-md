@@ -304,23 +304,72 @@
     break-inside: avoid !important;
   }
 
-  /* 代码块在打印时的背景与文字处理 */
+  /* 代码块在打印时的背景与文字处理（扁平面板，无边框无分隔线） */
   .markdown-preview .code-block {
     background: #f8fafc !important;
-    border: 1px solid #cbd5e1 !important;
+    border: none !important;
     box-shadow: none !important;
   }
 
   .markdown-preview .code-block__header {
-    background: #f1f5f9 !important;
-    border-bottom: 1px solid #cbd5e1 !important;
-    padding: 4pt 8pt !important;
+    background: transparent !important;
+    border-bottom: none !important;
+    padding: 4pt 8pt 0 !important;
   }
 
   .markdown-preview .code-block pre code {
     color: #0f172a !important;
     font-family: var(--preview-font-code, var(--font-mono)) !important;
     font-size: 9.5pt !important;
+  }
+
+  /* 打印恒为白纸：语法高亮必须换成浅色主题下的深色值，
+     否则深色主题的亮色 token 在白底上几乎看不见。 */
+  .markdown-preview .hljs-comment,
+  .markdown-preview .hljs-quote,
+  .markdown-preview .hljs-meta,
+  .markdown-preview .hljs-punctuation,
+  .markdown-preview .hljs-operator {
+    color: #6b6b6b !important;
+  }
+  .markdown-preview .hljs-keyword,
+  .markdown-preview .hljs-selector-tag,
+  .markdown-preview .hljs-literal,
+  .markdown-preview .hljs-doctag,
+  .markdown-preview .hljs-name,
+  .markdown-preview .hljs-template-tag {
+    color: #2563eb !important;
+  }
+  .markdown-preview .hljs-string,
+  .markdown-preview .hljs-regexp,
+  .markdown-preview .hljs-addition,
+  .markdown-preview .hljs-attribute {
+    color: #16a34a !important;
+  }
+  .markdown-preview .hljs-number,
+  .markdown-preview .hljs-symbol,
+  .markdown-preview .hljs-bullet,
+  .markdown-preview .hljs-variable,
+  .markdown-preview .hljs-template-variable,
+  .markdown-preview .hljs-link {
+    color: #b45309 !important;
+  }
+  .markdown-preview .hljs-title,
+  .markdown-preview .hljs-section,
+  .markdown-preview .hljs-built_in,
+  .markdown-preview .hljs-builtin-name {
+    color: #0284c7 !important;
+  }
+  .markdown-preview .hljs-type,
+  .markdown-preview .hljs-attr,
+  .markdown-preview .hljs-property,
+  .markdown-preview .hljs-params,
+  .markdown-preview .hljs-selector-id,
+  .markdown-preview .hljs-selector-class {
+    color: #1a1a1a !important;
+  }
+  .markdown-preview .hljs-deletion {
+    color: #dc2626 !important;
   }
 }
 

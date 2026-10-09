@@ -715,69 +715,143 @@ button.cm-button.cm-search-close:focus-visible,
   font-size: var(--preview-size-code, 14px);
 }
 
-/* 增强型代码块容器（带语言标签与一键复制代码按钮） */
+/* 增强型代码块容器（扁平卡片：左上语言名 + 右上图标按钮，无边框无分隔线） */
 .markdown-preview .code-block {
   margin: var(--space-4) 0;
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
+  border: none;
   border-radius: var(--radius-md);
   overflow: hidden;
 }
 
+/* 语言名/按钮行：靠上留出一段呼吸空间（参考图里标签距面板顶约 25px） */
 .markdown-preview .code-block__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 16px 14px 0;
+  background: transparent;
   user-select: none;
 }
 
+/* 语言名：小写、与代码同一条左基线（见下方 pre 的 padding-left） */
 .markdown-preview .code-block__lang {
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 16px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
+  user-select: none;
 }
 
+/* 纯图标复制按钮：无边框无底色，hover 才浮现，避免抢走代码的视觉重心 */
 .markdown-preview .code-block__copy {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  margin: 0;
+  justify-content: center;
+  gap: 0;
+  padding: 3px;
+  margin: -3px 0 0;
   font-family: var(--font-ui);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: var(--bg-app);
-  border: 1px solid var(--border-default);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all var(--duration-fast) ease;
+  transition: color var(--duration-fast) ease, background-color var(--duration-fast) ease;
 }
 
 .markdown-preview .code-block__copy:hover {
   background: var(--bg-surface-hover);
-  border-color: var(--border-strong);
   color: var(--text-primary);
 }
 
+.markdown-preview .code-block__copy:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
 .markdown-preview .code-block__copy[data-copied="true"] {
-  background: var(--success-soft, #f0fdf4);
   color: var(--success, #16a34a);
-  border-color: var(--success, #16a34a);
 }
 
 .markdown-preview .code-block pre {
   margin: 0 !important;
   border: none !important;
   border-radius: 0 !important;
-  padding: 12px 14px !important;
+  padding: 12px 14px 20px !important;
   background: transparent !important;
+}
+
+/* highlight.js 语义色映射：与 MarkdownEditor.tsx 的 markdownHighlight 使用同一批
+   token，保证同一段代码在编辑器即时渲染与预览栏里颜色一致
+   （keyword→accent、string→success、number→warning、comment→text-muted、
+   function→info、type→text-primary）。 */
+.markdown-preview .hljs-comment,
+.markdown-preview .hljs-quote {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.markdown-preview .hljs-keyword,
+.markdown-preview .hljs-selector-tag,
+.markdown-preview .hljs-literal,
+.markdown-preview .hljs-doctag,
+.markdown-preview .hljs-name,
+.markdown-preview .hljs-template-tag {
+  color: var(--accent);
+}
+.markdown-preview .hljs-string,
+.markdown-preview .hljs-regexp,
+.markdown-preview .hljs-addition,
+.markdown-preview .hljs-attribute,
+.markdown-preview .hljs-meta .hljs-string {
+  color: var(--success);
+}
+.markdown-preview .hljs-number,
+.markdown-preview .hljs-symbol,
+.markdown-preview .hljs-bullet,
+.markdown-preview .hljs-variable,
+.markdown-preview .hljs-template-variable,
+.markdown-preview .hljs-link,
+.markdown-preview .hljs-selector-attr,
+.markdown-preview .hljs-selector-pseudo {
+  color: var(--warning);
+}
+.markdown-preview .hljs-title,
+.markdown-preview .hljs-title.function_,
+.markdown-preview .hljs-section,
+.markdown-preview .hljs-built_in,
+.markdown-preview .hljs-builtin-name {
+  color: var(--info);
+}
+.markdown-preview .hljs-type,
+.markdown-preview .hljs-title.class_,
+.markdown-preview .hljs-class .hljs-title,
+.markdown-preview .hljs-params {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.markdown-preview .hljs-attr,
+.markdown-preview .hljs-property,
+.markdown-preview .hljs-selector-id,
+.markdown-preview .hljs-selector-class {
+  color: var(--text-secondary);
+}
+.markdown-preview .hljs-meta,
+.markdown-preview .hljs-meta .hljs-keyword,
+.markdown-preview .hljs-punctuation,
+.markdown-preview .hljs-operator {
+  color: var(--text-muted);
+}
+.markdown-preview .hljs-deletion {
+  color: var(--danger);
+}
+.markdown-preview .hljs-emphasis {
+  font-style: italic;
+}
+.markdown-preview .hljs-strong {
+  font-weight: 700;
 }
 
 /* 纯文本预览样式（.txt 文件原样展示，不强行解析为 Markdown） */
@@ -1313,25 +1387,27 @@ button.cm-button.cm-search-close:focus-visible,
   padding: 0 2px !important;
 }
 
-/* 围栏代码块卡片化排版（无缝一体化、紧凑紧实、零偏移） */
+/* 围栏代码块卡片化排版（扁平卡片：左上语言名 + 右上图标按钮，与预览栏同一套形态） */
 .cm-live-code-line {
   background-color: var(--bg-surface) !important;
   font-family: var(--preview-font-code, var(--font-mono)) !important;
   padding-left: 14px !important;
   padding-right: 14px !important;
-  border-left: 1px solid var(--border-default) !important;
-  border-right: 1px solid var(--border-default) !important;
+  border-left: none !important;
+  border-right: none !important;
   color: var(--text-primary);
 }
 
+/* 题头行：承载语言名与复制按钮的 widget 占满整行。
+   高度写死是为了保持 CodeMirror 的行几何稳定（`posAtCoords` 依赖行高）。 */
 .cm-live-code-line--header {
   position: relative !important;
-  border-top: 1px solid var(--border-default) !important;
-  border-top-left-radius: var(--radius-md, 6px) !important;
-  border-top-right-radius: var(--radius-md, 6px) !important;
-  height: 20px !important;
-  min-height: 20px !important;
-  line-height: 20px !important;
+  border-top: none !important;
+  border-top-left-radius: var(--radius-md) !important;
+  border-top-right-radius: var(--radius-md) !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  line-height: 30px !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }
@@ -1343,11 +1419,11 @@ button.cm-button.cm-search-close:focus-visible,
 }
 
 .cm-live-code-line--footer {
-  border-bottom: 1px solid var(--border-default) !important;
-  border-bottom-left-radius: var(--radius-md, 6px) !important;
-  border-bottom-right-radius: var(--radius-md, 6px) !important;
-  height: 6px !important;
-  min-height: 6px !important;
+  border-bottom: none !important;
+  border-bottom-left-radius: var(--radius-md) !important;
+  border-bottom-right-radius: var(--radius-md) !important;
+  height: 10px !important;
+  min-height: 10px !important;
   line-height: 0 !important;
   font-size: 0 !important;
   padding-top: 0 !important;
@@ -1359,20 +1435,59 @@ button.cm-button.cm-search-close:focus-visible,
   font-family: var(--preview-font-code, var(--font-mono)) !important;
 }
 
+/* 题头 widget：语言名靠左、复制按钮靠右，与预览栏 .code-block__header 同构。
+   行内父级是 `white-space: pre` 的 .cm-content，这里必须显式改回 normal。
+   必须用 inline-flex：`display: flex` 是块级外框，在 CodeMirror 的行内上下文中
+   会被块化并掉到下一行的位置，导致语言名压在第一行代码上（实测 header 盒子
+   top 比所属行 top 低整整 30px）。高度写死与 --header 行同高，避免百分比高度
+   依赖行内包含块而解析成 auto。 */
+.cm-live-code-header {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  height: 30px !important;
+  vertical-align: top !important;
+  white-space: normal !important;
+  user-select: none !important;
+}
+
 .cm-live-code-lang {
-  position: absolute !important;
-  top: 2px !important;
-  right: 8px !important;
-  font-size: 9.5px !important;
-  font-weight: 600 !important;
-  text-transform: uppercase !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
   color: var(--text-muted) !important;
-  letter-spacing: 0.05em !important;
-  padding: 0 5px !important;
+  letter-spacing: 0.02em !important;
+  padding: 0 !important;
   line-height: 16px !important;
-  border-radius: 3px !important;
-  background-color: var(--bg-surface) !important;
-  border: 1px solid var(--border-subtle) !important;
+  background: none !important;
+  border: none !important;
   user-select: none !important;
   pointer-events: none !important;
+}
+
+.cm-live-code-copy {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 3px !important;
+  margin: 0 !important;
+  font-family: var(--font-ui) !important;
+  color: var(--text-muted) !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  transition: color var(--duration-fast) ease, background-color var(--duration-fast) ease !important;
+}
+
+.cm-live-code-copy:hover {
+  background-color: var(--bg-surface-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.cm-live-code-copy[data-copied="true"] {
+  color: var(--success, #16a34a) !important;
 }

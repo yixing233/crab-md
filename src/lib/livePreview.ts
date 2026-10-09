@@ -8,6 +8,7 @@ import { Compartment, type Extension, type Range, StateField, EditorState } from
 import katex from "katex";
 import { renderMarkdown } from "./markdown";
 import { isMarkdownTableRow } from "./tableHelper";
+import { CHECK_ICON_SVG, COPY_ICON_SVG } from "./codeBlockIcons";
 
 /**
  * 任务清单复选框 Widget：在编辑器中把 `- [ ] ` 与 `- [x] ` 原地替换为可交互复选框。
@@ -180,18 +181,29 @@ class BlockMathWidget extends WidgetType {
 }
 
 /**
- * 代码块题头语言 Widget
+ * 代码块题头 Widget（左上语言名 + 右上复制按钮）
+ *
+ * 与预览栏 `markdown.ts` 的 fence 渲染器保持同一形态：语言名小写靠左，
+ * 复制按钮为纯图标靠右。这里**不覆盖** `ignoreEvent`，即沿用 `WidgetType`
+ * 默认的 `true` —— 题头整行都被替换成了 widget，点击它不应移动光标
+ * （按钮自己的 DOM 监听器不受影响，见 `eventBelongsToEditor`）。
  */
 class CodeBlockHeaderWidget extends WidgetType {
-  constructor(readonly language: string) {
+  constructor(
+    readonly language: string,
+    readonly code: string,
+  ) {
     super();
   }
 
   eq(other: CodeBlockHeaderWidget) {
-    return this.language === other.language;
+    return this.language === other.language && this.code === other.code;
   }
 
   toDOM() {
+    const row = document.createElement("div");
+    row.className = "cm-live-code-header";
+
     const lang = document.createElement("span");
     lang.className = "cm-live-code-lang";
     if (this.language) {
@@ -199,7 +211,31 @@ class CodeBlockHeaderWidget extends WidgetType {
     } else {
       lang.style.display = "none";
     }
-    return lang;
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "cm-live-code-copy";
+    copy.setAttribute("aria-label", "复制代码");
+    copy.title = "复制代码";
+    copy.innerHTML = COPY_ICON_SVG;
+
+    // mousedown 阶段就 preventDefault，避免按钮抢走编辑器的焦点
+    copy.addEventListener("mousedown", (event) => event.preventDefault());
+    copy.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
+      void navigator.clipboard.writeText(this.code);
+      copy.dataset.copied = "true";
+      copy.innerHTML = CHECK_ICON_SVG;
+      setTimeout(() => {
+        delete copy.dataset.copied;
+        copy.innerHTML = COPY_ICON_SVG;
+      }, 1500);
+    });
+
+    row.append(lang, copy);
+    return row;
   }
 }
 
@@ -351,14 +387,20 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
           (r) => r.from <= endLine.to && r.to >= startLine.from,
         );
 
+        // 供题头复制按钮使用的源码（去掉围栏行，保留行尾换行）
+        const codeText =
+          endLn > ln + 1
+            ? doc.sliceString(doc.line(ln + 1).from, endLine.from)
+            : "";
+
         if (!touchesCaret) {
-          // 顶部栏显示语言标签并折叠 ```lang
+          // 顶部栏显示语言标签与复制按钮并折叠 ```lang
           decos.push(
             Decoration.line({ class: "cm-live-code-line cm-live-code-line--header" }).range(startLine.from),
           );
           decos.push(
             Decoration.replace({
-              widget: new CodeBlockHeaderWidget(lang),
+              widget: new CodeBlockHeaderWidget(lang, codeText),
             }).range(startLine.from, startLine.to),
           );
 

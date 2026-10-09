@@ -1,6 +1,8 @@
 import DOMPurify from "dompurify";
 import MarkdownIt, { type StateInline } from "markdown-it";
 import katex from "@vscode/markdown-it-katex";
+import { highlightCode } from "./codeHighlight";
+import { COPY_ICON_SVG } from "./codeBlockIcons";
 
 const md = new MarkdownIt({
   html: true,       // 允许 Markdown 中内嵌 HTML……
@@ -136,19 +138,24 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const rawRendered = defaultFenceRenderer?.(tokens, index, options, env, self) ?? "";
   const langLabel = language || "text";
 
+  // 已注册的语言自己拼装 `<pre><code>`：highlight.js 的 `highlight()` 已经转义过
+  // HTML，DOMPurify 随后还会再消毒一遍。未注册/高亮失败时回退到 markdown-it 的
+  // 默认渲染，它仍会输出 `<code class="language-xxx">`（见 markdown.test.ts 断言）。
+  const highlighted = highlightCode(token.content, language ?? "");
+  const codeHtml =
+    highlighted === null
+      ? rawRendered
+      : `<pre><code class="hljs language-${md.utils.escapeHtml(langLabel)}">${highlighted}</code></pre>\n`;
+
   return [
     `<div class="code-block" data-language="${md.utils.escapeHtml(langLabel)}">`,
     '  <div class="code-block__header">',
     `    <span class="code-block__lang">${md.utils.escapeHtml(langLabel)}</span>`,
     '    <button type="button" class="code-block__copy" aria-label="复制代码" title="复制代码">',
-    '      <svg class="code-block__copy-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">',
-    '        <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>',
-    '        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
-    '      </svg>',
-    '      <span class="code-block__copy-text">复制</span>',
+    `      ${COPY_ICON_SVG}`,
     '    </button>',
     '  </div>',
-    rawRendered,
+    codeHtml,
     '</div>\n',
   ].join("\n");
 };

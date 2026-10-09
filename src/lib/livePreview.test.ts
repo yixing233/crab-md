@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EditorState, EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { buildLivePreviewDecorations, livePreview } from "./livePreview";
@@ -424,6 +424,75 @@ describe("livePreview", () => {
       "the table widget must reset white-space so the inherited `pre` cannot render stray newlines",
     ).toMatch(/white-space:\s*normal/);
 
+    view.destroy();
+    host.remove();
+  });
+
+  it("renders the code block header with a lowercase language label and an icon-only copy button", () => {
+    const doc = "```cpp\nconst char* p;\n```\n\n外部文本";
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("外部文本")),
+      extensions: [livePreview(true)],
+    });
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const view = new EditorView({ state, parent: host });
+
+    const header = host.querySelector(".cm-live-code-header") as HTMLElement;
+    expect(header).not.toBeNull();
+
+    // 语言名：左上、小写（参考图里是 `cpp` 而不是 `CPP`）
+    const lang = header.querySelector(".cm-live-code-lang") as HTMLElement;
+    expect(lang.textContent).toBe("cpp");
+
+    // 复制按钮：纯图标，没有「复制」文字
+    const copy = header.querySelector(".cm-live-code-copy") as HTMLButtonElement;
+    expect(copy).not.toBeNull();
+    expect(copy.querySelector("svg")).not.toBeNull();
+    expect(copy.textContent?.trim()).toBe("");
+    expect(copy.getAttribute("aria-label")).toBe("复制代码");
+
+    view.destroy();
+    host.remove();
+  });
+
+  it("copies the raw fenced code without the fence markers", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalNavigator = globalThis.navigator;
+    Object.defineProperty(globalThis, "navigator", {
+      value: { clipboard: { writeText } },
+      configurable: true,
+      writable: true,
+    });
+
+    const doc = "```cpp\nconst char* p;\nint x = 1;\n```\n\n外部文本";
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("外部文本")),
+      extensions: [livePreview(true)],
+    });
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const view = new EditorView({ state, parent: host });
+
+    const copy = host.querySelector(".cm-live-code-copy") as HTMLButtonElement;
+    copy.click();
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const copied = writeText.mock.calls[0][0] as string;
+    // 不能把 ```cpp / ``` 一起复制进去
+    expect(copied).not.toContain("```");
+    expect(copied).toContain("const char* p;");
+    expect(copied).toContain("int x = 1;");
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: originalNavigator,
+      configurable: true,
+      writable: true,
+    });
     view.destroy();
     host.remove();
   });

@@ -51,6 +51,27 @@ describe("renderMarkdown", () => {
     expect(html).toContain('class="language-mermaidish"');
   });
 
+  it("syntax-highlights registered fence languages in the preview", () => {
+    const html = renderMarkdown("```js\nconst x = 1;\n```");
+    // 已注册语言走 highlight.js，token 类名由 editor.css 映射成语义色
+    expect(html).toContain('class="hljs language-js"');
+    expect(html).toContain('class="hljs-keyword"');
+    expect(html).toContain('class="hljs-number"');
+  });
+
+  it("falls back to plain markdown-it rendering for unregistered languages", () => {
+    const html = renderMarkdown("```mermaidish\nA-->B\n```");
+    // 未注册语言不能变成单色 hljs 容器，否则会丢掉 language-xxx 类名
+    expect(html).not.toContain('class="hljs ');
+    expect(html).toContain('class="language-mermaidish"');
+  });
+
+  it("escapes HTML instead of emitting markup from highlighted code", () => {
+    const html = renderMarkdown('```js\nconst s = "<img src=x onerror=alert(1)>";\n```');
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img");
+  });
+
   it("sanitizes generated Mermaid SVG before insertion", () => {
     const svg = sanitizeMermaidSvg(
       '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script>' +

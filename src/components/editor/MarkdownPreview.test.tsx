@@ -82,6 +82,37 @@ describe("MarkdownPreview Mermaid diagrams", () => {
     vi.unstubAllGlobals();
   });
 
+  it("renders the copy control as an icon-only button that signals success via data-copied", () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    const { container } = render(<MarkdownPreview source={"```ts\nconst a = 1;\n```"} />);
+    const copyBtn = container.querySelector(".code-block__copy") as HTMLButtonElement;
+
+    // 参考图里右上角是纯图标：不该再有「复制」文字节点
+    expect(container.querySelector(".code-block__copy-text")).toBeNull();
+    expect(copyBtn.querySelector("svg")).not.toBeNull();
+    expect(copyBtn.textContent?.trim()).toBe("");
+    expect(copyBtn.dataset.copied).toBeUndefined();
+
+    copyBtn.click();
+    expect(copyBtn.dataset.copied).toBe("true");
+
+    vi.advanceTimersByTime(1600);
+    expect(copyBtn.dataset.copied).toBeUndefined();
+
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("renders highlighted token spans for a registered fence language", () => {
+    const { container } = render(<MarkdownPreview source={"```js\nconst x = 1;\n```"} />);
+
+    expect(container.querySelector("code.hljs.language-js")).not.toBeNull();
+    expect(container.querySelector(".hljs-keyword")).not.toBeNull();
+  });
+
   it("triggers onToggleTask when clicking task checkbox in preview", () => {
     const onToggleTask = vi.fn();
     const { container } = render(
