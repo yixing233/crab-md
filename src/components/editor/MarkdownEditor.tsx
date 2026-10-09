@@ -18,6 +18,7 @@ import { tags as t } from "@lezer/highlight";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { applyMarkdownAction, type MarkdownActionId } from "../../lib/markdownActions";
 import { markdownFoldLanguage } from "../../lib/markdownFoldLanguage";
+import { canOpenExternally, openExternalLink } from "../../lib/openExternalLink";
 import { livePreview, livePreviewCompartment, livePreviewField } from "../../lib/livePreview";
 import { cmPhrases, zh } from "../../lib/i18n";
 import {
@@ -469,6 +470,35 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     }
   };
 
+  /**
+   * Ctrl/Cmd + 点击 `.cm-live-link` 时用系统浏览器打开链接。
+   *
+   * 为什么挂 `mousedown` 而不是 `click`：CodeMirror 自己在 `mousedown` 阶段
+   * 就会把光标移到点击位置并选中目标词，等 `click` 到达时普通点击已经完成了
+   * 一次「落光标」——用户会觉得点了个寂寞。而**只有在按住修饰键时**我们才拦，
+   * 普通点击依旧照常落光标、拖选、双击选词。
+   *
+   * 命中时返回 `true`：`runHandlers` 会据此 `preventDefault()` 并**跳过后续
+   * handler**（CodeMirror 内置的鼠标选择处理器排在插件 handler 之后，见
+   * `computeHandlers`），于是不会顺手把光标丢到链接里。
+   *
+   * 只有地址真的可以交给系统浏览器时才拦（`canOpenExternally`）：
+   * `[文字](相对路径)` 这类点击应当仍然只是普通的光标操作。
+   */
+  const handleLinkMouseDown = (event: MouseEvent): boolean => {
+    // button 0 = 主键；`ctrlKey` 在 macOS 上是右键菜单语义，改用 `metaKey`。
+    if (event.button !== 0 || !(event.ctrlKey || event.metaKey)) return false;
+
+    const target = event.target as HTMLElement | null;
+    const anchor = target?.closest?.(".cm-live-link");
+    const href = anchor?.getAttribute("data-href") ?? "";
+    if (!anchor || !canOpenExternally(href)) return false;
+
+    event.preventDefault();
+    void openExternalLink(href);
+    return true;
+  };
+
   const handlePasteImage = (event: ClipboardEvent, editor: EditorView): boolean => {
     const file = clipboardImage(event);
     const callback = onPasteImageRef.current;
@@ -538,6 +568,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
             ...foldKeymap,
           ]),
           EditorView.domEventHandlers({
+            mousedown: (event) => handleLinkMouseDown(event),
             paste: (event, editor) => handlePasteImage(event, editor),
             drop: (event, editor) => handleDrop(event, editor),
             dragover: (event) => handleDragOver(event),

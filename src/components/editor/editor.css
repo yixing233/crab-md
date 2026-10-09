@@ -1146,6 +1146,21 @@ button.cm-button.cm-search-close:focus-visible,
   border: 1px solid rgba(37, 99, 235, 0.15) !important;
 }
 
+/* 行内链接 [文字](url)：与预览态的 `.markdown-preview a` 保持同一观感，
+   并给出「可以打开」的指针反馈。真正的打开动作是 Ctrl/Cmd + 点击（见
+   MarkdownEditor 的 mousedown 处理器），所以默认光标仍是文本光标，
+   只有按住修饰键时才变成手型 —— 否则普通点击会以为已经跳转了。 */
+.cm-live-link {
+  color: var(--accent) !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px !important;
+  cursor: text;
+}
+
+.cm-live-link:hover {
+  color: var(--accent-solid-hover, var(--accent)) !important;
+}
+
 /* 水平分割线 Widget */
 .cm-live-hr {
   display: block;

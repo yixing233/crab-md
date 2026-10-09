@@ -70,6 +70,138 @@ describe("livePreview", () => {
     expect(hrWidgetFound).toBe(true);
   });
 
+  /**
+   * 回归：列表项里的 `[文字](链接)` 完全不参与即时渲染，一直以原始源码呈现。
+   *
+   * 成因：D 段的行内规则只覆盖了加粗/行内代码/删除线/斜体，从来没有链接规则
+   * （全仓库历史上也不存在 `cm-live-link`）。预览侧能显示是因为它走
+   * markdown-it + DOMPurify，与本文件无关。
+   */
+  it("renders inline links inside list items as clickable marks", () => {
+    const doc = [
+      "- [机场购买](https://kitty.fo/register?invite=2P6SVT55)",
+      "- 使用qq，Google邮箱注册[ChatGPT](https://chatgpt.com)",
+      "- [ChatGPT Plus代充](https://wzyp.cn/item/as6ldw)",
+      "",
+      "光标在此",
+    ].join("\n");
+
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("光标在此")),
+    });
+    const view = new EditorView({ state });
+    const decos = buildLivePreviewDecorations(view);
+
+    const marks: { from: number; to: number; href: string | undefined }[] = [];
+    const hidden: { from: number; to: number }[] = [];
+    decos.between(0, doc.length, (from, to, deco) => {
+      if (deco.spec.class === "cm-live-link") {
+        marks.push({ from, to, href: deco.spec.attributes?.["data-href"] });
+      } else if (deco.spec.widget === undefined && to > from) {
+        hidden.push({ from, to });
+      }
+    });
+
+    // 三条链接都被标记成 .cm-live-link
+    expect(marks).toHaveLength(3);
+
+    // 第 1 行：整行就是一个链接，标记只包住文字
+    expect(marks[0].href).toBe("https://kitty.fo/register?invite=2P6SVT55");
+    expect(doc.slice(marks[0].from, marks[0].to)).toBe("机场购买");
+
+    // 第 2 行：链接在行中间，前面的正文必须保持原样（不被折叠进去）
+    expect(marks[1].href).toBe("https://chatgpt.com");
+    expect(doc.slice(marks[1].from, marks[1].to)).toBe("ChatGPT");
+    expect(doc.slice(state.doc.line(2).from, marks[1].from - 1)).toBe("- 使用qq，Google邮箱注册");
+
+    // 每条链接两侧的 `[` / `](url)` 都要被折叠掉，否则会与文字重复显示
+    for (const mark of marks) {
+      const before = hidden.find((h) => h.to === mark.from);
+      const after = hidden.find((h) => h.from === mark.to);
+      expect(before, `missing '[' hide for ${mark.href}`).toBeDefined();
+      expect(after, `missing '](url)' hide for ${mark.href}`).toBeDefined();
+      expect(doc[before!.from]).toBe("[");
+      expect(doc.slice(mark.to, after!.to)).toMatch(/^\]\(.*\)$/);
+    }
+
+    // 原始地址里那个 `?…=0` 结尾的更长链接也要完整吞掉（不能只折到 `=`）
+    const longUrl =
+      "https://alist.157342.xyz/d/BaiduNetdisk/share/FIClash-0.8.93-windows-amd64-setup.exe?sign=EsQgNBWBSwz6aBMf1Zs9nPDzv1RqNOHr9mOmm2EjI=0";
+    const longDoc = `- [代理工具下载](${longUrl})\n\n光标在此`;
+    const longState = EditorState.create({
+      doc: longDoc,
+      selection: EditorSelection.cursor(longDoc.indexOf("光标在此")),
+    });
+    const longDecos = buildLivePreviewDecorations(longState);
+    let foldedTo = -1;
+    let longHref: string | undefined;
+    longDecos.between(0, longDoc.length, (_from, to, deco) => {
+      if (deco.spec.class === "cm-live-link") longHref = deco.spec.attributes?.["data-href"];
+      if (deco.spec.widget === undefined && to > _from && to > foldedTo) foldedTo = to;
+    });
+    expect(longHref).toBe(longUrl);
+    expect(foldedTo).toBe(longDoc.indexOf(")\n") + 1);
+
+    view.destroy();
+  });
+
+  it("leaves the active link line as raw markdown and ignores image syntax", () => {
+    const doc = "- [机场购买](https://kitty.fo/x)\n![图](./a.png)\n\n光标在此";
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(0), // 光标在第 1 行
+    });
+    const decos = buildLivePreviewDecorations(state);
+
+    let linkMarkFound = false;
+    decos.between(0, doc.length, (_from, _to, deco) => {
+      if (deco.spec.class === "cm-live-link") linkMarkFound = true;
+    });
+
+    // 光标所在行保留源码，不渲染
+    expect(linkMarkFound).toBe(false);
+
+    // 光标离开后，图片语法 `![alt](src)` 不会被当成链接
+    const state2 = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("光标在此")),
+    });
+    const decos2 = buildLivePreviewDecorations(state2);
+    let linkFoundAfter = false;
+    decos2.between(0, doc.length, (_from, _to, deco) => {
+      if (deco.spec.class === "cm-live-link") linkFoundAfter = true;
+    });
+    expect(linkFoundAfter).toBe(true); // 第 1 行的链接渲染了
+    // 第 2 行的 `![图](./a.png)` 里没有 URL 被当作链接
+    let imageUrlTreatedAsLink = false;
+    decos2.between(doc.indexOf("![图]"), doc.length, (_from, _to, deco) => {
+      if (deco.spec.class === "cm-live-link") imageUrlTreatedAsLink = true;
+    });
+    expect(imageUrlTreatedAsLink).toBe(false);
+  });
+
+  it("skips empty link text or empty target instead of throwing", () => {
+    // 空文字会生成零长度 mark，MarkDecoration.range() 会抛
+    // `RangeError: Mark decorations may not be empty`，必须提前跳过。
+    const doc = "- [](https://a.com)\n- [文字]()\n\n光标在此";
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("光标在此")),
+    });
+
+    expect(() => buildLivePreviewDecorations(state)).not.toThrow();
+
+    const view = new EditorView({ state });
+    const decos = buildLivePreviewDecorations(view);
+    let linkMarkFound = false;
+    decos.between(0, doc.length, (_from, _to, deco) => {
+      if (deco.spec.class === "cm-live-link") linkMarkFound = true;
+    });
+    expect(linkMarkFound).toBe(false);
+    view.destroy();
+  });
+
   it("folds heading mark when cursor leaves the heading line", () => {
     const doc = "# 标题行\n\n正文行";
 

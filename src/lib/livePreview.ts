@@ -510,7 +510,45 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
     if (!isActive) {
       let match: RegExpExecArray | null;
 
-      // D.6.1 加粗：**文本** 或 __文本__
+      // D.6.1 行内链接：[文字](url)
+      //
+      // 之前完全没有这条规则，于是 `- [机场购买](https://…)` 这类列表项在
+      // 即时渲染下始终显示原始源码（预览侧能显示成链接是因为它走的是
+      // markdown-it + DOMPurify，与即时渲染无关）。
+      //
+      // 只认「行内链接」这一种写法：reference 形式（`[文字][ref]`）、
+      // 快捷形式（`[文字]`）与裸 URL 都不在这里渲染，保持源码可见。
+      //
+      // 开头的 `(!?)` 用来区分图片语法 `![alt](src)`：两者只差一个 `!`，
+      // 图片目前不做即时渲染，命中后直接跳过。
+      const linkRegex =
+        /(!?)\[([^\[\]\n]*)\]\(\s*(<[^<>\n]*>|[^\s()]*)(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?\s*\)/g;
+      while ((match = linkRegex.exec(lineText)) !== null) {
+        if (match[1] === "!") continue; // 图片语法，留给图片规则处理
+
+        const url = match[3].startsWith("<") ? match[3].slice(1, -1) : match[3];
+        // 空文字（`[](url)`）或空地址（`[a]()`）没有可渲染的东西；
+        // 而且空文字会让下面的 mark 变成零长度区间，直接抛
+        // `RangeError: Mark decorations may not be empty`。
+        if (match[2] === "" || url === "") continue;
+
+        const start = line.from + match.index;
+        const textStart = start + 1; // 跳过 `[`
+        const textEnd = textStart + match[2].length; // `]` 的位置
+        const end = start + match[0].length; // `)` 之后
+
+        decos.push(Decoration.replace({}).range(start, textStart));
+        decos.push(
+          Decoration.mark({
+            class: "cm-live-link",
+            // data-href 供 Ctrl/Cmd+点击时取地址；title 顺带把目标暴露出来。
+            attributes: { "data-href": url, title: `Ctrl/Cmd + 点击打开：${url}` },
+          }).range(textStart, textEnd),
+        );
+        decos.push(Decoration.replace({}).range(textEnd, end));
+      }
+
+      // D.6.2 加粗：**文本** 或 __文本__
       const boldRegex = /(\*\*|__)(?!\s)(.+?)(?<!\s)\1/g;
       while ((match = boldRegex.exec(lineText)) !== null) {
         const markerLen = match[1].length;
