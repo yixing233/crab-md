@@ -202,6 +202,65 @@ describe("livePreview", () => {
     view.destroy();
   });
 
+  it("folds plain list markers into bullets", () => {
+    const doc = [
+      "- 机场购买",
+      "* 星号列表",
+      "+ 加号列表",
+      "  - 缩进子项",
+      "- [ ] 任务项",
+      "- - -",
+      "",
+      "光标在此",
+    ].join("\n");
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.indexOf("光标在此")),
+    });
+    const decos = buildLivePreviewDecorations(state);
+
+    const bullets: { from: number; to: number; text: string }[] = [];
+    let taskWidgetFound = false;
+    decos.between(0, doc.length, (from, to, deco) => {
+      // Widget 的类名挂在 widget 实例上（Decoration.replace 的 spec.class 为空）
+      if (deco.spec.widget?.constructor.name === "BulletListWidget") {
+        bullets.push({ from, to, text: doc.slice(from, to) });
+      }
+      if (deco.spec.widget?.constructor.name === "TaskCheckboxWidget") taskWidgetFound = true;
+    });
+
+    // 三条普通列表各折叠掉一个标记字符，缩进子项也算一条
+    expect(bullets.map((b) => b.text)).toEqual(["-", "*", "+", "-"]);
+    // 折叠的必须恰好是标记字符本身，不能吞掉后面的空格
+    expect(doc.slice(bullets[0].from, bullets[0].to + 1)).toBe("- ");
+    // 缩进子项只折叠它自己那个 `-`（前面两个空格留着）
+    expect(bullets[3].from).toBe(doc.indexOf("  - 缩进子项") + 2);
+
+    // 任务清单仍归复选框管，不能被圆点抢走（`- [ ]` 的 `-` 保持源码）
+    expect(taskWidgetFound).toBe(true);
+    expect(bullets.some((b) => doc.slice(b.from, b.to + 6) === "- [ ] ")).toBe(false);
+
+    // `- - -` 是主题分隔线，不是列表项：不能有圆点
+    const hrLineFrom = doc.indexOf("- - -");
+    expect(bullets.some((b) => b.from >= hrLineFrom)).toBe(false);
+  });
+
+  it("leaves the active list line marker as raw source", () => {
+    const doc = "- 甲\n- 乙\n\n光标在此";
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(0), // 光标在第 1 行
+    });
+    const decos = buildLivePreviewDecorations(state);
+
+    const bullets: number[] = [];
+    decos.between(0, doc.length, (from, _to, deco) => {
+      if (deco.spec.widget?.constructor.name === "BulletListWidget") bullets.push(from);
+    });
+    // 第 1 行是活跃行，保留 `-` 供编辑；第 2 行渲染成圆点
+    expect(bullets).toEqual([doc.indexOf("- 乙")]);
+  });
+
   it("folds heading mark when cursor leaves the heading line", () => {
     const doc = "# 标题行\n\n正文行";
 

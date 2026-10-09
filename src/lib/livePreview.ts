@@ -57,6 +57,38 @@ class TaskCheckboxWidget extends WidgetType {
 }
 
 /**
+ * 无序列表项目符号 Widget：把 `- ` / `* ` / `+ ` 折叠成真正的圆点。
+ *
+ * 即时渲染此前只处理任务清单（`- [ ] ` 换成复选框），普通列表项一直原样显示
+ * 源码里的 `-`。预览态由 markdown-it 渲染成 `<ul><li>`，浏览器画的是圆点，
+ * 两边观感对不上，看起来就像「列表没渲染」。
+ *
+ * 缩进层级决定圆点样式，与 markdown-it 的 disc / circle / square 一致。
+ */
+class BulletListWidget extends WidgetType {
+  constructor(readonly depth: number) {
+    super();
+  }
+
+  eq(other: BulletListWidget) {
+    return this.depth === other.depth;
+  }
+
+  // 圆点本身就是「这里的 - 被渲染了」的视觉替代，点击它应当照常落光标。
+  ignoreEvent() {
+    return false;
+  }
+
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "cm-live-bullet";
+    // depth 由缩进宽度推得，最多三级，与 markdown-it 的层级符号对应。
+    span.textContent = this.depth === 0 ? "•" : this.depth === 1 ? "◦" : "▪";
+    return span;
+  }
+}
+
+/**
  * 水平分割线 Widget：把 `---`, `***`, `___` 原地折叠并渲染为真实水平线。
  */
 class HorizontalRuleWidget extends WidgetType {
@@ -472,6 +504,35 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
           }).range(taskFrom, taskTo),
         );
       }
+    }
+
+    // D.3.1 普通无序列表：`- 甲` / `* 甲` / `+ 甲` 的标记折叠成圆点。
+    //
+    // 即时渲染此前只认任务清单，普通列表项一直原样显示源码里的 `-`；
+    // 而预览态由 markdown-it 渲染成 <ul><li>，浏览器画的是圆点 ——
+    // 两边对不上，看起来就像「列表没渲染」。
+    //
+    // 任务清单（`- [ ] `）已由 D.3 接管，这里必须让开，否则会把复选框
+    // 的 `-` 又换成圆点。只替换标记那一个字符、保留其后的空格，宽度几乎
+    // 不变，避免聚焦/失焦时整行文字左右跳动。
+    //
+    // 有两种「看着像列表其实不是」的写法要排除：`- - -` 这类主题分隔线
+    // （行内只有 - * _ 与空白），以及 D.3 因缺少尾随空格而未接管的
+    // `- [ ]`（此时 `• [ ]` 比原样更奇怪）。
+    const isThematicBreak = /^[\s\-*_]+$/.test(lineText) && /[-*_]/.test(lineText);
+    const looksLikeTask = /^\s*[-*+]\s+\[[ xX]\]/.test(lineText);
+    const bulletMatch =
+      taskMatch || isThematicBreak || looksLikeTask
+        ? null
+        : lineText.match(/^(\s*)([-*+])(\s+)/);
+    if (bulletMatch && !isActive) {
+      const markerFrom = line.from + bulletMatch[1].length;
+      const level = Math.floor(bulletMatch[1].replace(/\t/g, "  ").length / 2);
+      decos.push(
+        Decoration.replace({
+          widget: new BulletListWidget(Math.min(level, 2)),
+        }).range(markerFrom, markerFrom + 1),
+      );
     }
 
     // D.4 引用行：>

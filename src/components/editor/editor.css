@@ -1182,6 +1182,16 @@ button.cm-button.cm-search-close:focus-visible,
   font-style: italic;
 }
 
+/* 普通无序列表的项目符号 Widget：把源码里的 `-` 折叠成真正的圆点，
+   与预览态 <ul><li> 的观感一致。定宽是为了让聚焦/失焦切换时整行文字
+   不发生水平位移（`-` 与 `•` 的字宽并不相同）。 */
+.cm-live-bullet {
+  display: inline-block;
+  min-width: 1ch;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
 /* 任务清单交互式复选框 Widget */
 .cm-live-task-wrap {
   display: inline-flex;
