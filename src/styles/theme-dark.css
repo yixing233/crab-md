@@ -60,3 +60,14 @@
   --shadow-md: 0 4px 12px rgb(0 0 0 / 0.40);
   --shadow-lg: 0 10px 32px rgb(0 0 0 / 0.55);
 }
+
+/* OLED 纯黑深色风格：极致对比度与纯黑背景 */
+[data-theme="dark"][data-dark-style="oled"] {
+  --bg-app: #000000;
+  --bg-surface: #0a0a0c;
+  --bg-surface-hover: #141417;
+  --bg-surface-active: #1d1d22;
+  --bg-elevated: #111114;
+  --border-subtle: #222226;
+  --border-default: #2d2d33;
+}

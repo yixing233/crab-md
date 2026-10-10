@@ -1,8 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { Button } from "./Button";
+import { Modal } from "antd";
 import "./ui.css";
-
 export interface DialogProps {
   open: boolean;
   /** 标题。必填 —— 对话框必须让用户知道自己在确认什么（UI §16）。 */
@@ -17,14 +16,15 @@ export interface DialogProps {
 }
 
 /**
- * 模态对话框（UI_DESIGN_SYSTEM.md §13 必备组件、§16 规则）。
+ * 模态对话框 —— 内部为 antd Modal 的适配层（UI_DESIGN_SYSTEM.md §13、§16）。
  *
- * §16 要求：
- * - 明确的标题
- * - 关闭行为
- * - 桌面端 Escape 处理
- * - 焦点陷阱
- * - 动作必需时给出明确的主操作
+ * §16 要求由 antd Modal 承担：标题、关闭行为、Escape、焦点陷阱、明确主操作。
+ * 外观（overlay/panel）仍走 `.ui-dialog*` 令牌样式，保证明暗主题一致。
+ * 测试与调用方依赖的结构契约：
+ * - open 时渲染 role="dialog"（Modal 内置）；
+ * - 点击遮罩 = onCancel；
+ * - 取消/确认按钮的名称来自 cancelLabel/confirmLabel，
+ *   且 confirm 按钮带 data-variant（danger/primary）语义。
  */
 export function Dialog({
   open,
@@ -36,80 +36,60 @@ export function Dialog({
   onConfirm,
   onCancel,
 }: DialogProps) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
+  // antd Modal 默认挂 body（portal），这里不需要自己管理焦点陷阱；
+  // Escape 与遮罩点击都是 Modal 内置行为，映射到 onCancel。
+  // 但「打开时把焦点移入对话框」在 jsdom / 禁动画场景下 Modal 不保证，
+  // 保留原实现的焦点迁移：聚焦第一个动作按钮（取消）。
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  const firstActionRef = useRef<HTMLButtonElement | null>(null);
 
-  // 打开时记住原焦点，关闭后归还 —— 否则键盘用户会丢失位置。
-  // 同时把焦点移进对话框，满足 §16 的焦点管理要求。
   useEffect(() => {
-    if (!open) return;
-    previouslyFocused.current = document.activeElement as HTMLElement | null;
-
-    const first = panelRef.current?.querySelector<HTMLElement>(
-      "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
-    );
-    first?.focus();
-
-    return () => previouslyFocused.current?.focus?.();
+    if (open) {
+      previouslyFocused.current = document.activeElement as HTMLElement | null;
+      // 等 Modal 完成挂载再聚焦；直接同步调用时面板尚未插入 DOM。
+      const raf = requestAnimationFrame(() => firstActionRef.current?.focus());
+      return () => {
+        cancelAnimationFrame(raf);
+        previouslyFocused.current?.focus?.();
+      };
+    }
   }, [open]);
 
-  // Escape 取消（§16 要求桌面端有 Escape 处理）。
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCancel();
-        return;
-      }
-      // 焦点陷阱：Tab 在对话框内循环，不跑到背后的页面上。
-      if (e.key !== "Tab") return;
-      const focusables = panelRef.current?.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex='-1'])",
-      );
-      if (!focusables || focusables.length === 0) return;
-      const list = Array.from(focusables);
-      const firstEl = list[0];
-      const lastEl = list[list.length - 1];
-      const active = document.activeElement;
-
-      if (e.shiftKey && active === firstEl) {
-        e.preventDefault();
-        lastEl.focus();
-      } else if (!e.shiftKey && active === lastEl) {
-        e.preventDefault();
-        firstEl.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, onCancel]);
-
-  if (!open) return null;
-
-  return createPortal(
-    <div className="ui-dialog-overlay" onMouseDown={onCancel}>
-      <div
-        ref={panelRef}
-        className="ui-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        // 阻止冒泡：点击面板内部不应关闭对话框。
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <h2 className="ui-dialog__title">{title}</h2>
-        {children && <div className="ui-dialog__body">{children}</div>}
-        <div className="ui-dialog__actions">
-          <Button variant="secondary" onClick={onCancel}>
-            {cancelLabel}
-          </Button>
-          <Button variant={destructive ? "danger" : "primary"} onClick={onConfirm}>
-            {confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <Modal
+      open={open}
+      title={<h2 className="ui-dialog__title">{title}</h2>}
+      onCancel={onCancel}
+      // footer 自定义为「语义化按钮对」，而不是 antd 默认的 确定/取消。
+      footer={[
+        <Button key="cancel" ref={firstActionRef} variant="secondary" onClick={onCancel}>
+          {cancelLabel}
+        </Button>,
+        <Button
+          key="confirm"
+          variant={destructive ? "danger" : "primary"}
+          onClick={onConfirm}
+        >
+          {confirmLabel}
+        </Button>,
+      ]}
+      // 遮罩点击关闭 = 原对话框行为（测试 §overlay click）。
+      mask={{ closable: true }}
+      // 关闭即卸载（原实现 !open 时返回 null，无退场动画）。
+      destroyOnHidden
+      width={400}
+      centered
+      // Escape 由 Modal 内置处理（keyboard 默认 true）。
+      className="ui-dialog-modal"
+      styles={{
+        container: { padding: 0, background: "var(--bg-elevated)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)" },
+        header: { padding: "var(--space-5) var(--space-5) 0", background: "transparent", marginBottom: 0 },
+        body: { padding: "var(--space-2) var(--space-5) 0" },
+        footer: { padding: "0 var(--space-5) var(--space-5)" },
+        mask: { background: "rgb(0 0 0 / 0.28)" },
+      }}
+    >
+      {children ? <div className="ui-dialog__body">{children}</div> : null}
+    </Modal>
   );
 }

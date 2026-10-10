@@ -9,17 +9,46 @@ import {
   writeRecoveryDraft,
   type RecoveryCandidate,
 } from "../lib/recovery";
-import type { AppSettingsView, DocumentSummary } from "../types/document";
+import { AUTOSAVE_DELAY_MS, type AutosaveMode } from "../lib/editorSettings";
+import type {
+  AppSettingsView,
+  DocumentSummary,
+  ExternalFileView,
+  OpenFilePayload,
+  RecentFileView,
+} from "../types/document";
 
 /**
- * 自动保存去抖时长。编辑停止后才落盘，避免每个按键都写文件。
+ * 自动保存模式。编辑停止后按档位去抖落盘，避免每个按键都写文件；
+ * `off` 时完全不自动保存（Ctrl+S 仍可用，崩溃恢复草稿独立生效）。
  * `ARCHITECTURE.md` §12.2 允许「立即或短去抖后」本地写入。
  */
-let autosaveDelayMs = 1000;
+let autosaveMode: AutosaveMode = "1s";
 
-/** 仅测试用：调整去抖时长，让用例不必真等 1 秒。 */
+/**
+ * 应用自动保存档位（App 启动与设置页切换时调用）。
+ *
+ * 切到 off 时取消待触发的计时器：内容保持 dirty，由用户手动 Ctrl+S，
+ * 切走文档 / 关闭窗口时的 flushActive 仍会兜底询问保存。
+ */
+export function applyAutosaveMode(mode: AutosaveMode): void {
+  autosaveMode = mode;
+  if (mode === "off") clearAutosave();
+}
+
+/** 仅测试用：直接设去抖毫秒数，让用例不必真等真实档位的时长。 */
 export function __setAutosaveDelay(ms: number): void {
-  autosaveDelayMs = ms;
+  autosaveMode = "1s";
+  autosaveDelayOverrideMs = ms;
+}
+
+/** 测试用的去抖覆盖值；null 表示按 autosaveMode 的档位表取值。 */
+let autosaveDelayOverrideMs: number | null = null;
+
+/** 当前生效的去抖毫秒数。 */
+function effectiveAutosaveDelayMs(): number {
+  if (autosaveDelayOverrideMs !== null) return autosaveDelayOverrideMs;
+  return autosaveMode === "off" ? 0 : AUTOSAVE_DELAY_MS[autosaveMode];
 }
 
 /** 待触发的自动保存计时器。放在模块级，不参与渲染。 */
@@ -45,8 +74,60 @@ export interface WorkspaceState {
   error: string | null;
   /** 设置视图（数据目录等）。加载失败时为 null，设置页据此显示错误。 */
   settings: AppSettingsView | null;
+  /**
+   * 打开过的外部文件（磁盘上原位编辑的那些）。
+   *
+   * 只有元数据与存在性，**没有正文** —— 正文永远从磁盘现读。
+   * 这份清单来自工作区数据库，因此重启后依然存在；也正是它让
+   * 「上次打开的外部文件」不必再走一遍文件选择器。
+   */
+  externalFiles: ExternalFileView[];
+  /**
+   * 外部文件清单是否已成功加载过一次。
+   *
+   * 界面据此决定能不能清理失效的外部标签页：清单还没读回来之前
+   * 所有记录都「不存在」，此时清理会把用户重启前的标签全部误删。
+   */
+  externalFilesLoaded: boolean;
+  /**
+   * 当前激活的外部文件的磁盘基准内容（最后一次读写磁盘时的值）。
+   *
+   * 仅当 `activeId` 是 `ext:` 标签页时有效。编辑它与 `activeContent`
+   * 不等即为「有未保存改动」，`saveActive` 据此写回原文件而不是工作区。
+   */
+  externalBaseline: string | null;
   /** 打开文档时发现的本地未保存草稿；必须由用户明确选择恢复或放弃。 */
   recoveryCandidate: RecoveryCandidate | null;
+
+  // =========================================================================
+  // 统一磁盘文件模型（编辑器/阅读器模式）
+  // =========================================================================
+
+  /** 统一历史记录：打开过的所有本地磁盘文件列表。 */
+  recentFiles: RecentFileView[];
+  /** 历史记录是否已加载完成。 */
+  recentFilesLoaded: boolean;
+  /** 加载历史文件清单。 */
+  loadRecentFiles: () => Promise<void>;
+  /** 打开任意本地磁盘文件。 */
+  openDiskFile: (path: string) => Promise<OpenFilePayload | null>;
+  /** 保存文件到磁盘。 */
+  saveDiskFile: (path: string, content: string) => Promise<boolean>;
+  /** 创建并保存新文件到磁盘。 */
+  createDiskFile: (path: string, content: string) => Promise<boolean>;
+  /** 从历史列表中移除记录（不删除磁盘文件）。 */
+  removeRecentFile: (path: string) => Promise<boolean>;
+  /** 彻底从磁盘删除文件，并清理历史记录。 */
+  deleteDiskFile: (path: string) => Promise<boolean>;
+  /** 置顶/取消置顶某个历史文件。 */
+  setFilePinned: (path: string, pinned: boolean) => Promise<void>;
+  /** 保存阅读/编辑位置会话状态。 */
+  updateFileSession: (
+    path: string,
+    line: number,
+    col: number,
+    scrollRatio: number,
+  ) => Promise<void>;
 
   loadDocuments: () => Promise<void>;
   openDocument: (id: string) => Promise<void>;
@@ -60,6 +141,21 @@ export interface WorkspaceState {
   exportDocument: (id: string, targetPath: string) => Promise<boolean>;
   /** 打开文本或 Markdown 文件为新文档并打开；失败返回 null。 */
   importDocument: (sourcePath: string) => Promise<DocumentSummary | null>;
+
+  /** 读取已打开过的外部文件清单（来自工作区数据库）。 */
+  loadExternalFiles: () => Promise<void>;
+  /**
+   * 把一条外部文件从清单里移除（只删记录，**不删磁盘文件**）。
+   * 失败返回 false，调用方据此提示。
+   */
+  forgetExternalFile: (path: string) => Promise<boolean>;
+  /**
+   * 打开外部文件：内容由调用方（App）从磁盘读出并登记，
+   * 这里只负责把编辑区切过去。
+   *
+   * `baseline` 是刚从磁盘读到的原文，用于判断有无未保存改动。
+   */
+  openExternal: (path: string, content: string) => void;
 
   /** 读取设置（数据目录等）。 */
   loadSettings: () => Promise<void>;
@@ -93,6 +189,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   loading: false,
   error: null,
   settings: null,
+  externalFiles: [],
+  externalFilesLoaded: false,
+  recentFiles: [],
+  recentFilesLoaded: false,
+  externalBaseline: null,
   recoveryCandidate: null,
 
   loadDocuments: async () => {
@@ -128,6 +229,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         activeId: doc.id,
         activeContent: doc.content,
         dirty: false,
+        externalBaseline: null,
         recoveryCandidate: candidate,
       });
     } catch (raw) {
@@ -148,7 +250,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const created = await api.createDocument(title, virtualPath);
       if (requestToken !== openRequestToken) return;
-      set({ activeId: created.id, activeContent: "", dirty: false, recoveryCandidate: null });
+      set({
+        activeId: created.id,
+        activeContent: "",
+        dirty: false,
+        externalBaseline: null,
+        recoveryCandidate: null,
+      });
       await get().loadDocuments();
     } catch (raw) {
       const code = toAppError(raw).code;
@@ -181,7 +289,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       clearRecoveryDraft(id);
       // 删掉的正是当前打开的文档时清空编辑器，否则保持编辑状态不受影响。
       if (get().activeId === id) {
-        set({ activeId: null, activeContent: "", dirty: false, recoveryCandidate: null });
+        set({
+          activeId: null,
+          activeContent: "",
+          dirty: false,
+          externalBaseline: null,
+          recoveryCandidate: null,
+        });
       }
       await get().loadDocuments();
     } catch (raw) {
@@ -248,16 +362,213 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  /**
+   * 读取已打开过的外部文件清单。
+   *
+   * 读不出来只记日志、不设 error：这是列表数据，失败最多让面板暂时空着，
+   * 不该把整个界面顶成错误态（`documents` 才是主列表）。
+   */
+  loadExternalFiles: async () => {
+    try {
+      set({ externalFiles: await api.listExternalFiles(), externalFilesLoaded: true });
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "listExternalFiles", code }, raw);
+    }
+  },
+
+  // =========================================================================
+  // 统一磁盘文件模型实现（编辑器/阅读器模式）
+  // =========================================================================
+
+  loadRecentFiles: async () => {
+    try {
+      set({ recentFiles: await api.listRecentFiles(), recentFilesLoaded: true });
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "listRecentFiles", code }, raw);
+    }
+  },
+
+  openDiskFile: async (path: string) => {
+    const requestToken = ++openRequestToken;
+    if (!(await get().flushActive())) return null;
+    if (requestToken !== openRequestToken) return null;
+
+    set({ error: null });
+    try {
+      const result = await api.openFile(path);
+      if (requestToken !== openRequestToken) return null;
+      set({
+        activeId: `ext:${path}`,
+        activeContent: result.content,
+        externalBaseline: result.content,
+        dirty: false,
+        recoveryCandidate: null,
+      });
+      await get().loadRecentFiles();
+      return result;
+    } catch (raw) {
+      if (requestToken !== openRequestToken) return null;
+      const code = toAppError(raw).code;
+      logFailure({ op: "openDiskFile", code, documentId: path }, raw);
+      set({ error: code });
+      return null;
+    }
+  },
+
+  saveDiskFile: async (path: string, content: string) => {
+    clearAutosave();
+    set({ error: null });
+    try {
+      await api.saveFile(path, content);
+      const current = get();
+      if (current.activeId === `ext:${path}` && current.activeContent === content) {
+        set({ dirty: false, externalBaseline: content });
+      } else {
+        set({ externalBaseline: content });
+      }
+      await get().loadRecentFiles();
+      return true;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "saveDiskFile", code, documentId: path }, raw);
+      set({ error: code });
+      return false;
+    }
+  },
+
+  createDiskFile: async (path: string, content: string) => {
+    set({ error: null });
+    try {
+      await api.createFile(path, content);
+      set({
+        activeId: `ext:${path}`,
+        activeContent: content,
+        externalBaseline: content,
+        dirty: false,
+      });
+      await get().loadRecentFiles();
+      return true;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "createDiskFile", code, documentId: path }, raw);
+      set({ error: code });
+      return false;
+    }
+  },
+
+  removeRecentFile: async (path: string) => {
+    set({ error: null });
+    try {
+      await api.removeFromHistory(path);
+      await get().loadRecentFiles();
+      return true;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "removeRecentFile", code }, raw);
+      set({ error: code });
+      return false;
+    }
+  },
+
+  deleteDiskFile: async (path: string) => {
+    set({ error: null });
+    try {
+      await api.deleteFileOnDisk(path);
+      const { activeId } = get();
+      if (activeId === `ext:${path}`) {
+        set({ activeId: null, activeContent: "", dirty: false, externalBaseline: null });
+      }
+      await get().loadRecentFiles();
+      return true;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "deleteDiskFile", code }, raw);
+      set({ error: code });
+      return false;
+    }
+  },
+
+  setFilePinned: async (path: string, pinned: boolean) => {
+    try {
+      await api.setFilePinned(path, pinned);
+      await get().loadRecentFiles();
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "setFilePinned", code }, raw);
+    }
+  },
+
+  updateFileSession: async (path: string, line: number, col: number, scrollRatio: number) => {
+    try {
+      await api.updateFileSession(path, line, col, scrollRatio);
+    } catch (raw) {
+      // 纯阅读状态更新，静默失败
+    }
+  },
+
+  forgetExternalFile: async (path) => {
+    set({ error: null });
+    try {
+      await api.forgetExternalFile(path);
+      await get().loadExternalFiles();
+      return true;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "forgetExternalFile", code }, raw);
+      set({ error: code });
+      return false;
+    }
+  },
+
+  /**
+   * 切到某个外部文件。
+   *
+   * 正文由调用方从磁盘读出后传入（读盘失败不会走到这里），
+   * 记进 `activeContent` 的同时留一份 `externalBaseline` 作对比基准 ——
+   * 用户在编辑区改字后，两者不等即表示需要写回原文件。
+   */
+  openExternal: (path, content) => {
+    // 切走当前文档前先把未保存的编辑落盘，否则会被下面的 set 覆盖。
+    // （调用方已 await flushActive，这里只做状态切换。）
+    set({
+      activeId: `ext:${path}`,
+      activeContent: content,
+      externalBaseline: content,
+      dirty: false,
+      error: null,
+      recoveryCandidate: null,
+    });
+  },
+
   saveActive: async () => {
     const { activeId, activeContent } = get();
     if (!activeId) return;
     const savedId = activeId;
     const savedContent = activeContent;
+    const extPath = savedId.startsWith("ext:") ? savedId.slice(4) : null;
 
     // 显式保存（Ctrl+S）与自动保存共用此路径，先取消防抖避免重复写。
     clearAutosave();
     set({ error: null });
     try {
+      if (extPath !== null) {
+        // 外部文件写回**用户自己的磁盘文件**，绝不进工作区（原位编辑）。
+        await api.saveExternalFile(extPath, savedContent);
+        // 保存期间用户可能继续输入：旧响应不能把新内容误标成已保存。
+        const current = get();
+        if (current.activeId === savedId && current.activeContent === savedContent) {
+          set({ dirty: false, externalBaseline: savedContent });
+        } else {
+          // 内容又变了，但基准必须前移 —— 否则已落盘的那一版永远算「未保存」。
+          set({ externalBaseline: savedContent });
+        }
+        // 刷新列表里的大小/时间戳（不影响「最近打开」的顺序）。
+        await get().loadExternalFiles();
+        return;
+      }
+
       await api.saveDocument(savedId, savedContent);
       // 保存期间用户可能继续输入，或已经切到另一篇文档。
       // 旧响应不能把新内容误标成已保存，也不能删除新草稿。
@@ -270,7 +581,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (raw) {
       const code = toAppError(raw).code;
       // 只记录 id 与错误码；正文一律不进日志（ARCH §23 MUST NOT）。
-      logFailure({ op: "saveDocument", code, documentId: savedId }, raw);
+      logFailure({ op: "saveActive", code, documentId: savedId }, raw);
       set({ error: code });
     }
   },
@@ -284,8 +595,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   setContent: (content) => {
-    const { activeId, documents } = get();
-    if (activeId) {
+    const { activeId, documents, externalBaseline } = get();
+    const isExternal = activeId !== null && activeId.startsWith("ext:");
+    if (activeId && !isExternal) {
       const summary = documents.find((document) => document.id === activeId);
       if (summary) {
         // 先写本地草稿，再等待正式文件的去抖保存；进程在窗口期崩溃时仍可恢复。
@@ -298,14 +610,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         });
       }
     }
-    set({ activeContent: content, dirty: true, recoveryCandidate: null });
-    // 每次编辑都重置计时器：停止输入 autosaveDelayMs 后才落盘。
+    // 外部文件没有本地草稿机制：它的权威副本就是磁盘上那个文件，
+    // 所以 dirty 只能由「与磁盘基准是否一致」推出，不能一律标脏。
+    const nextDirty = isExternal ? content !== externalBaseline : true;
+    set({ activeContent: content, dirty: nextDirty, recoveryCandidate: null });
+    if (!nextDirty) {
+      clearAutosave();
+      return;
+    }
+    // 自动保存关闭时不排程：内容保持 dirty，等用户 Ctrl+S 或切换时的兜底。
+    if (autosaveMode === "off") {
+      clearAutosave();
+      return;
+    }
+    // 每次编辑都重置计时器：停止输入设定档位的毫秒数后才落盘。
     clearAutosave();
     autosaveTimer = setTimeout(() => {
       autosaveTimer = null;
       // 落盘失败时 dirty 保持 true，error 已设置，UI 会提示。
       void get().saveActive();
-    }, autosaveDelayMs);
+    }, effectiveAutosaveDelayMs());
   },
 
   restoreRecovery: () => {
@@ -347,8 +671,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (requestToken !== openRequestToken) return false;
       clearAllRecoveryDrafts();
       // 换目录等于换了一整套文档：清空编辑器，重新拉列表。
-      set({ settings, activeId: null, activeContent: "", dirty: false, recoveryCandidate: null });
+      // 外部文件记录也在工作区库里，同样必须重拉（否则会带着旧工作区的清单）。
+      set({
+        settings,
+        activeId: null,
+        activeContent: "",
+        dirty: false,
+        externalBaseline: null,
+        recoveryCandidate: null,
+        externalFiles: [],
+        externalFilesLoaded: false,
+      });
       await get().loadDocuments();
+      await get().loadExternalFiles();
       return true;
     } catch (raw) {
       const code = toAppError(raw).code;
@@ -369,8 +704,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const settings = await api.resetWorkspaceRoot();
       if (requestToken !== openRequestToken) return false;
       clearAllRecoveryDrafts();
-      set({ settings, activeId: null, activeContent: "", dirty: false, recoveryCandidate: null });
+      set({
+        settings,
+        activeId: null,
+        activeContent: "",
+        dirty: false,
+        externalBaseline: null,
+        recoveryCandidate: null,
+        externalFiles: [],
+        externalFilesLoaded: false,
+      });
       await get().loadDocuments();
+      await get().loadExternalFiles();
       return true;
     } catch (raw) {
       const code = toAppError(raw).code;

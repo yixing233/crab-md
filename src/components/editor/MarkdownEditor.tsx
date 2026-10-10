@@ -1,8 +1,8 @@
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { EditorSelection as CmSelection, EditorState } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { EditorSelection as CmSelection, Compartment, EditorState } from "@codemirror/state";
 import {
   defaultKeymap,
   history,
@@ -71,6 +71,10 @@ export interface MarkdownEditorProps {
   onScrollDOM?: (el: HTMLElement | null) => void;
   /** 是否启用混合即时渲染（Hybrid WYSIWYG / Live Preview），默认开启。 */
   livePreviewEnabled?: boolean;
+  /** 是否显示行号（设置页 §34「编辑器」），默认关闭。 */
+  lineNumbersEnabled?: boolean;
+  /** 是否自动换行（设置页 §34「编辑器」），默认开启；关闭时长行横向滚动。 */
+  lineWrapEnabled?: boolean;
 }
 
 /** 让 CodeMirror 读取应用主题令牌，避免出现与外壳无关的配色。 */
@@ -273,6 +277,9 @@ function createFoldMarker(open: boolean): HTMLElement {
 
 export interface MarkdownEditorHandle {
   dispatchAction: (action: MarkdownActionId) => void;
+  /** 撤销 / 重做：菜单栏的「编辑」需要，快捷键由 CodeMirror 自己的 keymap 负责。 */
+  undo: () => void;
+  redo: () => void;
   focus: () => void;
 }
 
@@ -290,6 +297,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       showToolbar = true,
       onScrollDOM,
       livePreviewEnabled = true,
+      lineNumbersEnabled = false,
+      lineWrapEnabled = true,
     }: MarkdownEditorProps,
     ref,
   ) {
@@ -308,6 +317,31 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         effects: livePreviewCompartment.reconfigure(isLivePreview ? [livePreviewField] : []),
       });
     }, [isLivePreview]);
+
+    // 行号与自动换行走独立隔间：设置页切换时原地重配，不重建编辑器实例
+    //（重建会丢光标位置与撤销历史，与字号走 CSS 变量是同一条纪律）。
+    const gutterCompartment = useRef(new Compartment());
+    const wrapCompartment = useRef(new Compartment());
+
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        effects: gutterCompartment.current.reconfigure(
+          lineNumbersEnabled ? [lineNumbers()] : [],
+        ),
+      });
+    }, [lineNumbersEnabled]);
+
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        effects: wrapCompartment.current.reconfigure(
+          lineWrapEnabled ? EditorView.lineWrapping : [],
+        ),
+      });
+    }, [lineWrapEnabled]);
 
     const [contextMenu, setContextMenu] = useState<EditorContextMenuState | null>(null);
     const [slashState, setSlashState] = useState<{
@@ -348,6 +382,20 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         dispatchAction: (action: MarkdownActionId) => {
           const view = viewRef.current;
           if (view) dispatchAction(view, action);
+        },
+        undo: () => {
+          const view = viewRef.current;
+          if (view) {
+            undo(view);
+            view.focus();
+          }
+        },
+        redo: () => {
+          const view = viewRef.current;
+          if (view) {
+            redo(view);
+            view.focus();
+          }
         },
         focus: () => {
           viewRef.current?.focus();
@@ -528,7 +576,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           syntaxHighlighting(markdownHighlight),
           bracketMatching(),
           foldGutter({ markerDOM: (open) => createFoldMarker(open) }),
-          EditorView.lineWrapping,
+          // 行号与自动换行从隔间取值：初始即按当前偏好装配，
+          // 之后由上面的 effect 原地重配。
+          gutterCompartment.current.of(lineNumbersEnabled ? [lineNumbers()] : []),
+          wrapCompartment.current.of(lineWrapEnabled ? EditorView.lineWrapping : []),
           search({ top: true, createPanel: createCustomSearchPanel }),
           livePreview(isLivePreview),
           appTheme,

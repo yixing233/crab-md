@@ -8,10 +8,13 @@
  * 用法：npx vite --config vite.harness.config.ts
  * 该文件与 harness.html 都不进 dist、不被 vitest 收集。
  */
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { SettingsPage } from "./components/settings/SettingsPage";
+import { AboutDialog } from "./components/settings/AboutDialog";
 import { AppToolbar } from "./components/workspace/AppToolbar";
+import type { MenuBarMenu } from "./components/workspace/MenuBar";
 import { Breadcrumb } from "./components/workspace/Breadcrumb";
 import { DocumentBar } from "./components/workspace/DocumentBar";
 import { UpdateBar } from "./components/workspace/UpdateBar";
@@ -20,7 +23,13 @@ import { MarkdownEditor } from "./components/editor/MarkdownEditor";
 import { Button } from "./components/ui/Button";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { useUpdateStore } from "./stores/useUpdateStore";
-import { applyTheme, resolveTheme, systemPrefersDark, type ThemePreference } from "./lib/theme";
+import { applyTheme, resolveTheme, systemPrefersDark, type ResolvedTheme, type ThemePreference } from "./lib/theme";
+import {
+  createRippleEnvironment,
+  freshOrigin,
+  runThemeTransition,
+  type StampedOrigin,
+} from "./lib/themeTransition";
 import {
   applyFontSize,
   applyFontStack,
@@ -78,10 +87,47 @@ function Harness() {
     parseStoredTypography(localStorage.getItem(PREVIEW_TYPE_KEY)),
   );
 
-  // 复刻 App.tsx 的接线，才能在 harness 里看到暗色对比度与字体效果。
+  // 首次进入 harness 时同步一次（无波纹）：转场只服务于「用户切换」。
+  // 切换后这个 effect 会再跑一次，但写的是同一个值 —— 没有视觉影响。
+  const resolvedThemeRef = useRef<ResolvedTheme | null>(null);
   useEffect(() => {
-    applyTheme(resolveTheme(theme, systemPrefersDark()));
+    const resolved = resolveTheme(theme, systemPrefersDark());
+    resolvedThemeRef.current = resolved;
+    applyTheme(resolved);
   }, [theme]);
+
+  // 复刻 App.tsx 的接线，才能在 harness 里看到暗色对比度与字体效果。
+  // 主题切换也走真实的波纹转场 —— 这个 harness 存在的意义就是目视核对
+  // 那些 jsdom 查不出来的视觉效果。
+  const lastPointerRef = useRef<StampedOrigin | null>(null);
+
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      lastPointerRef.current = { origin: { x: e.clientX, y: e.clientY }, at: Date.now() };
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, []);
+
+  const changeTheme = useCallback(
+    (next: ThemePreference) => {
+      const resolved = resolveTheme(next, systemPrefersDark());
+      if (resolved === resolvedThemeRef.current) {
+        flushSync(() => setTheme(next));
+        return;
+      }
+      runThemeTransition(
+        () => {
+          resolvedThemeRef.current = resolved;
+          applyTheme(resolved);
+          flushSync(() => setTheme(next));
+        },
+        freshOrigin(lastPointerRef.current, Date.now()),
+        createRippleEnvironment(),
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     applyFontSize(fontSize);
@@ -90,6 +136,38 @@ function Harness() {
   useEffect(() => {
     applyFontStack(latinFont, cjkFont);
   }, [latinFont, cjkFont]);
+
+  // 菜单栏的假数据：只看视觉（对齐、悬停色、下拉阴影、与右侧图标按钮的间距），
+  // 真实命令接线在 App.tsx。选中态与子菜单各放一个，免得漏看 menuitemradio。
+  const menus: MenuBarMenu[] = [
+    {
+      id: "file",
+      label: "文件",
+      items: [
+        { id: "new", label: "新建", shortcut: "Ctrl+N", onSelect: () => {} },
+        { id: "open", label: "打开文件…", shortcut: "Ctrl+O", onSelect: () => {} },
+        { id: "s1", separator: true },
+        { id: "save", label: "保存", shortcut: "Ctrl+S", onSelect: () => {} },
+        { id: "s2", separator: true },
+        { id: "close", label: "关闭标签页", shortcut: "Ctrl+W", onSelect: () => {} },
+      ],
+    },
+    {
+      id: "view",
+      label: "视图",
+      items: [
+        { id: "split", label: "分栏", checked: true, onSelect: () => {} },
+        {
+          id: "theme",
+          label: "主题",
+          submenu: [
+            { id: "light", label: "浅色主题", checked: true, onSelect: () => {} },
+            { id: "dark", label: "深色主题", onSelect: () => {} },
+          ],
+        },
+      ],
+    },
+  ];
 
   return (
     <>
@@ -125,13 +203,16 @@ function Harness() {
         onNewDocument={() => {}}
         onToggleSidebar={() => {}}
         sidebarVisible
+        menus={menus}
         onOpenSettings={() => {}}
          onSearch={() => {}}
          onPrint={() => {}}
         pendingVersion="1.2.3"
         onOpenUpdate={() => {}}
         themePreference={theme}
-        onCycleTheme={() => {}}
+        onCycleTheme={() =>
+          changeTheme(theme === "system" ? "light" : theme === "light" ? "dark" : "system")
+        }
       />
       <DocumentBar
         viewMode={viewMode}
@@ -182,7 +263,7 @@ function Harness() {
         onClose={() => {}}
         onChanged={() => {}}
         themePreference={theme}
-        onChangeTheme={setTheme}
+        onChangeTheme={changeTheme}
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
         syncScroll={true}
@@ -198,7 +279,18 @@ function Harness() {
           setPreviewTypography((prev) => ({ ...prev, [element]: next }))
         }
         onResetPreviewTypography={() => setPreviewTypography(defaultPreviewTypography())}
+        lineNumbersOn={true}
+        onChangeLineNumbers={() => {}}
+        lineWrapOn={true}
+        onChangeLineWrap={() => {}}
+        autosaveMode="1s"
+        onChangeAutosaveMode={() => {}}
+        renderToggles={{ mermaid: true, math: true }}
+        onChangeRenderToggles={() => {}}
       />
+
+      {/* 「关于」对话框：核对独立后的排版与更新区（含深色下的按钮/进度条）。 */}
+      <AboutDialog open onClose={() => {}} />
     </>
   );
 }

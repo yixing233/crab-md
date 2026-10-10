@@ -191,6 +191,14 @@ All major components MUST be visually tested in both light and dark themes.
 
 Normal body text MUST maintain sufficient contrast against its background.
 
+Switching theme SHOULD be animated as a circular ripple that expands from the
+pointer position (viewport center for keyboard-triggered switches). The ripple
+MUST be skipped when it would produce no visual change — i.e. when the resolved
+theme is unchanged, or when reduced motion is requested.
+
+The ripple is driven by the View Transitions API and reuses the existing `slow`
+duration token; it MUST NOT introduce a new duration.
+
 ---
 
 ## 5. Spacing Scale
@@ -310,10 +318,16 @@ Use motion for:
 - drawer/sheet transitions
 - hover/pressed state interpolation
 - pane resizing feedback
+- theme switching (circular ripple, see §4.1)
 
 Do not animate routine editor text changes.
 
 Respect reduced-motion preferences where feasible.
+
+Note: the global `prefers-reduced-motion` reset in `src/styles/globals.css` uses
+the `*` selector, which does NOT match `::view-transition-*` pseudo-elements.
+Custom view-transition animations MUST therefore repeat the reduced-motion query
+themselves (see `src/styles/themeTransition.css`).
 
 ---
 
@@ -565,6 +579,11 @@ Dialogs MUST have:
 - keyboard escape handling on desktop
 - focus trapping where appropriate
 - explicit primary action when action is required
+
+"Action is required" is the operative clause: an informational dialog (e.g. About)
+MUST NOT grow a meaningless "OK/Confirm" button just to fill the action row. When
+there is no primary action, the dialog closes via its close control, Escape, and
+the overlay.
 
 Destructive confirmations SHOULD name the affected object.
 
@@ -1058,10 +1077,40 @@ Appearance
 Editor
 Files & Sync
 Account & Devices
-About
 ```
 
-Do not expose internal database or API configuration in normal settings unless there is a real user need.
+Do not expose internal database or API configuration in normal settings unless
+there is a real user need.
+
+### 34.0 About is not a settings group
+
+App information (name, version, data format) and the software-update entry MUST
+live in their own **About dialog**, not as a section of Settings.
+
+Why: About is not a preference — nothing in it is configurable. Filing it under
+Settings forces the user to first think "settings" in order to read their own
+version number, and it makes the update entry a two-hop journey. About opens
+directly from wherever the user's attention already is: the Help menu, the
+toolbar's update badge (the badge leads straight to the install action), and the
+command palette.
+
+The About dialog follows §16 like any other dialog (title, close, Escape, focus
+handling) but has no primary action, so it MUST NOT render a confirm button.
+It MAY host a confirmation dialog of its own (the install confirmation); when it
+does, the outer dialog MUST yield Escape to the inner one rather than closing both.
+
+The About dialog's layout is **three bands**: a header (brand mark + title + close),
+a body of facts, and a footer holding the update entry. The footer is pinned to the
+bottom edge and carries the update action on the same row as its label, so the
+action cannot float in leftover whitespace.
+
+The dialog MUST NOT restate the app name below its own title — the title already
+says it, and repeating it reads as a duplicated heading.
+
+Fact values MUST NOT be styled with the settings value style that truncates to a
+single line with an ellipsis (`text-overflow: ellipsis`): the data-format value is a
+sentence, and truncating it silently hides information. Reserve the monospace
+one-liner treatment for short identifiers such as the version number.
 
 ### 34.1 Layout
 
@@ -1290,12 +1339,30 @@ src/components/
 └── workspace/
     ├── Sidebar.tsx
     ├── FileTree.tsx
+    ├── ExternalFileList.tsx
     ├── Breadcrumb.tsx
     ├── SyncIndicator.tsx
     └── ...
 ```
 
 Pages/features SHOULD compose these components rather than reimplementing their styling.
+
+### 36.1 External files are a separate list, not a file-tree branch
+
+Files opened in place from disk (§9.1 of `ARCHITECTURE.md`) MUST appear in their
+own sidebar panel, not mixed into `FileTree`:
+
+- `FileTree` shows **workspace documents**, whose identity is an application UUID
+  and which support rename / duplicate / export / delete.
+- `ExternalFileList` shows **the user's own files elsewhere on disk**. Only their
+  path, name and status are known to the application, so the only honest actions
+  are "open", "reveal in file manager", and "remove from this list".
+
+Merging them would imply the two kinds of item behave alike, and every action
+offered in the tree would need a special case. Because the external list is
+driven by database records, it MUST survive a restart; a file whose record
+outlives it MUST be shown as missing rather than hidden, or the user has no way
+to clean up the entry.
 
 ---
 

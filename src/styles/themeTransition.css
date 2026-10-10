@@ -1,0 +1,48 @@
+/**
+ * 主题切换的波纹扩散（UI_DESIGN_SYSTEM.md §9 Motion）。
+ *
+ * 走 View Transitions API：浏览器为新旧两棵渲染树各拍一张快照，我们只要把
+ * 「新」那张用圆形裁剪从指针处放大到覆盖视口，就得到波纹。相比手写一层
+ * 覆盖元素，这样不必复制整棵 DOM，也不会打断编辑器的光标与滚动位置。
+ *
+ * 三个关键点：
+ * 1. 关掉 UA 默认的整屏交叉淡入 —— 否则波纹之外的部分也会跟着闪一下；
+ * 2. `mix-blend-mode` 必须归位：UA 在根转场上用的是 plus-lighter，
+ *    叠加在静止的旧快照上会把画面提亮；
+ * 3. 圆心与半径由 JS 写入（见 lib/themeTransition.ts），这里只给缺省值兜底。
+ */
+:root {
+  /* 缺省值只服务于「变量还没被写过」的极端情况，正常每次转场前都会被覆盖。 */
+  --theme-ripple-x: 50%;
+  --theme-ripple-y: 50%;
+  --theme-ripple-radius: 100vmax;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* 旧快照保持静止，新快照在上层扩张：波纹扫过的区域才显示新主题。 */
+::view-transition-new(root) {
+  animation: theme-ripple var(--duration-slow) ease-out both;
+}
+
+@keyframes theme-ripple {
+  from {
+    clip-path: circle(0px at var(--theme-ripple-x) var(--theme-ripple-y));
+  }
+  to {
+    clip-path: circle(var(--theme-ripple-radius) at var(--theme-ripple-x) var(--theme-ripple-y));
+  }
+}
+
+/* globals.css 里的 `* { animation-duration: 0.01ms }` 匹配不到
+   ::view-transition-* 伪元素，减弱动效必须在这里单独再兜一层。 */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}

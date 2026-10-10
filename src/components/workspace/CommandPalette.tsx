@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Input } from "antd";
+import type { InputRef } from "antd";
 import {
   BookOpen,
   Columns2,
   FileEdit,
+  FileInput,
   FilePlus,
-  FolderOpen,
+  Info,
   PanelLeft,
   Printer,
   Save,
@@ -15,7 +18,6 @@ import {
 } from "lucide-react";
 import type { DocumentSummary } from "../../types/document";
 import type { ViewMode } from "../../lib/viewMode";
-import type { SettingsSection } from "../settings/SettingsPage";
 import { FileIcon } from "../ui/FileIcon";
 import { zh } from "../../lib/i18n";
 import "./palette.css";
@@ -41,7 +43,9 @@ export interface CommandPaletteProps {
   onToggleSidebar: () => void;
   onCycleTheme: () => void;
   onChangeViewMode: (mode: ViewMode) => void;
-  onOpenSettings: (section?: SettingsSection) => void;
+  onOpenSettings: () => void;
+  /** 打开「关于」对话框（版本信息与软件更新）。 */
+  onOpenAbout: () => void;
   onPrint: () => void;
 }
 
@@ -57,11 +61,12 @@ export function CommandPalette({
   onCycleTheme,
   onChangeViewMode,
   onOpenSettings,
+  onOpenAbout,
   onPrint,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<InputRef | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // 打开时重置输入与选中项，并聚焦输入框
@@ -107,7 +112,7 @@ export function CommandPalette({
         title: "打开本地文件",
         category: "命令",
         shortcut: "Ctrl+O",
-        icon: <FolderOpen size={16} />,
+        icon: <FileInput size={16} />,
         onSelect: () => {
           onClose();
           onOpenFile();
@@ -203,6 +208,16 @@ export function CommandPalette({
           onOpenSettings();
         },
       },
+      {
+        id: "cmd-about",
+        title: zh.about.title,
+        category: "命令",
+        icon: <Info size={16} />,
+        onSelect: () => {
+          onClose();
+          onOpenAbout();
+        },
+      },
     ];
   }, [
     onClose,
@@ -213,6 +228,7 @@ export function CommandPalette({
     onCycleTheme,
     onChangeViewMode,
     onOpenSettings,
+    onOpenAbout,
     onPrint,
   ]);
 
@@ -297,9 +313,8 @@ export function CommandPalette({
       >
         <div className="palette__header">
           <Search size={18} className="palette__search-icon" aria-hidden />
-          <input
+          <Input
             ref={inputRef}
-            type="text"
             className="palette__input"
             value={query}
             placeholder="搜索文档跳转，或键入 > 运行命令..."

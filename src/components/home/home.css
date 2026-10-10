@@ -192,45 +192,27 @@
   flex-shrink: 0;
 }
 
-.home-search-bar__input {
+.home-search-bar__input.ant-input,
+.home-search-bar__input .ant-input {
   flex: 1;
-  border: none !important;
-  background: transparent !important;
-  outline: none !important;
-  box-shadow: none !important;
+  border: none;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
   font-size: var(--text-sm);
   color: var(--text-primary);
   font-family: inherit;
+  padding-left: 0;
 }
 
-.home-search-bar__input:focus,
-.home-search-bar__input:focus-visible {
-  outline: none !important;
-  border: none !important;
-  box-shadow: none !important;
+.home-search-bar__input.ant-input:focus,
+.home-search-bar__input .ant-input:focus {
+  box-shadow: none;
 }
 
-.home-search-bar__input::placeholder {
+.home-search-bar__input::placeholder,
+.home-search-bar__input .ant-input::placeholder {
   color: var(--text-muted);
-}
-
-.home-search-bar__clear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-}
-
-.home-search-bar__clear:hover {
-  background-color: var(--bg-surface-hover);
-  color: var(--text-primary);
 }
 
 .home-back-recents-btn {
@@ -514,7 +496,7 @@
   flex-shrink: 0;
 }
 
-.home-card-action__icon--folder {
+.home-card-action__icon--file {
   background-color: var(--warning-soft, #fffbeb);
   color: var(--warning, #d97706);
 }

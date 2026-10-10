@@ -35,6 +35,54 @@ pub struct ExternalFilePayload {
     pub modified_at: String,
 }
 
+/// 外部文件的**元数据**记录（库里只有这一份，没有正文）。
+///
+/// 对应 `external_files` 表：路径即身份，`opened_at` 决定列表顺序。
+/// 正文永远从磁盘现读 —— 用户要求数据库保存路径/名称，而不是文件内容。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalFileSummary {
+    pub path: String,
+    pub name: String,
+    pub size: i64,
+    pub modified_at: String,
+    pub opened_at: String,
+}
+
+/// 磁盘文件记录（对应 `opened_files` 表：记录曾在此软件中打开过的所有磁盘文件）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileRecord {
+    pub path_key: String,
+    pub path: String,
+    pub name: String,
+    pub size: i64,
+    pub modified_at: String,
+    pub opened_at: String,
+    pub pinned: bool,
+    pub cursor_line: u32,
+    pub cursor_col: u32,
+    pub scroll_ratio: f64,
+}
+
+/// 打开文件的返回载荷：正文 + 文件记录。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenFilePayload {
+    pub content: String,
+    #[serde(flatten)]
+    pub record: FileRecord,
+}
+
+/// 全文检索结果。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSearchResult {
+    pub path: String,
+    pub name: String,
+    pub snippet: String,
+}
+
 /// 新建文档的请求体。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,5 +134,24 @@ mod tests {
     fn create_request_defaults_virtual_path() {
         let r: CreateDocumentRequest = serde_json::from_str(r#"{"title":"x"}"#).unwrap();
         assert_eq!(r.virtual_path, "/");
+    }
+
+    #[test]
+    fn external_file_summary_is_camel_case_for_the_frontend() {
+        let s = ExternalFileSummary {
+            path: r"E:\notes\a.md".into(),
+            name: "a.md".into(),
+            size: 3,
+            modified_at: "2026-01-01T00:00:00Z".into(),
+            opened_at: "2026-01-02T00:00:00Z".into(),
+        };
+        let json = serde_json::to_value(&s).unwrap();
+        assert!(json.get("modifiedAt").is_some());
+        assert!(json.get("openedAt").is_some());
+        assert!(json.get("modified_at").is_none());
+        assert!(
+            json.get("content").is_none(),
+            "external file records must never carry content"
+        );
     }
 }

@@ -1,3 +1,53 @@
+/** 统一磁盘文件记录（与 Rust `FileRecord` 对应，serde camelCase）。 */
+export interface FileRecord {
+  pathKey: string;
+  path: string;
+  name: string;
+  size: number;
+  modifiedAt: string;
+  openedAt: string;
+  pinned: boolean;
+  cursorLine: number;
+  cursorCol: number;
+  scrollRatio: number;
+}
+
+/** 最近打开文件视图（携带磁盘存在性状态）。 */
+export interface RecentFileView {
+  pathKey: string;
+  path: string;
+  name: string;
+  size: number;
+  modifiedAt: string;
+  openedAt: string;
+  pinned: boolean;
+  cursorLine: number;
+  cursorCol: number;
+  scrollRatio: number;
+  exists: boolean;
+}
+
+/** 打开文件的返回载荷：正文 + 文件记录。 */
+export interface OpenFilePayload extends FileRecord {
+  content: string;
+}
+
+/** 磁盘全文检索结果。 */
+export interface FileSearchResult {
+  path: string;
+  name: string;
+  snippet: string;
+}
+
+/** 纯内存未命名草稿（如未保存的新建文档）。 */
+export interface DraftDocument {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** 与 Rust `DocumentSummary` 对应（serde camelCase）。 */
 export interface DocumentSummary {
   id: string;
@@ -29,6 +79,24 @@ export interface ExternalFilePayload {
   content: string;
   size: number;
   modifiedAt: string;
+}
+
+/**
+ * 外部文件的**元数据**记录（数据库里只有这一份，没有正文）。
+ *
+ * 正文永远从磁盘现读：库只记录「这个文件在哪、叫什么」，
+ * 让它在重启后仍出现在列表里，而不是把文件内容复制进应用。
+ */
+export interface ExternalFileView {
+  path: string;
+  name: string;
+  size: number;
+  /** 磁盘上的最后修改时间（RFC 3339）。 */
+  modifiedAt: string;
+  /** 最近一次打开的时间，列表按它倒序。 */
+  openedAt: string;
+  /** 文件已不在磁盘上（被移动或删除）。 */
+  missing: boolean;
 }
 
 /** 服务端错误信封（ARCHITECTURE.md §16.1）。 */

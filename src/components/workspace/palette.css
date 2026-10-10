@@ -42,18 +42,22 @@
   flex-shrink: 0;
 }
 
-.palette__input {
+/* antd Input：类名挂在外壳上，原生 input 在 .ant-input 内。 */
+.palette__input.ant-input,
+.palette__input .ant-input {
   flex: 1;
-  border: none !important;
-  background: transparent !important;
-  outline: none !important;
-  box-shadow: none !important;
+  border: none;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
   font-family: inherit;
   font-size: var(--text-md);
   color: var(--text-primary);
+  padding-left: 0;
 }
 
-.palette__input::placeholder {
+.palette__input::placeholder,
+.palette__input .ant-input::placeholder {
   color: var(--text-muted);
   font-size: var(--text-sm);
 }

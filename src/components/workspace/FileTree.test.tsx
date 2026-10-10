@@ -24,6 +24,7 @@ function renderTree(over: Partial<Parameters<typeof FileTree>[0]> = {}) {
     onRename: vi.fn(),
     onDuplicate: vi.fn(),
     onExport: vi.fn(),
+    onReveal: vi.fn(),
     onRequestDelete: vi.fn(),
     ...over,
   };
@@ -249,5 +250,54 @@ describe("FileTree export entry (导出)", () => {
     const deleteAt = labels.findIndex((l) => l.includes("删除"));
     expect(exportAt).toBeGreaterThanOrEqual(0);
     expect(exportAt).toBeLessThan(deleteAt);
+  });
+});
+
+describe("FileTree reveal entry (打开文件所在位置)", () => {
+  it("offers 打开文件所在位置 in the menu", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    expect(screen.getByRole("menuitem", { name: "打开文件所在位置" })).toBeInTheDocument();
+  });
+
+  it("reports the id and title so failures can name the file", async () => {
+    const props = renderTree({ documents: [doc("9", "要定位的")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "打开文件所在位置" }));
+
+    expect(props.onReveal).toHaveBeenCalledWith("9", "要定位的");
+  });
+
+  it("reaches reveal from right-click too", async () => {
+    const props = renderTree({ documents: [doc("3", "右键定位")] });
+    fireEvent.contextMenu(screen.getByRole("treeitem", { name: /右键定位/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "打开文件所在位置" }));
+    expect(props.onReveal).toHaveBeenCalledWith("3", "右键定位");
+  });
+
+  it("closes the menu after choosing reveal", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "打开文件所在位置" }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("is not a destructive action", async () => {
+    // 定位只读，绝不该带 danger 语义。
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    expect(screen.getByRole("menuitem", { name: "打开文件所在位置" })).not.toHaveAttribute(
+      "data-danger",
+    );
+  });
+
+  it("keeps reveal above delete", async () => {
+    renderTree({ documents: [doc("1", "甲")] });
+    await userEvent.click(screen.getByRole("button", { name: /更多操作/ }));
+    const labels = screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
+    const revealAt = labels.findIndex((l) => l.includes("所在位置"));
+    const deleteAt = labels.findIndex((l) => l.includes("删除"));
+    expect(revealAt).toBeGreaterThanOrEqual(0);
+    expect(revealAt).toBeLessThan(deleteAt);
   });
 });

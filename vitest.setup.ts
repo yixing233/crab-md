@@ -17,6 +17,21 @@ if (typeof window !== "undefined" && !window.matchMedia) {
   });
 }
 
+// rc-trigger / @rc-component/resize-observer 依赖 ResizeObserver
+// 做定位测量；jsdom 未实现，提供一个最小 stub。
+class ResizeObserverStub {
+  constructor(_callback?: unknown) {}
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+(globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver =
+  ResizeObserverStub;
+if (typeof window !== "undefined") {
+  (window as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver =
+    ResizeObserverStub;
+}
+
 // CodeMirror schedules a deferred measurement that calls Range#getClientRects.
 // jsdom does not implement it; keep the compatibility shim worker-wide so one
 // test file cannot remove it while another file still has a pending RAF.

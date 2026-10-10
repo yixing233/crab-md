@@ -335,4 +335,35 @@ describe("Task Lists", () => {
     const toggled1 = toggleTaskInSource(toggled0, 1);
     expect(toggled1).toBe("- [x] 任务一\n- [ ] 任务二");
   });
+
+  describe("render toggles (设置页开关)", () => {
+    it("keeps math as source when math rendering is off", async () => {
+      const { setRenderToggles } = await import("./renderToggles");
+      setRenderToggles({ math: false });
+      try {
+        const inline = renderMarkdown("行内 $E=mc^2$ 公式");
+        expect(inline).toContain("$E=mc^2$");
+        expect(inline).not.toContain("katex");
+
+        const block = renderMarkdown("$$\na^2+b^2=c^2\n$$");
+        expect(block).toContain("$$");
+        expect(block).not.toContain("katex-display");
+      } finally {
+        setRenderToggles({ math: true });
+      }
+    });
+
+    it("renders mermaid fences as ordinary code blocks when mermaid is off", async () => {
+      const { setRenderToggles } = await import("./renderToggles");
+      setRenderToggles({ mermaid: false });
+      try {
+        const html = renderMarkdown("```mermaid\nflowchart TD\n  A --> B\n```");
+        expect(html).not.toContain("data-mermaid-source");
+        expect(html).toContain("language-mermaid");
+        expect(html).toContain("flowchart TD");
+      } finally {
+        setRenderToggles({ mermaid: true });
+      }
+    });
+  });
 });

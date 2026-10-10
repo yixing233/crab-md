@@ -18,8 +18,9 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
-.app-pane { display: flex; flex-direction: column; min-width: 0; }
+.app-pane { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 /* 仅编辑模式下保留一份隐藏预览，确保打印不会因为当前视图没有预览而空白。 */
 .app-print-preview { display: none; }
 /* 编辑区始终是主体（UI §11：editor MUST remain the dominant pane）。
@@ -211,6 +212,7 @@
   }
 
   .markdown-preview > * { max-width: none !important; }
+  .markdown-preview-content { max-width: none !important; margin: 0 !important; }
 
   /* 打印分页保护：防止各级标题孤行孤立落在页面底部 */
   h1, h2, h3, h4, h5, h6 {

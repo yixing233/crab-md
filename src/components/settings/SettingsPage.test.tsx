@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
@@ -84,6 +84,22 @@ function renderPage(over: Partial<Parameters<typeof SettingsPage>[0]> = {}) {
     previewTypography: defaultPreviewTypography(),
     onChangePreviewElement: vi.fn(),
     onResetPreviewTypography: vi.fn(),
+    lineNumbersOn: false,
+    onChangeLineNumbers: vi.fn(),
+    lineWrapOn: true,
+    onChangeLineWrap: vi.fn(),
+    autosaveMode: "1s",
+    onChangeAutosaveMode: vi.fn(),
+    renderToggles: { mermaid: true, math: true },
+    onChangeRenderToggles: vi.fn(),
+    accentColor: "blue",
+    onChangeAccentColor: vi.fn(),
+    uiZoom: "100",
+    onChangeUiZoom: vi.fn(),
+    uiDensity: "standard",
+    onChangeUiDensity: vi.fn(),
+    darkStyle: "default",
+    onChangeDarkStyle: vi.fn(),
     ...over,
   };
   render(<SettingsPage {...props} />);
@@ -110,6 +126,14 @@ const BASE_PROPS: Parameters<typeof SettingsPage>[0] = {
   previewTypography: defaultPreviewTypography(),
   onChangePreviewElement: () => {},
   onResetPreviewTypography: () => {},
+  lineNumbersOn: false,
+  onChangeLineNumbers: () => {},
+  lineWrapOn: true,
+  onChangeLineWrap: () => {},
+  autosaveMode: "1s",
+  onChangeAutosaveMode: () => {},
+  renderToggles: { mermaid: true, math: true },
+  onChangeRenderToggles: () => {},
 };
 
 /** 切到某个分组（设置页是左侧导航 + 右侧内容）。 */
@@ -140,12 +164,14 @@ describe("SettingsPage (UI §34)", () => {
   it("shows the four groups by user mental model, not implementation module", () => {
     setSettings();
     renderPage();
-    // §34：分组按用户心智模型 —— 外观/编辑器/预览排版/文件与数据/关于，
+    // §34：分组按用户心智模型 —— 外观/编辑器/预览排版/文件与数据，
     // 而不是「数据库 / 路径 / 缓存」。
+    // 「关于」不在其中：它是独立对话框（AboutDialog），不是设置。
     const nav = screen.getByRole("navigation", { name: "设置分组" });
-    for (const label of ["外观", "编辑器", "预览排版", "文件与数据", "关于"]) {
+    for (const label of ["外观", "编辑器", "预览排版", "文件与数据"]) {
       expect(within(nav).getByRole("button", { name: label })).toBeInTheDocument();
     }
+    expect(within(nav).queryByRole("button", { name: "关于" })).not.toBeInTheDocument();
   });
 
   it("opens on the appearance group", () => {
@@ -157,8 +183,132 @@ describe("SettingsPage (UI §34)", () => {
   it("switches groups from the left nav", async () => {
     setSettings();
     renderPage();
-    await goTo("关于");
-    expect(screen.getByTestId("app-version")).toBeInTheDocument();
+    await goTo("编辑器");
+    expect(screen.getByTestId("font-sample")).toBeInTheDocument();
+  });
+
+  describe("nav collapse", () => {
+    it("collapses to icon-only and expands back", async () => {
+      setSettings();
+      renderPage();
+      const nav = screen.getByRole("navigation", { name: "设置分组" });
+      expect(nav).not.toHaveAttribute("data-collapsed");
+
+      await userEvent.click(screen.getByRole("button", { name: "折叠导航" }));
+      expect(nav).toHaveAttribute("data-collapsed");
+      // 折叠后分组按钮仍可点（图标 + sr-only 名称），分组切换不受影响。
+      await goTo("编辑器");
+      expect(screen.getByTestId("font-sample")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "展开导航" }));
+      expect(nav).not.toHaveAttribute("data-collapsed");
+    });
+
+    it("remembers the preference across reopen (localStorage)", async () => {
+      setSettings();
+      renderPage();
+      await userEvent.click(screen.getByRole("button", { name: "折叠导航" }));
+      expect(localStorage.getItem("crab-md.settings-nav-collapsed")).toBe("true");
+      cleanup();
+
+      // 重新打开：折叠态从 localStorage 恢复，不回到默认展开。
+      renderPage();
+      expect(screen.getByRole("navigation", { name: "设置分组" })).toHaveAttribute("data-collapsed");
+    });
+  });
+
+  describe("editor behavior prefs (UI §34)", () => {
+    it("toggles line numbers via its own radiogroup", async () => {
+      setSettings();
+      const props = renderPage();
+      await goTo("编辑器");
+
+      const group = screen.getByRole("radiogroup", { name: "行号" });
+      const radios = within(group).getAllByRole("radio");
+      expect(radios).toHaveLength(2);
+      // 选项顺序是 [开启, 关闭]；默认 lineNumbersOn=false →「关闭」选中。
+      expect(radios[1]).toHaveAttribute("aria-checked", "true");
+      await userEvent.click(within(group).getByRole("radio", { name: "开启" }));
+      expect(props.onChangeLineNumbers).toHaveBeenCalledWith(true);
+    });
+
+    it("toggles line wrap via its own radiogroup", async () => {
+      setSettings();
+      const props = renderPage();
+      await goTo("编辑器");
+
+      const group = screen.getByRole("radiogroup", { name: "自动换行" });
+      // 默认 lineWrapOn=true →「开启」选中（第一个 radio）。
+      const radios = within(group).getAllByRole("radio");
+      expect(radios[0]).toHaveAttribute("aria-checked", "true");
+      await userEvent.click(within(group).getByRole("radio", { name: "关闭" }));
+      expect(props.onChangeLineWrap).toHaveBeenCalledWith(false);
+    });
+
+    it("picks an autosave mode via its radiogroup", async () => {
+      setSettings();
+      const props = renderPage();
+      await goTo("编辑器");
+
+      const group = screen.getByRole("radiogroup", { name: "自动保存" });
+      expect(within(group).getAllByRole("radio")).toHaveLength(4);
+      await userEvent.click(within(group).getByRole("radio", { name: "关闭" }));
+      expect(props.onChangeAutosaveMode).toHaveBeenCalledWith("off");
+      await userEvent.click(within(group).getByRole("radio", { name: "5 秒" }));
+      expect(props.onChangeAutosaveMode).toHaveBeenCalledWith("5s");
+    });
+  });
+
+  describe("preview render toggles", () => {
+    it("toggles mermaid and math rendering with switches", async () => {
+      setSettings();
+      const props = renderPage();
+      await goTo("预览排版");
+
+      // antd Switch 的 ARIA 角色是 switch 而非 checkbox。
+      const mermaid = screen.getByRole("switch", { name: "Mermaid 图表" });
+      const math = screen.getByRole("switch", { name: "数学公式" });
+      expect(mermaid).toBeChecked();
+      expect(math).toBeChecked();
+
+      await userEvent.click(mermaid);
+      expect(props.onChangeRenderToggles).toHaveBeenCalledWith({ mermaid: false, math: true });
+      await userEvent.click(math);
+      expect(props.onChangeRenderToggles).toHaveBeenCalledWith({ mermaid: true, math: false });
+    });
+
+    it("reflects an off toggle as unchecked", async () => {
+      setSettings();
+      renderPage({ renderToggles: { mermaid: true, math: false } });
+      await goTo("预览排版");
+      expect(screen.getByRole("switch", { name: "数学公式" })).not.toBeChecked();
+    });
+  });
+
+  describe("recovery draft cleanup (files group)", () => {
+    it("shows draft count and clears on demand", async () => {
+      setSettings();
+      localStorage.setItem("crab-md.recovery.v1.doc-1", JSON.stringify({
+        version: 1, documentId: "doc-1", content: "c",
+        baseRevision: 1, baseContentHash: "h", updatedAt: Date.now(),
+      }));
+      renderPage();
+      await goTo("文件与数据");
+
+      expect(screen.getByText("当前存有 1 份草稿")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: /清理草稿/ }));
+      expect(localStorage.getItem("crab-md.recovery.v1.doc-1")).toBeNull();
+      expect(screen.getByText("当前没有草稿")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /清理草稿/ })).toBeDisabled();
+    });
+
+    it("disables cleanup when there are no drafts", async () => {
+      setSettings();
+      renderPage();
+      await goTo("文件与数据");
+      expect(screen.getByText("当前没有草稿")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /清理草稿/ })).toBeDisabled();
+    });
   });
 
   describe("preview typography group", () => {
@@ -284,6 +434,34 @@ describe("SettingsPage (UI §34)", () => {
     renderPage({ themePreference: "dark" });
     expect(screen.getByRole("radio", { name: "深色" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: "浅色" })).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("offers accent color choices and reports selection", async () => {
+    setSettings();
+    const props = renderPage();
+    await userEvent.click(screen.getByRole("radio", { name: "暮光紫" }));
+    expect(props.onChangeAccentColor).toHaveBeenCalledWith("purple");
+  });
+
+  it("offers UI zoom options and reports selection", async () => {
+    setSettings();
+    const props = renderPage();
+    await userEvent.click(screen.getByRole("radio", { name: "125%" }));
+    expect(props.onChangeUiZoom).toHaveBeenCalledWith("125");
+  });
+
+  it("offers UI density options and reports selection", async () => {
+    setSettings();
+    const props = renderPage();
+    await userEvent.click(screen.getByRole("radio", { name: "紧凑" }));
+    expect(props.onChangeUiDensity).toHaveBeenCalledWith("compact");
+  });
+
+  it("offers dark style options and reports selection", async () => {
+    setSettings();
+    const props = renderPage();
+    await userEvent.click(screen.getByRole("radio", { name: "OLED 纯黑" }));
+    expect(props.onChangeDarkStyle).toHaveBeenCalledWith("oled");
   });
 
   // ---- 编辑器 ----
@@ -443,7 +621,9 @@ describe("SettingsPage (UI §34)", () => {
     await goTo("编辑器");
 
     expect(screen.getByText("同步滚动")).toBeInTheDocument();
-    const disabledOption = screen.getByRole("radio", { name: "关闭" });
+    // 页面上有多组「开启/关闭」分段控件（行号/换行/同步滚动），须限定在同步滚动的组内。
+    const group = screen.getByRole("radiogroup", { name: "同步滚动" });
+    const disabledOption = within(group).getByRole("radio", { name: "关闭" });
     expect(disabledOption).toBeInTheDocument();
 
     await userEvent.click(disabledOption);
@@ -455,7 +635,8 @@ describe("SettingsPage (UI §34)", () => {
     const props = renderPage({ syncScroll: false });
     await goTo("编辑器");
 
-    const enabledOption = screen.getByRole("radio", { name: "开启" });
+    const group = screen.getByRole("radiogroup", { name: "同步滚动" });
+    const enabledOption = within(group).getByRole("radio", { name: "开启" });
     expect(enabledOption).toBeInTheDocument();
 
     await userEvent.click(enabledOption);
@@ -588,146 +769,6 @@ describe("SettingsPage (UI §34)", () => {
     expect(await screen.findByText("E:/platform/default")).toBeInTheDocument();
   });
 
-  // ---- 关于 ----
-
-  it("shows the app version in the about group", async () => {
-    setSettings();
-    renderPage();
-    await goTo("关于");
-    expect(screen.getByTestId("app-version")).toBeInTheDocument();
-  });
-
-  it("shows the running version reported by the backend, not a build-time constant", async () => {
-    setSettings();
-    // 后端是版本的权威来源（与更新检查同源），前端常量可能漂移。
-    appVersion.mockResolvedValue("1.2.3");
-    renderPage();
-    await goTo("关于");
-
-    await waitFor(() =>
-      expect(screen.getByTestId("app-version")).toHaveTextContent("1.2.3"),
-    );
-  });
-
-  it("falls back to the build-time version when the backend is unreachable", async () => {
-    setSettings();
-    appVersion.mockRejectedValue(new Error("no ipc"));
-    renderPage();
-    await goTo("关于");
-
-    // 取不到也不该显示空白或报错。
-    expect(screen.getByTestId("app-version")).not.toHaveTextContent("");
-  });
-
-  it("describes itself as local-first rather than advertising", async () => {
-    setSettings();
-    renderPage();
-    await goTo("关于");
-    expect(screen.getByText(/本地优先/)).toBeInTheDocument();
-  });
-
-  // ---- 软件更新 ----
-
-  it("reports when the app is up to date", async () => {
-    setSettings();
-    updaterCheck.mockResolvedValue(null);
-    renderPage();
-    await goTo("关于");
-
-    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
-
-    expect(await screen.findByText("已是最新版本")).toBeInTheDocument();
-  });
-
-  it("offers to install when a new version exists", async () => {
-    setSettings();
-    updaterCheck.mockResolvedValue({ version: "9.9.9", notes: null, downloadAndInstall: vi.fn() });
-    renderPage();
-    await goTo("关于");
-
-    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
-
-    expect(await screen.findByText(/9\.9\.9/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /下载并安装/ })).toBeInTheDocument();
-  });
-
-  it("explains a check failure and suggests what to do", async () => {
-    setSettings();
-    updaterCheck.mockRejectedValue(new Error("network down"));
-    renderPage();
-    await goTo("关于");
-
-    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
-
-    // 主动检查要给出可操作的原因（代理/GitHub 不可达），而不是空手而归。
-    expect(await screen.findByText("检查更新失败")).toBeInTheDocument();
-    expect(screen.getByText(/代理/)).toBeInTheDocument();
-  });
-
-  it("asks for confirmation before installing, since it restarts the app", async () => {
-    setSettings();
-    const update = { version: "9.9.9", notes: null, downloadAndInstall: vi.fn() };
-    updaterCheck.mockResolvedValue(update);
-    renderPage();
-    await goTo("关于");
-
-    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
-    await userEvent.click(await screen.findByRole("button", { name: /下载并安装/ }));
-
-    // 安装会关闭应用 —— 必须确认，且说清会重启。
-    expect(await screen.findByText(/安装完成后应用会自动重启/)).toBeInTheDocument();
-    expect(update.downloadAndInstall).not.toHaveBeenCalled();
-  });
-
-  it("does not install when the confirmation is cancelled", async () => {
-    setSettings();
-    const update = { version: "9.9.9", notes: null, downloadAndInstall: vi.fn() };
-    updaterCheck.mockResolvedValue(update);
-    renderPage();
-    await goTo("关于");
-
-    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
-    await userEvent.click(await screen.findByRole("button", { name: /下载并安装/ }));
-    await userEvent.click(await screen.findByRole("button", { name: "取消" }));
-
-    expect(update.downloadAndInstall).not.toHaveBeenCalled();
-  });
-
-  it("saves unsaved work before installing, so the restart cannot lose it", async () => {
-    setSettings();
-    const update = { version: "9.9.9", notes: null, downloadAndInstall: vi.fn() };
-    updaterCheck.mockResolvedValue(update);
-
-    const flushActive = vi.fn().mockResolvedValue(true);
-    useWorkspaceStore.setState({ flushActive } as never);
-
-    renderPage();
-    await goTo("关于");
-    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
-    await userEvent.click(await screen.findByRole("button", { name: /下载并安装/ }));
-    await userEvent.click(await screen.findByRole("button", { name: /安装并重启/ }));
-
-    // 顺序很关键：先落盘，再安装。
-    await waitFor(() => expect(flushActive).toHaveBeenCalled());
-    await waitFor(() => expect(update.downloadAndInstall).toHaveBeenCalled());
-  });
-
-  it("aborts installation when saving fails, rather than losing the user's work", async () => {
-    setSettings();
-    const update = { version: "9.9.9", notes: null, downloadAndInstall: vi.fn() };
-    updaterCheck.mockResolvedValue(update);
-
-    // 落盘失败 => 绝不安装（安装会关应用，等于丢内容）。
-    const flushActive = vi.fn().mockResolvedValue(false);
-    useWorkspaceStore.setState({ flushActive } as never);
-
-    renderPage();
-    await goTo("关于");
-    await userEvent.click(screen.getByRole("button", { name: /检查更新/ }));
-    await userEvent.click(await screen.findByRole("button", { name: /下载并安装/ }));
-    await userEvent.click(await screen.findByRole("button", { name: /安装并重启/ }));
-
-    await waitFor(() => expect(flushActive).toHaveBeenCalled());
-    expect(update.downloadAndInstall).not.toHaveBeenCalled();
-  });
+  // ---- 关于 / 软件更新 ----
+  // 这两块已随「关于」分组拆到 AboutDialog，用例迁至 AboutDialog.test.tsx。
 });

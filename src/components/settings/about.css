@@ -1,0 +1,158 @@
+/* 「关于」对话框（UI_DESIGN_SYSTEM.md §16、§34）。
+   自绘面板而非复用 Dialog：面板内还要弹安装确认框，
+   两个 Dialog 各装一份 Escape 监听会一次关两层（同 settings.css 的取舍）。
+
+   布局：头部（品牌标记 + 标题 + 关闭）/ 主体（说明 + 事实清单）/
+   贴底的更新区。更新区固定在下沿，动作按钮与标题同行 ——
+   否则按钮会孤零零浮在大片空白里（旧版本的观感问题）。
+   只放事实信息，不做营销版面（§2.3、§34）。 */
+
+.about-overlay {
+  position: fixed;
+  inset: 0;
+  /* 高于设置面板（1050），低于确认 Dialog（1100）——
+     关于对话框里自己会弹确认框。 */
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6vh var(--space-4);
+  background: rgb(0 0 0 / 0.28);
+  /* 背后轻微虚化：让面板从内容里「浮」出来，同时避免把背景糊成一块
+     毛玻璃（§2.3 低视觉噪音）。1px 只够打断文字的锐利边缘。 */
+  backdrop-filter: blur(1px);
+  animation: ui-fade-in var(--duration-fast) ease-out;
+}
+
+/* 比设置面板窄：这里只有两段信息，不需要 680px 的阅读宽度。 */
+.about-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 460px;
+  max-height: min(560px, 84vh);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.about-panel__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.about-panel__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* 品牌标记：与首页同一枚图标。纯色 + 令牌，不用装饰性渐变（§2.3）。
+   用 --accent 而不是 --accent-solid：前者是前景强调色，深色主题下会换成
+   亮蓝（#3b82f6）；--accent-solid 是实心按钮底色，落在深色 --accent-soft
+   上几乎看不清。 */
+.about-panel__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.about-panel__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* 主体只承载事实信息，留白交给下方的更新区。 */
+.about-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5) var(--space-5);
+}
+
+.about-lead {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-secondary);
+}
+
+/* 事实清单：标签左、值右，逐行分隔。
+   不套 .settings-meta —— 那条规则给 dd 加了 mono + 单行省略，
+   对「标准 Markdown + 本地 SQLite 索引」这种句子会截断且读起来发涩。 */
+.about-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+}
+
+.about-meta dt {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.about-meta dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+
+/* 版本号是短标识符，用等宽让它稳定成一块，不与句子混读。
+   选择器带上 dd 以压过上面的 .about-meta dd。 */
+dd.about-meta__version {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+/* 更新区贴底：与主体之间一条分隔线，动作按钮紧跟标题，
+   状态与提示在下方，高度变化不会把按钮推走。 */
+.about-footer {
+  flex: 0 0 auto;
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+
+.about-footer__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  /* 允许换行：放大大字号或窄窗时按钮整行下沉，而不是溢出面板。 */
+  flex-wrap: wrap;
+}
+
+/* 行内动作不再需要额外的上间距（父行已经给出对齐）。 */
+.about-footer__actions {
+  margin-top: 0;
+}
+
+.about-footer .settings-field__description {
+  margin-top: var(--space-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-overlay { animation: none; }
+}

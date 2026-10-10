@@ -71,13 +71,14 @@ Editing MUST write to local storage first. Network synchronization MUST be an as
 
 A temporary network failure MUST NOT cause loss of user edits.
 
-### 3.2 Markdown remains portable
+### 3.2 Pure Disk-File Model (Editor & Reader Philosophy)
 
-User documents MUST remain valid Markdown files.
+The application is an editor and reader, not a closed document vault.
 
-The application MUST NOT require a proprietary document format to read the user's content.
-
-Metadata MAY be stored separately in SQLite.
+1. **No Proprietary Storage or Vault Ingestion:** The software itself does NOT store documents in an isolated sandbox or container. All documents live directly on the user's disk filesystem as normal `.md` files at their real absolute paths.
+2. **Unified File Status:** Files created within the application and files opened from disk have identical status. Creating a new document begins as an in-memory draft; saving it prompts for a real disk path (or uses the user's default save folder), writing directly to the filesystem.
+3. **Database as Registry & Session Cache:** SQLite acts strictly as an index, metadata registry, and session state store (recording paths, timestamps, pinned status, reading scroll/cursor positions, and FTS5 full-text search index). The database does not own the authoritative content of files; the disk file is always authoritative.
+4. **Markdown Remains Portable:** User documents MUST remain plain, valid Markdown files on the user's filesystem without vendor lock-in.
 
 ### 3.3 Per-user isolation
 
@@ -350,9 +351,46 @@ sync_log
 - object_type
 - action
 - created_at
+
+external_files
+- path_key
+- path
+- name
+- size
+- modified_at
+- opened_at
 ```
 
 Exact schema MAY evolve, but the per-user isolation invariant MUST remain.
+
+### 9.1 External files
+
+The application can open a file **in place** — editing the user's own file at its
+original disk location rather than copying it into the workspace.
+
+Such files MUST remain distinguishable from workspace documents:
+
+- They MUST NOT be given a document ID: their identity is their absolute path.
+- Their **content MUST NOT be stored in the database**. The metadata database
+  records only where the file is and what it is called; the body is always read
+  from disk, and is never a second copy that can drift.
+- A record MUST be written when the file is successfully opened, so that it is
+  still listed after a restart. Requiring the user to re-pick the same file from
+  the system file picker on every launch is a defect, not a workflow.
+- A record MUST survive its file being moved or deleted: it is marked as missing
+  rather than silently dropped, so the user decides when to remove it.
+- Removing a record MUST NOT delete the file. Removing is a list operation, not
+  a destructive file operation, and the confirmation text MUST say so.
+- Writes MUST be atomic (§18.2): the target is the user's own document, and a
+  crash must not truncate it.
+
+`path_key` is a normalized form of the path (on Windows, case-insensitive with
+`/` folded to `\`) and is the uniqueness key, so the same file cannot appear
+twice. `path` keeps the spelling the user saw. `opened_at` drives the "most
+recently opened" ordering and MUST NOT be advanced by a save.
+
+This is *not* the import flow of §20.1: import copies content into the workspace
+under a fresh identity, and external files are never copied.
 
 ---
 
@@ -666,6 +704,12 @@ out as a plain `.md` file, so users can cooperate with other editors.
   the application layer (§7.1); the client MUST NOT be granted filesystem
   permissions of its own.
 - A cancelled picker is **not** an error and MUST NOT surface a failure message.
+
+Note the distinction from §9.1: **import** copies a file into the workspace under
+a new identity. **Opening** a file edits it in place and only records its path in
+the metadata database. The two are separate commands with separate outcomes and
+MUST NOT be conflated — an "open file" action that silently creates a workspace
+copy leaves the user editing a duplicate they never asked for.
 
 ---
 

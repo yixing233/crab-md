@@ -10,6 +10,8 @@ pub enum AppError {
     InvalidId(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
+    #[error("already exists: {0}")]
+    AlreadyExists(String),
     #[error("workspace not initialised")]
     WorkspaceMissing,
     #[error("io error: {0}")]
@@ -26,6 +28,7 @@ impl AppError {
             AppError::NotFound(_) => "NOT_FOUND",
             AppError::InvalidId(_) => "INVALID_ID",
             AppError::InvalidInput(_) => "INVALID_INPUT",
+            AppError::AlreadyExists(_) => "ALREADY_EXISTS",
             AppError::WorkspaceMissing => "WORKSPACE_MISSING",
             AppError::Io(_) => "IO_ERROR",
             AppError::Db(_) => "DB_ERROR",

@@ -59,7 +59,9 @@
   color: var(--text-secondary);
 }
 
-.close-modal__input {
+/* antd Input：类名挂在外壳上，原生 input 在 .ant-input 内。 */
+.close-modal__input.ant-input,
+.close-modal__input .ant-input {
   width: 100%;
   height: 34px;
   padding: 0 var(--space-3);
@@ -74,7 +76,8 @@
   transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
 }
 
-.close-modal__input:focus {
+.close-modal__input.ant-input:focus,
+.close-modal__input .ant-input:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }

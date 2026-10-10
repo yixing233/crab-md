@@ -2,6 +2,7 @@ import { Download, Moon, PanelLeft, Plus, Printer, Search, Settings, Sun, SunMoo
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
 import { Tooltip } from "../ui/Tooltip";
+import { MenuBar, type MenuBarMenu } from "./MenuBar";
 import { zh } from "../../lib/i18n";
 import "./workspace.css";
 
@@ -9,6 +10,13 @@ export interface AppToolbarProps {
   onNewDocument: () => void;
   onToggleSidebar: () => void;
   sidebarVisible: boolean;
+  /**
+   * 顶部菜单栏（文件 / 编辑 / 视图 / 帮助）。
+   *
+   * 可选：`devHarness` 这类只关心单个控件的宿主可以不传，工具栏退化成
+   * 原来那排图标。菜单项由 App.tsx 组装 —— 只有它知道哪些命令当前可用。
+   */
+  menus?: MenuBarMenu[];
   /** 打开设置页（UI §34，快捷键 Ctrl+,）。 */
   onOpenSettings: () => void;
   /** 可选：打开编辑器查找面板（若全局工具栏不需要则不传）。 */
@@ -20,7 +28,7 @@ export interface AppToolbarProps {
    * 传 null 表示无更新 —— 工具栏保持安静（§2.1）。
    */
   pendingVersion: string | null;
-  /** 点更新入口：打开设置页的「关于」分组。 */
+  /** 点更新入口：打开「关于」对话框（更新详情就在里面）。 */
   onOpenUpdate: () => void;
   /** 当前主题偏好（UI_DESIGN_SYSTEM.md §4.1 要求 Light/Dark/Follow system）。 */
   themePreference: "light" | "dark" | "system";
@@ -39,6 +47,7 @@ export function AppToolbar({
   onNewDocument,
   onToggleSidebar,
   sidebarVisible,
+  menus,
   onOpenSettings,
   onSearch,
   onPrint,
@@ -66,6 +75,8 @@ export function AppToolbar({
       </Tooltip>
 
       <span className="app-toolbar__title">{zh.app.name}</span>
+
+      {menus && menus.length > 0 && <MenuBar menus={menus} />}
 
       <span className="app-toolbar__spacer" />
 
@@ -112,12 +123,12 @@ export function AppToolbar({
       {/* 有更新时才出现的常驻入口：带徽标，一眼可见。
           没有更新时整块不渲染 —— 工具栏平时保持安静（§2.1）。 */}
       {pendingVersion !== null && (
-        <Tooltip content={zh.settings.update.toolbarLabel(pendingVersion)}>
+        <Tooltip content={zh.update.toolbarLabel(pendingVersion)}>
           <Button
             variant="ghost"
             size="sm"
             onClick={onOpenUpdate}
-            aria-label={zh.settings.update.toolbarLabel(pendingVersion)}
+            aria-label={zh.update.toolbarLabel(pendingVersion)}
           >
             <Download size={16} aria-hidden />
             <Badge pill>{pendingVersion}</Badge>

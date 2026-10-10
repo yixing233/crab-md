@@ -1,3 +1,9 @@
+/* ---------------------------------------------------------------------------
+   Button —— antd Button 适配层。
+   antd 自带视觉（.ant-btn 的背景/边框/阴影），这里的 data-variant 规则
+   必须能压住它，才能保证「调用方只传语义、颜色全部来自设计令牌」。
+   --------------------------------------------------------------------------- */
+
 .ui-button {
   display: inline-flex;
   align-items: center;
@@ -9,10 +15,19 @@
   white-space: nowrap;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
+  box-shadow: none;
   cursor: pointer;
   transition: background-color var(--duration-fast) ease,
     border-color var(--duration-fast) ease,
     color var(--duration-fast) ease;
+}
+
+/* antd 给 .ant-btn 铺了默认背景/边框/阴影，全部退位给 data-variant 规则。 */
+.ui-button.ant-btn {
+  box-shadow: none;
+}
+.ui-button.ant-btn:not([data-variant="danger"]):not(:disabled) {
+  box-shadow: none;
 }
 
 /* 图标与文字各自作为 flex item 居中；svg 不参与基线对齐，避免上下错位。 */
@@ -23,6 +38,30 @@
 .ui-button__label {
   display: inline-flex;
   align-items: center;
+}
+
+/* antd loading 图标尺寸对齐原有 Spinner(14px)。 */
+.ui-button .anticon-loading { display: inline-flex; font-size: 14px; }
+
+/* 紧凑分段控件的可访问名文字：视觉隐藏但不从读屏树移除。
+   与 workspace.css 的 .sr-only 同款；ui 原语不依赖 workspace 样式，故在此声明。 */
+.ui-segmented .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* antd 把原生 radio input 视觉隐藏（opacity:0 + pointer-events:none），
+   点击由外层 label 承接。jsdom 的 userEvent 不会沿 label 命中，
+   放行 pointer-events 让「点击 input」语义可达（视觉不变：input 本身 opacity 0）。 */
+.ui-segmented .ant-segmented-item-input {
+  pointer-events: auto;
 }
 
 /* 纯图标按钮：正方形，两个方向都居中。 */
@@ -42,31 +81,56 @@
 /* 实心按钮用 --*-solid 底色 + --text-on-* 文字：
    这两个 token 是配套的，不要换成 --accent/--text-inverse。
    实测（暗色）白字 on #3b82f6 只有 3.68（不达 AA 4.5），
-   而 on #2563eb 是 5.17 ✓ —— 这正是拆分角色的原因。 */
-.ui-button[data-variant="primary"] { background: var(--accent-solid); color: var(--text-on-accent); }
-.ui-button[data-variant="primary"]:hover:not(:disabled) { background: var(--accent-solid-hover); }
-.ui-button[data-variant="primary"]:active:not(:disabled) { background: var(--accent-solid-active); }
+   而 on #2563eb 是 5.17 ✓ —— 这正是拆分角色的原因。
+   antd 会按 type 铺自己的底色，这里全部覆盖为令牌色。 */
+.ui-button[data-variant="primary"] {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: var(--text-on-accent);
+}
+.ui-button[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--accent-solid-hover) !important;
+  border-color: var(--accent-solid-hover) !important;
+}
+.ui-button[data-variant="primary"]:active:not(:disabled) {
+  background: var(--accent-solid-active) !important;
+  border-color: var(--accent-solid-active) !important;
+}
 
 .ui-button[data-variant="secondary"] {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border-color: var(--border-default);
+  background: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-default) !important;
 }
-.ui-button[data-variant="secondary"]:hover:not(:disabled) { background: var(--bg-surface-hover); }
+.ui-button[data-variant="secondary"]:hover:not(:disabled) {
+  background: var(--bg-surface-hover) !important;
+  border-color: var(--border-strong) !important;
+}
 
-.ui-button[data-variant="ghost"] { background: transparent; color: var(--text-secondary); }
+.ui-button[data-variant="ghost"] {
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  border-color: transparent !important;
+}
 .ui-button[data-variant="ghost"]:hover:not(:disabled) {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
+  background: var(--bg-surface-hover) !important;
+  color: var(--text-primary) !important;
 }
 .ui-button[data-variant="ghost"][aria-pressed="true"],
 .ui-button[data-variant="ghost"][data-active] {
-  background: var(--bg-surface-active);
-  color: var(--accent);
+  background: var(--bg-surface-active) !important;
+  color: var(--accent) !important;
 }
 
-.ui-button[data-variant="danger"] { background: var(--danger-solid); color: var(--text-on-danger); }
-.ui-button[data-variant="danger"]:hover:not(:disabled) { filter: brightness(0.92); }
+.ui-button[data-variant="danger"] {
+  background: var(--danger-solid) !important;
+  border-color: var(--danger-solid) !important;
+  color: var(--text-on-danger) !important;
+}
+.ui-button[data-variant="danger"]:hover:not(:disabled) {
+  background: var(--danger-solid) !important;
+  filter: brightness(0.92);
+}
 
 .ui-button:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -346,61 +410,78 @@
    分段控件：用于互斥的少量选项（视图模式、主题、字号）。
    --------------------------------------------------------------------------- */
 
-.ui-segmented {
+/* ---------------------------------------------------------------------------
+   分段控件：Ant Design Segmented 样式适配与同心圆角（Concentric Border-Radius）
+   几何法则：R_outer = R_inner + padding。
+   当前 padding 为 2px，外框使用 --radius-md (8px)，内层滑块与激活项必须设为 6px，
+   使内外弧线曲率中心严格重合，四周留白在任意角度完全均等，消除角部突兀的空隙感。
+   --------------------------------------------------------------------------- */
+
+.ui-segmented.ant-segmented {
   display: inline-flex;
-  gap: 2px;
   padding: 2px;
   background: var(--bg-surface-active);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-md); /* 8px */
+  transition: all var(--duration-fast) ease;
 }
 
-/* 纯图标模式会被 Tooltip 包一层锚点 span；让它当 flex 项并撑满，
-   否则按钮尺寸不受控。锚点必须保留盒子（不能用 display:contents），
-   否则 Tooltip 量不到位置。 */
-.ui-segmented > .ui-tooltip-anchor { display: inline-flex; }
+.ui-segmented .ant-segmented-group {
+  gap: 2px;
+}
 
-.ui-segmented__item {
-  display: inline-flex;
-  gap: var(--space-2);
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 24px;
-  padding: 0;
+/* 内层滑块与选项卡片：R_inner = 8px - 2px = 6px，实现严格同心圆角 */
+.ui-segmented .ant-segmented-item,
+.ui-segmented .ant-segmented-thumb {
+  border-radius: 6px !important;
+}
+
+.ui-segmented .ant-segmented-thumb {
+  background-color: var(--bg-elevated) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.ui-segmented .ant-segmented-item {
+  color: var(--text-secondary);
   font-family: inherit;
   font-size: var(--text-sm);
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+  transition: color var(--duration-fast) ease;
 }
 
-/* 带文字标签时按内容宽度，并给足内边距。 */
-.ui-segmented[data-labeled] .ui-segmented__item {
-  width: auto;
-  height: 30px;
+.ui-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+  color: var(--text-primary);
+}
+
+.ui-segmented .ant-segmented-item-selected {
+  color: var(--text-primary) !important;
+  font-weight: 500;
+}
+
+.ui-segmented .ant-segmented-item-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 4px;
+  user-select: none;
+}
+
+/* 带文字标签时给足内边距与舒适高度 */
+.ui-segmented[data-labeled] .ant-segmented-item-label {
+  min-height: 28px;
   padding: 0 var(--space-3);
 }
 
-.ui-segmented__item:hover { color: var(--text-primary); }
-
-/* 选中态：抬到纸色 + 加重文字色，不只靠颜色区分（UI §39）。 */
-.ui-segmented__item[data-active] {
-  color: var(--text-primary);
-  font-weight: 500;
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-sm);
-}
-
-.ui-segmented__item:focus-visible {
+.ui-segmented .ant-segmented-item:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: -1px;
 }
 
-/* 窄容器里允许换行，而不是把控件挤扁。 */
-.ui-segmented[data-labeled] { flex-wrap: wrap; }
+/* 纯图标模式下 Tooltip 锚点自适应居中 */
+.ui-segmented .ui-tooltip-anchor {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
 /* ---------------------------------------------------------------------------
    徽标：标注状态用（UI §13）。

@@ -1,4 +1,6 @@
+import { useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { LucideIcon } from "lucide-react";
+import { Segmented } from "antd";
 import { Tooltip } from "./Tooltip";
 import "./ui.css";
 
@@ -23,14 +25,12 @@ export interface SegmentedControlProps<T extends string> {
 }
 
 /**
- * 分段控件（UI_DESIGN_SYSTEM.md §13 原语）。
+ * 分段控件 —— 内部基于 Ant Design Segmented 的适配层（UI_DESIGN_SYSTEM.md §13 原语）。
  *
- * 用于**互斥的少量选项**（2–4 个）。相比下拉框，分段控件把可选项全部
- * 摊开，一眼可见当前值，点一次即切换 —— 设置页的主题/视图/字号都用它，
- * 避免每处各写一份单选逻辑（§2.4 组件纪律）。
+ * 用于**互斥的少量选项**（2–4 个）。相比手写 radio 组，antd Segmented 自带
+ * 物理平滑滑块位移动画（thumb glide）、完善的键盘循环导航和响应式尺寸。
  *
- * 语义用 radiogroup 而非一排普通按钮：屏幕阅读器会正确播报
- * 「N 选 1」，而不是「N 个独立开关」。
+ * 外观由设计令牌（ui.css / antdTheme.ts）统一定义，适配应用明暗主题。
  */
 export function SegmentedControl<T extends string>({
   value,
@@ -39,41 +39,59 @@ export function SegmentedControl<T extends string>({
   ariaLabel,
   showLabels = false,
 }: SegmentedControlProps<T>) {
-  return (
-    <div
-      className="ui-segmented"
-      role="radiogroup"
-      aria-label={ariaLabel}
-      data-labeled={showLabels || undefined}
-    >
-      {options.map((option) => {
-        const Icon = option.icon;
-        const active = option.value === value;
-        const button = (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            aria-label={option.label}
-            className="ui-segmented__item"
-            data-active={active || undefined}
-            onClick={() => onChange(option.value)}
-          >
-            {Icon && <Icon size={15} aria-hidden />}
-            {showLabels && <span className="ui-segmented__label">{option.label}</span>}
-          </button>
-        );
+  const generatedName = useId();
+  const containerRef = useRef<HTMLDivElement>(null);
 
-        // 纯图标时用 Tooltip 补全名称；有文字标签时不必再悬浮提示。
-        return showLabels ? (
-          button
+  const antdOptions = useMemo(() => {
+    return options.map((option) => {
+      const Icon = option.icon;
+      const content = (
+        <span className="ui-segmented__content" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          {Icon && <Icon size={15} aria-hidden />}
+          {showLabels ? (
+            <span className="ui-segmented__label">{option.label}</span>
+          ) : (
+            <span className="sr-only">{option.label}</span>
+          )}
+        </span>
+      );
+
+      return {
+        value: option.value,
+        label: showLabels ? (
+          content
         ) : (
-          <Tooltip key={option.value} content={option.label}>
-            {button}
+          <Tooltip content={option.label}>
+            {content}
           </Tooltip>
-        );
-      })}
+        ),
+      };
+    });
+  }, [options, showLabels]);
+
+  // 同步 aria-checked 与放行 pointer-events：
+  // 1. antd 内部使用原生 <input type="radio">，辅助技术与现有断言期待 aria-checked 属性对齐；
+  // 2. antd 对 radio 施加 pointer-events:none，内联赋予 auto 保证无障碍点击与测试环境行为一致。
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+    const radios = containerRef.current.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+    radios.forEach((radio) => {
+      radio.style.pointerEvents = "auto";
+      radio.setAttribute("aria-checked", radio.checked ? "true" : "false");
+    });
+  }, [value, options]);
+
+  return (
+    <div ref={containerRef} style={{ display: "inline-flex" }}>
+      <Segmented
+        className="ui-segmented"
+        name={generatedName}
+        aria-label={ariaLabel}
+        data-labeled={showLabels || undefined}
+        value={value}
+        options={antdOptions}
+        onChange={(v) => onChange(v as T)}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import MarkdownIt, { type StateInline } from "markdown-it";
 import katex from "@vscode/markdown-it-katex";
 import { highlightCode } from "./codeHighlight";
 import { COPY_ICON_SVG } from "./codeBlockIcons";
+import { getRenderToggles } from "./renderToggles";
 
 const md = new MarkdownIt({
   html: true,       // 允许 Markdown 中内嵌 HTML……
@@ -114,19 +115,48 @@ function mathInlineAnywhere(state: StateInline, silent: boolean): boolean {
 md.inline.ruler.before("math_inline", "math_inline_anywhere", mathInlineAnywhere);
 
 /**
+ * 「渲染公式」开关的运行时闸门。
+ *
+ * markdown-it 的规则注册在模块加载时完成，无法按次渲染装卸；
+ * 因此包一层渲染器：开关关闭时把 token 还原为原始写法（含定界符），
+ * 让公式保持 `$...$` / `$$...$$` 原文可见。解析照常进行，
+ * 只是渲染结果不同 —— 对 DOMPurify 与文档内容零影响。
+ */
+function gateMathRenderers(): void {
+  const rules = md.renderer.rules;
+  const mathTokenTypes = new Set(["math_inline", "math_block", "math_inline_block", "math_inline_bare_block"]);
+  for (const [type, renderer] of Object.entries(rules)) {
+    if (!mathTokenTypes.has(type) || !renderer) continue;
+    rules[type] = (tokens, index, options, env, self) => {
+      if (!getRenderToggles().math) {
+        const token = tokens[index];
+        const markup = token.markup || "$";
+        if (type === "math_block") return `$$\n${token.content}\n$$`;
+        return `${markup}${token.content}${markup}`;
+      }
+      return renderer(tokens, index, options, env, self);
+    };
+  }
+}
+gateMathRenderers();
+
+/**
  * Mermaid fences are deliberately rendered as inert source containers first.
  *
  * Mermaid must not receive HTML from the Markdown renderer directly: the source
  * is escaped into a `<code>` element and the preview effect replaces that
  * element only after Mermaid has parsed it and its SVG has gone through a
  * second DOMPurify pass.
+ *
+ * 「渲染图表」开关关闭时走普通代码块路径：源码 + 高亮 + 复制按钮，
+ * 与其他语言围栏完全一致（设置页 §34「预览排版」）。
  */
 const defaultFenceRenderer = md.renderer.rules.fence;
 md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const token = tokens[index];
   const language = token.info.trim().split(/\s+/u)[0]?.toLowerCase();
 
-  if (language === "mermaid") {
+  if (language === "mermaid" && getRenderToggles().mermaid) {
     return [
       '<div class="mermaid-diagram" data-mermaid-source>',
       '<pre class="mermaid-source"><code>',
@@ -195,6 +225,28 @@ md.core.ruler.after("inline", "task_list", (state) => {
     inlineToken.children.unshift(checkboxToken);
   }
 });
+
+/**
+ * 为 Markdown 表格自动外包一层 `<div class="table-wrapper">`。
+ * 确保表格内容超宽时仅在内部出现水平滚动条，防止撑破整体阅读视口。
+ */
+const defaultTableOpen =
+  md.renderer.rules.table_open ||
+  function (tokens, idx, options, _env, self) {
+    return self.renderToken(tokens, idx, options);
+  };
+const defaultTableClose =
+  md.renderer.rules.table_close ||
+  function (tokens, idx, options, _env, self) {
+    return self.renderToken(tokens, idx, options);
+  };
+
+md.renderer.rules.table_open = function (tokens, idx, options, env, self) {
+  return '<div class="table-wrapper">' + defaultTableOpen(tokens, idx, options, env, self);
+};
+md.renderer.rules.table_close = function (tokens, idx, options, env, self) {
+  return defaultTableClose(tokens, idx, options, env, self) + "</div>";
+};
 
 /**
  * 切换 Markdown 源码中第 taskIndex 个复选框的状态（[ ] ↔ [x]）。

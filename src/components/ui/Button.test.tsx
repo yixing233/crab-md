@@ -57,7 +57,11 @@ describe("Button", () => {
 
   it("works without a caller className", () => {
     render(<Button>Label</Button>);
-    expect(screen.getByRole("button").className).toBe("ui-button");
+    // antd 适配层会附加 ant-btn 等内部类；这里断言的是「没有多余的调用方类」，
+    // 基础 ui-button 类必须在。
+    const btn = screen.getByRole("button");
+    expect(btn).toHaveClass("ui-button");
+    expect(btn.className).not.toContain("custom");
   });
 
   it("marks icon-only buttons for square sizing", () => {

@@ -46,14 +46,14 @@ export function UpdateBar({ onInstall }: UpdateBarProps) {
   const text =
     status.kind === "downloading"
       ? progress === null
-        ? zh.settings.update.downloadingUnknown
-        : zh.settings.update.downloading(
+        ? zh.update.downloadingUnknown
+        : zh.update.downloading(
             Math.round((progress.value / progress.max) * 100),
           )
       : status.kind === "ready"
-        ? zh.settings.update.restarting
+        ? zh.update.restarting
         : status.kind === "available"
-          ? zh.settings.update.available(status.version)
+          ? zh.update.available(status.version)
           : "";
 
   return (
@@ -68,14 +68,14 @@ export function UpdateBar({ onInstall }: UpdateBarProps) {
           className="update-bar__progress"
           value={progress.value}
           max={progress.max}
-          aria-label={zh.settings.update.label}
+          aria-label={zh.update.label}
         />
       )}
 
       <span className="update-bar__spacer" />
 
       <Button variant="primary" size="sm" disabled={busy} onClick={onInstall}>
-        {zh.settings.update.install}
+        {zh.update.install}
       </Button>
 
       {/* 忙时不提供关闭：安装已开始，中途关掉会让人以为没在装。 */}
@@ -84,7 +84,7 @@ export function UpdateBar({ onInstall }: UpdateBarProps) {
           variant="ghost"
           size="sm"
           iconOnly
-          aria-label={zh.settings.update.dismiss}
+          aria-label={zh.update.dismiss}
           onClick={dismissBar}
         >
           <X size={14} aria-hidden />

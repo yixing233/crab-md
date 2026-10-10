@@ -36,6 +36,8 @@ export interface TabBarProps {
   onDuplicateTab?: (id: string, title: string) => void;
   /** 导出文档。 */
   onExportTab?: (id: string, title: string) => void;
+  /** 在系统文件管理器里定位该标签页对应的磁盘文件。 */
+  onRevealTab?: (id: string, title: string) => void;
 }
 
 interface TabContextMenuState {
@@ -56,6 +58,7 @@ export function TabBar({
   onRenameTab,
   onDuplicateTab,
   onExportTab,
+  onRevealTab,
 }: TabBarProps) {
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -93,6 +96,11 @@ export function TabBar({
             id: "export",
             label: zh.fileTree.exportDoc,
             onSelect: () => onExportTab?.(targetTab.id, targetTab.title),
+          },
+          {
+            id: "reveal",
+            label: zh.fileTree.revealInExplorer,
+            onSelect: () => onRevealTab?.(targetTab.id, targetTab.title),
           },
           { id: "action-sep", separator: true },
           {

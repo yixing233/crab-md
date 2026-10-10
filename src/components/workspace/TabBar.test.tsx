@@ -95,6 +95,17 @@ describe("TabBar", () => {
     expect(props.onDuplicateTab).toHaveBeenCalledWith("1", "笔记一.md");
   });
 
+  it("offers 打开文件所在位置 and reports the tab it belongs to", async () => {
+    const props = renderTabBar({ onRevealTab: vi.fn() });
+
+    fireEvent.contextMenu(screen.getByText("笔记二.md"), { clientX: 50, clientY: 50 });
+    const item = screen.getByRole("menuitem", { name: "打开文件所在位置" });
+    expect(item).not.toHaveAttribute("data-danger");
+
+    await userEvent.click(item);
+    expect(props.onRevealTab).toHaveBeenCalledWith("2", "笔记二.md");
+  });
+
   it("handles inline renaming from context menu", async () => {
     const props = renderTabBar({
       onRenameTab: vi.fn(),

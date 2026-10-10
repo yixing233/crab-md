@@ -10,6 +10,9 @@ const duplicateDocument = vi.fn();
 const getSettings = vi.fn();
 const setWorkspaceRootApi = vi.fn();
 const resetWorkspaceRootApi = vi.fn();
+const listExternalFiles = vi.fn();
+const forgetExternalFile = vi.fn();
+const saveExternalFile = vi.fn();
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -23,6 +26,9 @@ vi.mock("../lib/api", () => ({
     getSettings: (...a: unknown[]) => getSettings(...a),
     setWorkspaceRoot: (...a: unknown[]) => setWorkspaceRootApi(...a),
     resetWorkspaceRoot: (...a: unknown[]) => resetWorkspaceRootApi(...a),
+    listExternalFiles: (...a: unknown[]) => listExternalFiles(...a),
+    forgetExternalFile: (...a: unknown[]) => forgetExternalFile(...a),
+    saveExternalFile: (...a: unknown[]) => saveExternalFile(...a),
   },
   toAppError: (raw: unknown) =>
     raw && typeof raw === "object" && "code" in raw
@@ -53,6 +59,7 @@ describe("useWorkspaceStore", () => {
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
       loading: false, error: null, dirty: false, recoveryCandidate: null,
+      externalFiles: [], externalFilesLoaded: false, externalBaseline: null,
     });
   });
 
@@ -145,6 +152,7 @@ describe("unsaved content is never silently discarded", () => {
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
       loading: false, error: null, dirty: false, recoveryCandidate: null,
+      externalFiles: [], externalFilesLoaded: false, externalBaseline: null,
     });
   });
 
@@ -241,6 +249,7 @@ describe("autosave debounce", () => {
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
       loading: false, error: null, dirty: false, recoveryCandidate: null,
+      externalFiles: [], externalFilesLoaded: false, externalBaseline: null,
     });
   });
 
@@ -372,6 +381,7 @@ describe("useWorkspaceStore duplicateDocument", () => {
     useWorkspaceStore.setState({
       documents: [], activeId: null, activeContent: "",
       loading: false, error: null, dirty: false, recoveryCandidate: null,
+      externalFiles: [], externalFilesLoaded: false, externalBaseline: null,
     });
   });
 
@@ -565,5 +575,155 @@ describe("useWorkspaceStore settings", () => {
     const ok = await useWorkspaceStore.getState().resetWorkspaceRoot();
     expect(ok).toBe(false);
     expect(useWorkspaceStore.getState().error).toBe("IO_ERROR");
+  });
+});
+
+/**
+ * 外部文件（从磁盘原位打开的文件）。
+ *
+ * 记录存在工作区数据库里，因此重启后仍能看到 —— 这是用户报告的核心诉求。
+ * 库里只有路径/名称等元信息，正文永远从磁盘现读。
+ */
+describe("external files", () => {
+  const PATH = "E:\\notes\\外部.md";
+  const TAB = `ext:${PATH}`;
+
+  function record(over: Partial<Record<string, unknown>> = {}) {
+    return {
+      path: PATH,
+      name: "外部.md",
+      size: 4,
+      modifiedAt: "2026-01-01T00:00:00Z",
+      openedAt: "2026-01-02T00:00:00Z",
+      missing: false,
+      ...over,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    localStorage.clear();
+    useWorkspaceStore.setState({
+      documents: [], activeId: null, activeContent: "",
+      loading: false, error: null, dirty: false, recoveryCandidate: null,
+      externalFiles: [], externalFilesLoaded: false, externalBaseline: null,
+    });
+  });
+
+  it("loads the remembered list and flags that it has loaded once", async () => {
+    listExternalFiles.mockResolvedValue([record()]);
+
+    await useWorkspaceStore.getState().loadExternalFiles();
+
+    const s = useWorkspaceStore.getState();
+    expect(s.externalFiles).toHaveLength(1);
+    expect(s.externalFiles[0].path).toBe(PATH);
+    expect(s.externalFilesLoaded).toBe(true);
+  });
+
+  it("does not flip the loaded flag when the list cannot be read", async () => {
+    // 读失败时绝不能标成「已加载」：那会让界面把重启前的标签当成失效记录删掉。
+    listExternalFiles.mockRejectedValue({ code: "DB_ERROR", message: "boom" });
+
+    await useWorkspaceStore.getState().loadExternalFiles();
+
+    expect(useWorkspaceStore.getState().externalFilesLoaded).toBe(false);
+    // 这不是主列表的失败，不该把整个界面顶成错误态。
+    expect(useWorkspaceStore.getState().error).toBeNull();
+  });
+
+  it("opens an external file without touching the workspace", async () => {
+    useWorkspaceStore.getState().openExternal(PATH, "磁盘上的内容");
+
+    const s = useWorkspaceStore.getState();
+    expect(s.activeId).toBe(TAB);
+    expect(s.activeContent).toBe("磁盘上的内容");
+    expect(s.externalBaseline).toBe("磁盘上的内容");
+    expect(s.dirty).toBe(false);
+  });
+
+  it("marks edits dirty against the on-disk baseline", async () => {
+    useWorkspaceStore.getState().openExternal(PATH, "磁盘上的内容");
+
+    useWorkspaceStore.getState().setContent("改过的内容");
+    expect(useWorkspaceStore.getState().dirty).toBe(true);
+
+    // 改回磁盘上的原文 -> 不再算脏（外部文件的权威副本就是那个文件）。
+    useWorkspaceStore.getState().setContent("磁盘上的内容");
+    expect(useWorkspaceStore.getState().dirty).toBe(false);
+  });
+
+  it("saves an external file back to its own path, not the workspace", async () => {
+    saveExternalFile.mockResolvedValue({
+      path: PATH, name: "外部.md", content: "改过的内容", size: 5,
+      modifiedAt: "2026-01-02T00:00:00Z",
+    });
+    listExternalFiles.mockResolvedValue([record()]);
+    useWorkspaceStore.getState().openExternal(PATH, "磁盘上的内容");
+    useWorkspaceStore.getState().setContent("改过的内容");
+
+    await useWorkspaceStore.getState().saveActive();
+
+    expect(saveExternalFile).toHaveBeenCalledWith(PATH, "改过的内容");
+    expect(saveDocument).not.toHaveBeenCalled();
+    const s = useWorkspaceStore.getState();
+    expect(s.dirty).toBe(false);
+    expect(s.externalBaseline).toBe("改过的内容");
+  });
+
+  it("keeps dirty after a failed external save so nothing is silently lost", async () => {
+    saveExternalFile.mockRejectedValue({ code: "IO_ERROR", message: "read-only" });
+    useWorkspaceStore.getState().openExternal(PATH, "原文");
+    useWorkspaceStore.getState().setContent("没写进去的内容");
+
+    const ok = await useWorkspaceStore.getState().flushActive();
+
+    expect(ok).toBe(false);
+    expect(useWorkspaceStore.getState().dirty).toBe(true);
+    expect(useWorkspaceStore.getState().activeContent).toBe("没写进去的内容");
+    expect(useWorkspaceStore.getState().error).toBe("IO_ERROR");
+  });
+
+  it("forgets a record without deleting anything on disk", async () => {
+    forgetExternalFile.mockResolvedValue(undefined);
+    listExternalFiles.mockResolvedValue([]);
+
+    const ok = await useWorkspaceStore.getState().forgetExternalFile(PATH);
+
+    expect(ok).toBe(true);
+    expect(forgetExternalFile).toHaveBeenCalledWith(PATH);
+    expect(useWorkspaceStore.getState().externalFiles).toEqual([]);
+  });
+
+  it("reports a failed forget instead of pretending it worked", async () => {
+    forgetExternalFile.mockRejectedValue({ code: "DB_ERROR", message: "locked" });
+
+    const ok = await useWorkspaceStore.getState().forgetExternalFile(PATH);
+
+    expect(ok).toBe(false);
+    expect(useWorkspaceStore.getState().error).toBe("DB_ERROR");
+  });
+
+  it("clears the external catalog when the workspace changes", async () => {
+    setWorkspaceRootApi.mockResolvedValue({
+      workspaceRoot: "E:/other",
+      effectiveWorkspaceRoot: "E:/other",
+      workspaceRootIsFromEnv: false,
+      configPath: "E:/config/settings.json",
+      version: 1,
+    });
+    listDocuments.mockResolvedValue([]);
+    listExternalFiles.mockResolvedValue([]);
+    useWorkspaceStore.setState({
+      externalFiles: [record()],
+      externalFilesLoaded: true,
+    });
+
+    await useWorkspaceStore.getState().setWorkspaceRoot("E:/other");
+
+    // 记录在工作区库里：换目录后必须重拉，而不是带着旧工作区的清单。
+    expect(listExternalFiles).toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().externalFilesLoaded).toBe(true);
   });
 });

@@ -8,6 +8,11 @@ import type {
   DocumentPayload,
   DocumentSummary,
   ExternalFilePayload,
+  ExternalFileView,
+  FileRecord,
+  FileSearchResult,
+  OpenFilePayload,
+  RecentFileView,
   SearchHit,
 } from "../types/document";
 
@@ -85,6 +90,86 @@ export const api = {
   /** 原位保存写回外部磁盘文件。 */
   saveExternalFile: (path: string, content: string) =>
     call<ExternalFilePayload>("save_external_file", { path, content }),
+
+  /**
+   * 列出打开过的外部文件（只有元数据，没有正文）。
+   *
+   * 这是「重启后还能看到」的数据来源：记录存在工作区数据库里，
+   * 正文仍只存在于用户磁盘上。
+   */
+  listExternalFiles: () => call<ExternalFileView[]>("list_external_files"),
+
+  /**
+   * 从外部文件列表移除一条记录。
+   *
+   * 只删记录，**不删除磁盘文件** —— 用户要的是「别占着我的列表」，
+   * 而不是丢掉自己的文档。
+   */
+  forgetExternalFile: (path: string) =>
+    call<void>("forget_external_file", { path }),
+
+  // ---- 在系统文件管理器中定位文件 ----
+  //
+  // 两处都走 Rust：工作区文档的磁盘路径只由应用层掌握（§7.1），
+  // 前端不拼 `<root>/notes/<uuid>.md`，也不直接调 opener 插件。
+
+  /** 在系统文件管理器中定位一篇工作区文档。 */
+  revealDocument: (id: string) => call<void>("reveal_document", { id }),
+
+  /** 在系统文件管理器中定位一个外部磁盘文件。 */
+  revealExternalFile: (path: string) =>
+    call<void>("reveal_external_file", { path }),
+
+  // =========================================================================
+  // 统一磁盘文件模型（编辑器/阅读器架构：软件不存文件，一切皆磁盘文件）
+  // =========================================================================
+
+  /** 打开任意磁盘上的文件（读取正文 + 记录元数据与全文索引）。 */
+  openFile: (path: string) => call<OpenFilePayload>("open_file", { path }),
+
+  /** 原位保存磁盘文件，并刷新 SQLite 时间戳与全文索引。 */
+  saveFile: (path: string, content: string) =>
+    call<FileRecord>("save_file", { path, content }),
+
+  /** 在指定磁盘路径创建新文件（另存为/落盘）。 */
+  createFile: (path: string, content: string) =>
+    call<FileRecord>("create_file", { path, content }),
+
+  /** 获取按置顶和最近打开时间排序的历史文件清单。 */
+  listRecentFiles: () => call<RecentFileView[]>("list_recent_files"),
+
+  /** 从历史清单中移除一个文件（**不删除磁盘物理文件**）。 */
+  removeFromHistory: (path: string) =>
+    call<void>("remove_from_history", { path }),
+
+  /** 从磁盘上物理删除文件，并同步清理数据库记录。 */
+  deleteFileOnDisk: (path: string) =>
+    call<void>("delete_file_on_disk", { path }),
+
+  /** 对所有曾打开过的文件进行全文检索（返回带高亮匹配段的搜索命中）。 */
+  searchFiles: (query: string) =>
+    call<FileSearchResult[]>("search_files", { query }),
+
+  /** 更新文件的阅读/编辑位置会话状态（光标行/列、滚动进度）。 */
+  updateFileSession: (
+    path: string,
+    cursorLine: number,
+    cursorCol: number,
+    scrollRatio: number,
+  ) =>
+    call<void>("update_file_session", {
+      path,
+      cursorLine,
+      cursorCol,
+      scrollRatio,
+    }),
+
+  /** 置顶/取消置顶某个历史文件。 */
+  setFilePinned: (path: string, pinned: boolean) =>
+    call<void>("set_file_pinned", { path, pinned }),
+
+  /** 在系统文件资源管理器中定位任意磁盘文件。 */
+  revealFile: (path: string) => call<void>("reveal_file", { path }),
 
   // ---- 附件 ----
   //

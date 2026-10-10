@@ -1,6 +1,7 @@
 @import "./tokens.css";
 @import "./theme-light.css";
 @import "./theme-dark.css";
+@import "./themeTransition.css";
 
 *,
 *::before,
@@ -62,4 +63,30 @@ body {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   布局密度 (UI Density)
+   --------------------------------------------------------------------------- */
+
+:root,
+[data-density="standard"] {
+  --density-toolbar-height: 44px;
+  --density-tab-height: 36px;
+  --density-tree-item-height: 30px;
+  --density-status-height: 26px;
+}
+
+[data-density="compact"] {
+  --density-toolbar-height: 38px;
+  --density-tab-height: 32px;
+  --density-tree-item-height: 26px;
+  --density-status-height: 24px;
+}
+
+[data-density="comfortable"] {
+  --density-toolbar-height: 50px;
+  --density-tab-height: 40px;
+  --density-tree-item-height: 34px;
+  --density-status-height: 30px;
 }

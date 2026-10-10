@@ -14,6 +14,22 @@ export const zh = {
     untitled: "未命名",
   },
 
+  /**
+   * 关于对话框（自成一体的对话框，不再挂在设置页里）。
+   *
+   * 只放**事实信息**：产品是什么、版本、数据存成什么格式。
+   * 不放推广内容，也不暴露内部实现细节（§34）。
+   */
+  about: {
+    title: "关于 crab-md",
+    close: "关闭",
+    versionLabel: "版本",
+    description:
+      "本地优先的 Markdown 笔记应用。笔记以标准 .md 文件保存在本机，不依赖网络。",
+    dataFormat: "数据格式",
+    dataFormatValue: "标准 Markdown + 本地 SQLite 索引",
+  },
+
   toolbar: {
     toggleSidebar: "切换侧边栏",
     theme: {
@@ -38,8 +54,66 @@ export const zh = {
     },
   },
 
+  /**
+   * 顶部菜单栏（文件 / 编辑 / 视图 / 帮助）。
+   *
+   * 这里只放**这一排菜单独有**的文案：菜单项尽量复用已有的键
+   * （新建用 toolbar.newDocument、导出用 fileTree.exportDoc 等），
+   * 避免同一句中文在两处各写一遍、日后改一处漏一处。
+   */
+  menu: {
+    ariaLabel: "主菜单",
+    file: "文件",
+    edit: "编辑",
+    view: "视图",
+    help: "帮助",
+    save: "保存",
+    closeTab: "关闭标签页",
+    closeAllTabs: "关闭全部标签页",
+    palette: "命令面板",
+    sidebar: "侧边栏",
+    theme: "主题",
+  },
+
   sidebar: {
-    title: "笔记",
+    /** 「文件」面板的标签页文字：里面是磁盘上的文件树，不是某篇笔记。 */
+    filesTab: "文件",
+    /** 「外部文件」面板：从磁盘直接打开、原位编辑的那些文件。 */
+    externalTab: "外部文件",
+    /** 侧栏顶部两个面板的切换组无障碍名称。 */
+    tabsLabel: "侧栏面板",
+    emptyOutlineTitle: "暂无文档大纲",
+    emptyOutlineDesc: "打开或编辑带标题的笔记时在此生成目录结构",
+  },
+
+  /**
+   * 外部文件面板。
+   *
+   * 面板存在的意义：这些文件不属于工作区（正文不复制进来，就地编辑），
+   * 但用户打开过它们，就该在重启后仍能看到并一键打开，
+   * 而不是重新走一遍文件选择器。
+   */
+  externalFiles: {
+    ariaLabel: "外部文件列表",
+    emptyTitle: "还没有打开过外部文件",
+    emptyDescription: "用「打开文件…」打开磁盘上的 .md / .txt，它们会记在这里。",
+    /** 列表里每条目的「更多操作」按钮。 */
+    moreActions: "更多操作",
+    reveal: "打开文件所在位置",
+    forget: "从列表移除",
+    /** 移除只删记录，必须说清不碰文件本身。 */
+    forgetHint: "只从列表中移除，不会删除磁盘上的文件",
+    removeTitle: "从列表移除",
+    removeBody: (name: string) =>
+      `将把「${name}」从外部文件列表中移除。磁盘上的文件不会被删除，随时可以再次打开。`,
+    removeConfirm: "移除",
+    cancel: "取消",
+    /** 文件已不在原地时的提示（可能被移动、重命名或删除）。 */
+    missingBadge: "文件不存在",
+    missingHint: "文件可能已被移动或删除，打开会失败。",
+    /** 列表条目的无障碍描述，读屏用户需要知道文件状态。 */
+    itemLabel: (name: string, missing: boolean) =>
+      missing ? `${name}，文件不存在` : name,
   },
 
   fileTree: {
@@ -54,6 +128,8 @@ export const zh = {
     duplicate: "另存为副本",
     /** 导出为独立的 .md 文件，可交给别的编辑器打开。 */
     exportDoc: "导出为 Markdown…",
+    /** 在系统文件管理器里选中该文件（不打开、不改动任何内容）。 */
+    revealInExplorer: "打开文件所在位置",
     /** 从磁盘打开文本或 Markdown 文件为新笔记。 */
     openFile: "打开文件…",
     /** 行内重命名输入框的无障碍标签。 */
@@ -160,12 +236,16 @@ export const zh = {
     close: "关闭",
     /** 左侧分组导航的无障碍名称。 */
     navLabel: "设置分组",
+    /** 左侧导航折叠开关（折叠后仅显示图标）。 */
+    navCollapse: {
+      collapse: "折叠导航",
+      expand: "展开导航",
+    },
     /** 按用户心智模型分组，不按实现模块（UI §34）。 */
     sections: {
       appearance: "外观",
       editor: "编辑器",
       files: "文件与数据",
-      about: "关于",
     },
 
     appearance: {
@@ -175,6 +255,37 @@ export const zh = {
         light: "浅色",
         dark: "深色",
         system: "跟随系统",
+      },
+      accent: "主题强调色",
+      accentHint: "自定义应用按钮、选中标签与高亮元素的色彩风格。",
+      accentOption: {
+        blue: "经典蓝",
+        green: "极光绿",
+        purple: "暮光紫",
+        orange: "暖阳橙",
+        rose: "玫瑰红",
+      },
+      zoom: "界面缩放比例",
+      zoomHint: "等比缩放整个应用窗口的界面与文字，适配高分辨率大屏幕与阅读视距。",
+      zoomOption: {
+        "90": "90%",
+        "100": "100%",
+        "110": "110%",
+        "125": "125%",
+        "150": "150%",
+      },
+      density: "布局密度",
+      densityHint: "调整工具栏、标签栏与侧边栏的行高与呼吸感，适配不同尺寸屏幕。",
+      densityOption: {
+        compact: "紧凑",
+        standard: "标准",
+        comfortable: "宽松",
+      },
+      darkStyle: "深色背景风格",
+      darkStyleHint: "选择深色模式下的底色方案，OLED 纯黑带来极致沉浸与节能对比。",
+      darkStyleOption: {
+        default: "深灰纸张",
+        oled: "OLED 纯黑",
       },
     },
 
@@ -186,6 +297,18 @@ export const zh = {
         md: "中",
         lg: "大",
         xl: "特大",
+      },
+      lineNumbers: "行号",
+      lineNumbersHint: "在编辑区左侧显示行号。",
+      lineWrap: "自动换行",
+      lineWrapHint: "关闭后长句保持单行，可横向滚动查看。",
+      autosave: "自动保存",
+      autosaveHint: "停止输入后延迟落盘；关闭后仍可用 Ctrl+S 保存，崩溃恢复草稿不受影响。",
+      autosaveOption: {
+        off: "关闭",
+        "1s": "1 秒",
+        "3s": "3 秒",
+        "5s": "5 秒",
       },
       cjkFont: "中文字体",
       cjkFontHint: "设置汉字使用的字体。",
@@ -233,6 +356,10 @@ export const zh = {
       label: "预览排版",
       description:
         "只影响阅读面的显示。西文字体全局统一；中文可按元素分别设置，标题逐级独立。",
+      render: "渲染",
+      renderHint: "关闭后对应内容保持源码原样显示，便于继续编辑。",
+      mermaid: "Mermaid 图表",
+      math: "数学公式",
       latinLabel: "西文字体",
       latinHint: "英文、数字与符号统一使用该字体，对所有元素生效。",
       elementsLabel: "分类设置",
@@ -289,46 +416,51 @@ export const zh = {
       confirmOk: "切换",
       cancel: "取消",
       done: "已切换数据目录",
+      /** 崩溃恢复草稿清理（recovery.ts 的本地草稿）。 */
+      recovery: {
+        label: "崩溃恢复草稿",
+        description: "编辑时自动留存的本地备份，用于崩溃后恢复未保存的内容；保存成功后自动删除。",
+        count: (n: number) => (n > 0 ? `当前存有 ${n} 份草稿` : "当前没有草稿"),
+        clean: "清理草稿",
+        cleaned: "草稿已清理",
+      },
     },
+  },
 
-    about: {
-      versionLabel: "版本",
-      /** 「关于」只放事实信息，不放推广内容（§34 不暴露内部实现细节）。 */
-      description:
-        "本地优先的 Markdown 笔记应用。笔记以标准 .md 文件保存在本机，不依赖网络。",
-      dataFormat: "数据格式",
-      dataFormatValue: "标准 Markdown + 本地 SQLite 索引",
-    },
-    update: {
-      label: "软件更新",
-      /** 自动检查的说明：让用户知道"它自己会看"，但一天最多一次。 */
-      hint: "应用每天最多自动检查一次更新。",
-      check: "检查更新",
-      checking: "正在检查…",
-      upToDate: "已是最新版本",
-      available: (version: string) => `发现新版本 ${version}`,
-      downloading: (percent: number) => `正在下载… ${percent}%`,
-      /** 下载中拿不到总大小时不假装知道进度。 */
-      downloadingUnknown: "正在下载…",
-      install: "下载并安装",
-      /** 提示条上的关闭（与设置页的「取消」语义不同：这是忽略本次提示）。 */
-      dismiss: "暂不更新",
-      /** 工具栏入口的提示文案：有更新时按钮带徽标。 */
-      toolbarLabel: (version: string) => `有新版本 ${version}`,
-      /** 安装会关闭应用 —— 必须提前说清并确认（§16 破坏性操作先确认）。 */
-      confirmTitle: "安装更新",
-      confirmBody: (version: string) =>
-        `将下载并安装 ${version}，安装完成后应用会自动重启。未保存的内容会先自动保存。`,
-      confirmOk: "安装并重启",
-      cancel: "取消",
-      restarting: "正在重启…",
-      /** 失败原因对用户可操作：给出网络/代理的提示，而不是只报错。 */
-      failed: "检查更新失败",
-      failedHint: "请检查网络连接后重试。若使用了代理，请确认代理可访问 GitHub。",
-      installFailed: "安装失败",
-      /** 签名不匹配是安全信号，必须明确告知而不是含糊过去。 */
-      installFailedHint: "更新包校验未通过，已中止安装。当前版本不受影响。",
-    },
+  /**
+   * 软件更新（关于对话框 + 工具栏徽标 + 常驻提示条共用）。
+   *
+   * 状态来自共享的 `useUpdateStore`：三个入口必须显示同一份状态。
+   */
+  update: {
+    label: "软件更新",
+    /** 自动检查的说明：让用户知道"它自己会看"，但一天最多一次。 */
+    hint: "应用每天最多自动检查一次更新。",
+    check: "检查更新",
+    checking: "正在检查…",
+    upToDate: "已是最新版本",
+    available: (version: string) => `发现新版本 ${version}`,
+    downloading: (percent: number) => `正在下载… ${percent}%`,
+    /** 下载中拿不到总大小时不假装知道进度。 */
+    downloadingUnknown: "正在下载…",
+    install: "下载并安装",
+    /** 提示条上的关闭（与取消不同：这是忽略本次提示）。 */
+    dismiss: "暂不更新",
+    /** 工具栏入口的提示文案：有更新时按钮带徽标。 */
+    toolbarLabel: (version: string) => `有新版本 ${version}`,
+    /** 安装会关闭应用 —— 必须提前说清并确认（§16 破坏性操作先确认）。 */
+    confirmTitle: "安装更新",
+    confirmBody: (version: string) =>
+      `将下载并安装 ${version}，安装完成后应用会自动重启。未保存的内容会先自动保存。`,
+    confirmOk: "安装并重启",
+    cancel: "取消",
+    restarting: "正在重启…",
+    /** 失败原因对用户可操作：给出网络/代理的提示，而不是只报错。 */
+    failed: "检查更新失败",
+    failedHint: "请检查网络连接后重试。若使用了代理，请确认代理可访问 GitHub。",
+    installFailed: "安装失败",
+    /** 签名不匹配是安全信号，必须明确告知而不是含糊过去。 */
+    installFailedHint: "更新包校验未通过，已中止安装。当前版本不受影响。",
   },
 
   splitter: {
@@ -348,7 +480,14 @@ export const zh = {
     printUnavailable: "当前环境不支持打印",
     imagePasteFailed: "图片保存失败，未插入图片引用",
     opened: (title: string) => `已打开「${title}」`,
-    openFailed: "打开文件失败，未创建笔记",
+    openFailed: "打开文件失败，文件可能已被移动或删除",
+    /** 外部文件从列表移除（只删记录，不动磁盘文件）。 */
+    removedFromList: "已从列表中移除",
+    removeFromListFailed: "移除失败，列表未改动",
+    /** 定位成功不开 toast（文件管理器已经把窗口摆到眼前，再弹一条只会碍事），
+     *  失败则必须说出来：文件可能已被移动或删除。 */
+    revealFailed: (title: string) =>
+      `无法定位「${title}」，文件可能已被移动或删除`,
   },
 
   /** 打开 / 导出用的系统文件对话框文案。 */

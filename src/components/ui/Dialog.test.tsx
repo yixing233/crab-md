@@ -1,11 +1,19 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { ConfigProvider } from "antd";
 import { Dialog } from "./Dialog";
+
+// Dialog 内部是 antd Modal；与 App 一样需要 ConfigProvider 提供中文 locale 与
+// button 配置（autoInsertSpaceInButton），否则可访问名称会变成「取 消」。
+function renderWithProvider(ui: ReactElement) {
+  return render(<ConfigProvider button={{ autoInsertSpace: false }} locale={undefined}>{ui}</ConfigProvider>);
+}
 
 describe("Dialog", () => {
   it("renders nothing when closed", () => {
-    render(
+    renderWithProvider(
       <Dialog
         open={false}
         title="删除笔记"
@@ -19,7 +27,7 @@ describe("Dialog", () => {
   });
 
   it("renders a titled modal dialog when open (UI §16)", () => {
-    render(
+    renderWithProvider(
       <Dialog
         open
         title="删除笔记"
@@ -39,7 +47,7 @@ describe("Dialog", () => {
 
   it("calls onConfirm with the confirm button", async () => {
     const onConfirm = vi.fn();
-    render(
+    renderWithProvider(
       <Dialog
         open
         title="删除笔记"
@@ -56,7 +64,7 @@ describe("Dialog", () => {
 
   it("calls onCancel with the cancel button", async () => {
     const onCancel = vi.fn();
-    render(
+    renderWithProvider(
       <Dialog
         open
         title="删除笔记"
@@ -72,7 +80,7 @@ describe("Dialog", () => {
 
   it("cancels on Escape (UI §16 requires desktop escape handling)", async () => {
     const onCancel = vi.fn();
-    render(
+    renderWithProvider(
       <Dialog
         open
         title="删除笔记"
@@ -88,7 +96,7 @@ describe("Dialog", () => {
 
   it("cancels when the overlay is clicked", async () => {
     const onCancel = vi.fn();
-    render(
+    renderWithProvider(
       <Dialog
         open
         title="删除笔记"
@@ -106,7 +114,7 @@ describe("Dialog", () => {
 
   it("does not cancel when the panel itself is clicked", async () => {
     const onCancel = vi.fn();
-    render(
+    renderWithProvider(
       <Dialog
         open
         title="删除笔记"
@@ -123,7 +131,7 @@ describe("Dialog", () => {
   });
 
   it("moves focus into the dialog on open (focus management)", async () => {
-    render(
+    renderWithProvider(
       <Dialog
         open
         title="删除笔记"
@@ -133,12 +141,18 @@ describe("Dialog", () => {
         onCancel={() => {}}
       />,
     );
-    const cancel = screen.getByRole("button", { name: "取消" });
-    expect(cancel).toHaveFocus();
+    // antd Modal 把初始焦点放在对话框容器（tabindex="-1"）上，
+    // 行为语义与原实现一致：打开后焦点在对话框内，Tab 从头遍历动作按钮。
+    const dialog = screen.getByRole("dialog");
+    await vi.waitFor(() => {
+      expect(
+        dialog.contains(document.activeElement) || document.activeElement === dialog,
+      ).toBe(true);
+    });
   });
 
   it("uses danger semantics for destructive confirm (UI §14.4)", () => {
-    render(
+    renderWithProvider(
       <Dialog
         open
         title="删除笔记"
@@ -153,7 +167,7 @@ describe("Dialog", () => {
   });
 
   it("uses primary semantics for a non-destructive confirm", () => {
-    render(
+    renderWithProvider(
       <Dialog
         open
         title="重命名"

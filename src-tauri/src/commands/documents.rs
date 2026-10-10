@@ -1,12 +1,24 @@
-use crate::db::{self, documents as docs, search};
+use crate::db::{self, documents as docs, external_files, opened_files, search};
 use crate::error::{AppError, AppResult};
-use crate::model::{CreateDocumentRequest, DocumentPayload, DocumentSummary};
+use crate::model::{
+    CreateDocumentRequest, DocumentPayload, DocumentSummary, FileRecord, FileSearchResult,
+    OpenFilePayload,
+};
 use crate::settings;
 use crate::workspace;
 use rusqlite::Connection;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+
+/// 已打开磁盘文件列表的视图投影（携带一次磁盘存在性检测）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentFileView {
+    #[serde(flatten)]
+    pub record: FileRecord,
+    pub exists: bool,
+}
 
 /// 设置页读取的视图（只读投影，避免把内部结构直接暴露给前端）。
 #[derive(Debug, Clone, Serialize)]
@@ -22,6 +34,24 @@ pub struct AppSettingsView {
     /// 设置文件位置，方便用户备份或排查。
     pub config_path: String,
     pub version: u32,
+}
+
+/// 外部文件列表的只读投影：库里的元数据 + 一次磁盘存在性检查。
+///
+/// 为什么不直接把 `ExternalFileSummary` 发给前端：库里的记录可能已经
+/// 指向一个被移动/删除的文件（用户在外面删了、U 盘拔了）。界面需要如实
+/// 显示「已失效」，而不是等用户点开才报错 —— 但库本身不该存这个状态，
+/// 它每时每刻都在变，只适合在读取时现算。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalFileView {
+    pub path: String,
+    pub name: String,
+    pub size: i64,
+    pub modified_at: String,
+    pub opened_at: String,
+    /// 文件当前不在磁盘上。
+    pub missing: bool,
 }
 
 /// 文档服务：持有工作区根路径与数据库连接。
@@ -60,6 +90,23 @@ impl DocumentService {
 
     pub fn root(&self) -> AppResult<PathBuf> {
         Ok(self.lock()?.root.clone())
+    }
+
+    /// 解析一篇文档在磁盘上的真实路径，供「打开文件所在位置」等只读操作使用。
+    ///
+    /// 放在 Rust 而不是前端拼 `<root>/notes/<uuid>.md`：§7.1 要求文件系统
+    /// 布局只由应用层掌握，另外这里要顺带做两件前端无法做的校验 ——
+    /// 非法 id 报 INVALID_ID（而不是让 `ext:` 之类的前缀漏进文件系统），
+    /// 文件已被删除时提前报 NOT_FOUND，让界面能给出可理解的失败提示。
+    pub fn note_path(&self, id: &str) -> AppResult<PathBuf> {
+        let st = self.lock()?;
+
+        // 先做 id 校验：非法 id 应报 INVALID_ID，而不是被查库的 NOT_FOUND 掩盖。
+        let path = workspace::note_path(&st.root, id)?;
+        if !path.is_file() {
+            return Err(AppError::NotFound(id.to_string()));
+        }
+        Ok(path)
     }
 
     /// 切换到另一个工作区根目录。
@@ -325,6 +372,351 @@ impl DocumentService {
         search::reindex(&st.conn, &new_id, title, &content)?;
         Ok(created)
     }
+
+    // ---- 外部文件（原位打开，库里只记元数据）----
+    //
+    // 与 import 的根本区别：import 把正文复制进工作区、给一个新的 UUID 身份；
+    // 这里**不复制任何东西**，用户编辑的始终是磁盘上那个原文件。
+    // 因此库里记的是路径 —— 外部文件的身份就是它所在的位置（§11 只约束
+    // 工作区文档，它们的文件名由应用分配）。正文永不入库，这正是用户要求。
+
+    /// 读取外部文件正文，并把它的元数据记进库（供重启后再次打开）。
+    ///
+    /// 读取成功后立即登记：能读到文件才算「打开过」，读取失败（不存在、太
+    /// 大、非 UTF-8）不该在列表里留下一条点不开的记录。
+    pub fn read_external(&self, path: &str) -> AppResult<crate::model::ExternalFilePayload> {
+        let p = Path::new(path);
+        let meta = std::fs::metadata(p)?;
+        if !meta.is_file() {
+            return Err(AppError::InvalidInput("path is not a file".into()));
+        }
+        // 先看大小再读，避免把超大文件整个读进内存。
+        check_transfer_size(meta.len())?;
+        let content = std::fs::read_to_string(p)?;
+
+        let name = external_file_name(p);
+        let modified_at = external_file_modified_at(&meta);
+        let now = workspace::now_iso8601();
+
+        // 登记失败不该让「打开」失败：用户要的是看到内容，元数据是次要的。
+        // 所以这里忽略写库错误（真出错时列表少一条，比打不开文件轻得多）。
+        {
+            let st = self.lock()?;
+            let _ = external_files::upsert(
+                &st.conn,
+                path,
+                &name,
+                meta.len() as i64,
+                &modified_at,
+                &now,
+            );
+        }
+
+        Ok(crate::model::ExternalFilePayload {
+            path: path.to_string(),
+            name,
+            content,
+            size: meta.len() as i64,
+            modified_at,
+        })
+    }
+
+    /// 外部文件列表：库里记着的全部记录 + 当前磁盘存在性。
+    ///
+    /// **不返回正文**：列表只需要名字和状态，把每个文件的正文都读进内存
+    /// 纯属浪费（用户可能开着几十个外部文件）。
+    pub fn list_external(&self) -> AppResult<Vec<ExternalFileView>> {
+        let st = self.lock()?;
+        let records = external_files::list(&st.conn)?;
+        Ok(records
+            .into_iter()
+            .map(|r| ExternalFileView {
+                missing: !Path::new(&r.path).is_file(),
+                path: r.path,
+                name: r.name,
+                size: r.size,
+                modified_at: r.modified_at,
+                opened_at: r.opened_at,
+            })
+            .collect())
+    }
+
+    /// 原位保存外部文件，并刷新库里的元数据。
+    ///
+    /// 写盘用原子替换（§18.2）：用户编辑的是**他自己的**文件，一次断电
+    /// 把原文件截断成半截是不可接受的。
+    ///
+    /// 若该文件从未登记过（例如经文件关联直接传入且读取失败过），保存时
+    /// 顺带补登记 —— 用户已经在这份内容上工作了，它理应出现在列表里。
+    pub fn save_external(
+        &self,
+        path: &str,
+        content: &str,
+    ) -> AppResult<crate::model::ExternalFilePayload> {
+        let p = Path::new(path);
+        if let Some(parent) = p.parent() {
+            if !parent.exists() {
+                return Err(AppError::InvalidInput(
+                    "parent directory does not exist".into(),
+                ));
+            }
+        }
+
+        let bytes = content.as_bytes();
+        check_transfer_size(bytes.len() as u64)?;
+        workspace::atomic_write(p, bytes)?;
+
+        let meta = std::fs::metadata(p)?;
+        let name = external_file_name(p);
+        let modified_at = external_file_modified_at(&meta);
+
+        {
+            let st = self.lock()?;
+            let touched = external_files::touch(
+                &st.conn,
+                path,
+                meta.len() as i64,
+                &modified_at,
+            )?;
+            if touched == 0 {
+                let now = workspace::now_iso8601();
+                external_files::upsert(
+                    &st.conn,
+                    path,
+                    &name,
+                    meta.len() as i64,
+                    &modified_at,
+                    &now,
+                )?;
+            }
+        }
+
+        Ok(crate::model::ExternalFilePayload {
+            path: path.to_string(),
+            name,
+            content: content.to_string(),
+            size: meta.len() as i64,
+            modified_at,
+        })
+    }
+
+    /// 从列表移除一个外部文件记录。
+    ///
+    /// **只删记录，不动磁盘上的文件** —— 用户想要的往往是「别让它占着我的
+    /// 列表」，而不是删掉他的文档。幂等：没记录过也算成功。
+    pub fn forget_external(&self, path: &str) -> AppResult<()> {
+        let st = self.lock()?;
+        external_files::remove(&st.conn, path)?;
+        Ok(())
+    }
+
+    /// 解析外部文件在磁盘上的路径供「打开文件所在位置」使用。
+    ///
+    /// 与工作区文档走同一套校验顺序：文件不在了要提前报 NOT_FOUND，
+    /// 让界面能给出可理解的失败，而不是把失败留给文件管理器。
+    pub fn external_path(&self, path: &str) -> AppResult<PathBuf> {
+        let p = Path::new(path);
+        if !p.is_file() {
+            return Err(AppError::NotFound(path.to_string()));
+        }
+        Ok(p.to_path_buf())
+    }
+
+    // =========================================================================
+    // 统一纯磁盘文件模型（编辑器/阅读器架构：软件不存文件，一切皆磁盘文件）
+    // =========================================================================
+
+    /// 打开任意磁盘上的 Markdown 文件，并在 SQLite 注册/更新打开记录与 FTS 索引。
+    pub fn open_disk_file(&self, path: &str) -> AppResult<OpenFilePayload> {
+        let p = Path::new(path);
+        if !p.is_file() {
+            return Err(AppError::NotFound(path.to_string()));
+        }
+        let meta = std::fs::metadata(p)?;
+        check_transfer_size(meta.len())?;
+
+        let bytes = std::fs::read(p)?;
+        let content = String::from_utf8(bytes)
+            .map_err(|e| AppError::InvalidInput(format!("file is not valid UTF-8: {e}")))?;
+
+        let name = external_file_name(p);
+        let modified_at = external_file_modified_at(&meta);
+        let now = workspace::now_iso8601();
+
+        {
+            let st = self.lock()?;
+            opened_files::upsert_and_index(
+                &st.conn,
+                path,
+                &name,
+                meta.len() as i64,
+                &modified_at,
+                &now,
+                Some(&content),
+            )?;
+        }
+
+        let record = {
+            let st = self.lock()?;
+            opened_files::get(&st.conn, path)?
+                .unwrap_or(FileRecord {
+                    path_key: opened_files::path_key(path),
+                    path: path.to_string(),
+                    name,
+                    size: meta.len() as i64,
+                    modified_at,
+                    opened_at: now,
+                    pinned: false,
+                    cursor_line: 1,
+                    cursor_col: 1,
+                    scroll_ratio: 0.0,
+                })
+        };
+
+        Ok(OpenFilePayload { content, record })
+    }
+
+    /// 保存文件到磁盘原位（原子写盘），并刷新时间戳与全文索引。
+    pub fn save_disk_file(&self, path: &str, content: &str) -> AppResult<FileRecord> {
+        let p = Path::new(path);
+        if let Some(parent) = p.parent() {
+            if !parent.exists() {
+                return Err(AppError::InvalidInput("parent directory does not exist".into()));
+            }
+        }
+
+        let bytes = content.as_bytes();
+        check_transfer_size(bytes.len() as u64)?;
+        workspace::atomic_write(p, bytes)?;
+
+        let meta = std::fs::metadata(p)?;
+        let name = external_file_name(p);
+        let modified_at = external_file_modified_at(&meta);
+
+        {
+            let st = self.lock()?;
+            let touched = opened_files::touch(
+                &st.conn,
+                path,
+                meta.len() as i64,
+                &modified_at,
+                Some(content),
+            )?;
+            if touched == 0 {
+                let now = workspace::now_iso8601();
+                opened_files::upsert_and_index(
+                    &st.conn,
+                    path,
+                    &name,
+                    meta.len() as i64,
+                    &modified_at,
+                    &now,
+                    Some(content),
+                )?;
+            }
+        }
+
+        let record = {
+            let st = self.lock()?;
+            opened_files::get(&st.conn, path)?
+                .unwrap_or(FileRecord {
+                    path_key: opened_files::path_key(path),
+                    path: path.to_string(),
+                    name,
+                    size: meta.len() as i64,
+                    modified_at,
+                    opened_at: workspace::now_iso8601(),
+                    pinned: false,
+                    cursor_line: 1,
+                    cursor_col: 1,
+                    scroll_ratio: 0.0,
+                })
+        };
+
+        Ok(record)
+    }
+
+    /// 在指定磁盘位置创建新文件（如用户对未保存草稿执行另存为落盘）。
+    pub fn create_disk_file(&self, path: &str, content: &str) -> AppResult<FileRecord> {
+        let p = Path::new(path);
+        if p.exists() {
+            return Err(AppError::AlreadyExists(format!("file already exists: {path}")));
+        }
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        self.save_disk_file(path, content)
+    }
+
+    /// 获取按置顶与最近打开排序的历史文件列表（附带实时磁盘存在性判断）。
+    pub fn list_recent_files(&self) -> AppResult<Vec<RecentFileView>> {
+        let st = self.lock()?;
+        let records = opened_files::list(&st.conn)?;
+        let mut views = Vec::with_capacity(records.len());
+        for rec in records {
+            let exists = Path::new(&rec.path).is_file();
+            views.push(RecentFileView { record: rec, exists });
+        }
+        Ok(views)
+    }
+
+    /// 从数据库历史与全文索引中移除记录（**绝对不删除磁盘物理文件**）。
+    pub fn remove_recent_file(&self, path: &str) -> AppResult<()> {
+        let st = self.lock()?;
+        opened_files::remove(&st.conn, path)?;
+        Ok(())
+    }
+
+    /// 从磁盘上彻底删除物理文件，并同步清理数据库记录。
+    pub fn delete_disk_file(&self, path: &str) -> AppResult<()> {
+        let p = Path::new(path);
+        if p.is_file() {
+            std::fs::remove_file(p)?;
+        }
+        let st = self.lock()?;
+        opened_files::remove(&st.conn, path)?;
+        Ok(())
+    }
+
+    /// 全文检索所有已打开过的文件。
+    pub fn search_disk_files(&self, query: &str) -> AppResult<Vec<FileSearchResult>> {
+        let st = self.lock()?;
+        opened_files::search(&st.conn, query, 30)
+    }
+
+    /// 更新阅读/编辑位置会话状态。
+    pub fn update_file_session(
+        &self,
+        path: &str,
+        line: u32,
+        col: u32,
+        scroll_ratio: f64,
+    ) -> AppResult<()> {
+        let st = self.lock()?;
+        opened_files::update_session(&st.conn, path, line, col, scroll_ratio)?;
+        Ok(())
+    }
+
+    /// 置顶/取消置顶历史文件。
+    pub fn set_file_pinned(&self, path: &str, pinned: bool) -> AppResult<()> {
+        let st = self.lock()?;
+        opened_files::set_pinned(&st.conn, path, pinned)?;
+        Ok(())
+    }
+}
+
+/// 外部文件的显示名（取文件名；极端情况下路径以分隔符结尾）。
+fn external_file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "document".into())
+}
+
+/// 外部文件的修改时间（RFC 3339）；取不到时退回当前时间。
+fn external_file_modified_at(meta: &std::fs::Metadata) -> String {
+    meta.modified()
+        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+        .unwrap_or_else(|_| workspace::now_iso8601())
 }
 
 /// 导入/导出的体积校验。
@@ -433,61 +825,163 @@ pub fn import_document(
     )
 }
 
-/// 直接读取外部磁盘文件内容（原位查看/编辑，不进行拷贝）。
+/// 直接读取外部磁盘文件内容（原位查看/编辑，不进行拷贝），并登记元数据。
 #[tauri::command]
-pub fn read_external_file(path: String) -> AppResult<crate::model::ExternalFilePayload> {
-    let p = Path::new(&path);
-    let meta = std::fs::metadata(p)?;
-    if !meta.is_file() {
-        return Err(AppError::InvalidInput("path is not a file".into()));
-    }
-    check_transfer_size(meta.len())?;
-    let content = std::fs::read_to_string(p)?;
-    let name = p
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "document".into());
-    let modified_at = meta
-        .modified()
-        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
-        .unwrap_or_else(|_| workspace::now_iso8601());
+pub fn read_external_file(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+) -> AppResult<crate::model::ExternalFilePayload> {
+    svc.read_external(&path)
+}
 
-    Ok(crate::model::ExternalFilePayload {
-        path,
-        name,
-        content,
-        size: meta.len() as i64,
-        modified_at,
+/// 直接保存写回外部磁盘文件（原位保存，不拷贝进工作区），并刷新元数据。
+#[tauri::command]
+pub fn save_external_file(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+    content: String,
+) -> AppResult<crate::model::ExternalFilePayload> {
+    svc.save_external(&path, &content)
+}
+
+/// 列出打开过的外部文件（只有元数据与存在性，没有正文）。
+#[tauri::command]
+pub fn list_external_files(
+    svc: tauri::State<'_, DocumentService>,
+) -> AppResult<Vec<ExternalFileView>> {
+    svc.list_external()
+}
+
+/// 从列表中移除一个外部文件记录（**不删除磁盘文件**）。
+#[tauri::command]
+pub fn forget_external_file(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+) -> AppResult<()> {
+    svc.forget_external(&path)
+}
+
+// ---- 在系统文件管理器中定位文件（右键菜单「打开文件所在位置」）----
+
+/// 调起系统文件管理器并选中目标文件。
+///
+/// 只做「揭示」，不做任何读写；失败必须冒泡给界面：`reveal_item_in_dir`
+/// 会先规范化路径，文件已被移走或删除时它会报错，而一个静默失败的菜单项
+/// 与坏掉的菜单项在用户眼里没有区别。
+fn reveal_path(app: &tauri::AppHandle, path: &Path) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+
+    app.opener().reveal_item_in_dir(path).map_err(|e| {
+        AppError::Io(std::io::Error::other(format!(
+            "cannot reveal in file manager: {e}"
+        )))
     })
 }
 
-/// 直接保存写回外部磁盘文件（原位保存，不拷贝进工作区）。
+/// 在工作区文档所在目录中定位它（路径由应用层解析，前端不拼路径）。
 #[tauri::command]
-pub fn save_external_file(path: String, content: String) -> AppResult<crate::model::ExternalFilePayload> {
-    let p = Path::new(&path);
-    if let Some(parent) = p.parent() {
-        if !parent.exists() {
-            return Err(AppError::InvalidInput("parent directory does not exist".into()));
-        }
-    }
-    std::fs::write(p, content.as_bytes())?;
-    let meta = std::fs::metadata(p)?;
-    let name = p
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "document".into());
-    let modified_at = meta
-        .modified()
-        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
-        .unwrap_or_else(|_| workspace::now_iso8601());
+pub fn reveal_document(
+    app: tauri::AppHandle,
+    svc: tauri::State<'_, DocumentService>,
+    id: String,
+) -> AppResult<()> {
+    reveal_path(&app, &svc.note_path(&id)?)
+}
 
-    Ok(crate::model::ExternalFilePayload {
-        path,
-        name,
-        content,
-        size: meta.len() as i64,
-        modified_at,
-    })
+/// 在外部磁盘文件所在目录中定位它（`ext:` 标签页原位打开的文件）。
+#[tauri::command]
+pub fn reveal_external_file(
+    app: tauri::AppHandle,
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+) -> AppResult<()> {
+    reveal_path(&app, &svc.external_path(&path)?)
+}
+
+// =========================================================================
+// 统一磁盘文件 Tauri 命令（编辑器/阅读器模式）
+// =========================================================================
+
+#[tauri::command]
+pub fn open_file(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+) -> AppResult<OpenFilePayload> {
+    svc.open_disk_file(&path)
+}
+
+#[tauri::command]
+pub fn save_file(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+    content: String,
+) -> AppResult<FileRecord> {
+    svc.save_disk_file(&path, &content)
+}
+
+#[tauri::command]
+pub fn create_file(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+    content: String,
+) -> AppResult<FileRecord> {
+    svc.create_disk_file(&path, &content)
+}
+
+#[tauri::command]
+pub fn list_recent_files(
+    svc: tauri::State<'_, DocumentService>,
+) -> AppResult<Vec<RecentFileView>> {
+    svc.list_recent_files()
+}
+
+#[tauri::command]
+pub fn remove_from_history(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+) -> AppResult<()> {
+    svc.remove_recent_file(&path)
+}
+
+#[tauri::command]
+pub fn delete_file_on_disk(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+) -> AppResult<()> {
+    svc.delete_disk_file(&path)
+}
+
+#[tauri::command]
+pub fn search_files(
+    svc: tauri::State<'_, DocumentService>,
+    query: String,
+) -> AppResult<Vec<FileSearchResult>> {
+    svc.search_disk_files(&query)
+}
+
+#[tauri::command]
+pub fn update_file_session(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+    cursor_line: u32,
+    cursor_col: u32,
+    scroll_ratio: f64,
+) -> AppResult<()> {
+    svc.update_file_session(&path, cursor_line, cursor_col, scroll_ratio)
+}
+
+#[tauri::command]
+pub fn set_file_pinned(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+    pinned: bool,
+) -> AppResult<()> {
+    svc.set_file_pinned(&path, pinned)
+}
+
+#[tauri::command]
+pub fn reveal_file(app: tauri::AppHandle, path: String) -> AppResult<()> {
+    reveal_path(&app, Path::new(&path))
 }
 
 // ---- 应用设置（UI_DESIGN_SYSTEM.md §34）----
@@ -720,6 +1214,7 @@ mod tests {
         assert!(matches!(svc.save(evil, "x"), Err(AppError::InvalidId(_))));
         assert!(matches!(svc.rename(evil, "x"), Err(AppError::InvalidId(_))));
         assert!(matches!(svc.delete(evil), Err(AppError::InvalidId(_))));
+        assert!(matches!(svc.note_path(evil), Err(AppError::InvalidId(_))));
     }
 
     #[test]
@@ -1215,5 +1710,243 @@ mod tests {
 
         let reopened = DocumentService::new(d.path().to_path_buf()).unwrap();
         assert_eq!(reopened.read(&created.id).unwrap().content, "持久化内容");
+    }
+
+    // ---- note_path：为「打开文件所在位置」解析磁盘路径 ----
+
+    #[test]
+    fn note_path_resolves_a_real_document_to_its_file() {
+        let (d, svc) = svc();
+        let created = svc.create("定位我", "/").unwrap();
+
+        let resolved = svc.note_path(&created.id).unwrap();
+        assert_eq!(
+            resolved,
+            workspace::note_path(d.path(), &created.id).unwrap()
+        );
+        assert!(
+            resolved.is_file(),
+            "expected {} to exist",
+            resolved.display()
+        );
+    }
+
+    #[test]
+    fn note_path_rejects_a_hostile_id_before_touching_the_filesystem() {
+        // 前端的 `ext:` 标签页 id 就是「绝对路径前缀」，绝不能拼进工作区路径。
+        let (_d, svc) = svc();
+        let err = svc.note_path("ext:E:\\notes\\外部.md").unwrap_err();
+        assert_eq!(err.code(), "INVALID_ID");
+    }
+
+    #[test]
+    fn note_path_reports_not_found_when_the_file_is_gone() {
+        // 文件被外部删除时，定位必须给出可理解的失败，而不是静默无反应。
+        let (d, svc) = svc();
+        let created = svc.create("会被删掉", "/").unwrap();
+        std::fs::remove_file(workspace::note_path(d.path(), &created.id).unwrap()).unwrap();
+
+        let err = svc.note_path(&created.id).unwrap_err();
+        assert_eq!(err.code(), "NOT_FOUND");
+    }
+
+    // ---- 外部文件：原位打开 + 元数据入库（重启后仍可见）----
+
+    /// 在工作区**之外**写一个真实文件，返回其路径。
+    fn external_file(dir: &tempfile::TempDir, name: &str, body: &str) -> PathBuf {
+        let p = dir.path().join(name);
+        std::fs::write(&p, body).unwrap();
+        p
+    }
+
+    #[test]
+    fn opening_an_external_file_records_metadata_but_not_content() {
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "外部笔记.md", "# 标题\n正文");
+        let path = file.to_string_lossy().into_owned();
+
+        let payload = svc.read_external(&path).unwrap();
+        assert_eq!(payload.content, "# 标题\n正文");
+        assert_eq!(payload.name, "外部笔记.md");
+
+        let listed = svc.list_external().unwrap();
+        assert_eq!(listed.len(), 1, "opened file must be recorded");
+        assert_eq!(listed[0].path, path);
+        assert_eq!(listed[0].name, "外部笔记.md");
+        assert!(!listed[0].missing);
+    }
+
+    #[test]
+    fn an_external_file_is_still_listed_after_reopening_the_workspace() {
+        // 用户报告的核心问题：重启后必须还能看到、还能打开，
+        // 而不是重新走一遍文件选择器。
+        let (d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "persist.md", "第一版");
+        let path = file.to_string_lossy().into_owned();
+        svc.read_external(&path).unwrap();
+        drop(svc);
+
+        let reopened = DocumentService::new(d.path().to_path_buf()).unwrap();
+        let listed = reopened.list_external().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].path, path);
+
+        // 重新打开走的还是磁盘上的原文件，内容是最新的（可能已被别的程序改过）。
+        std::fs::write(&file, "第二版").unwrap();
+        assert_eq!(reopened.read_external(&path).unwrap().content, "第二版");
+    }
+
+    #[test]
+    fn opening_the_same_external_file_twice_keeps_one_record() {
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "dup.md", "x");
+        let path = file.to_string_lossy().into_owned();
+
+        svc.read_external(&path).unwrap();
+        svc.read_external(&path).unwrap();
+        assert_eq!(svc.list_external().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_open_leaves_no_record() {
+        // 读取失败（文件不存在）不该在列表里留下一条点不开的记录。
+        let (_d, svc) = svc();
+        let outside = outside();
+        let ghost = outside.path().join("missing.md");
+
+        assert!(svc.read_external(&ghost.to_string_lossy()).is_err());
+        assert!(svc.list_external().unwrap().is_empty());
+    }
+
+    #[test]
+    fn saving_an_external_file_updates_it_on_disk_and_in_the_catalog() {
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "save.md", "旧内容");
+        let path = file.to_string_lossy().into_owned();
+        svc.read_external(&path).unwrap();
+
+        let saved = svc.save_external(&path, "新内容 with 🦀").unwrap();
+        assert_eq!(saved.size, "新内容 with 🦀".len() as i64);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "新内容 with 🦀");
+
+        let listed = svc.list_external().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].size, "新内容 with 🦀".len() as i64);
+    }
+
+    #[test]
+    fn saving_an_external_file_never_touches_the_workspace() {
+        // 原位保存只写用户那个文件；工作区里不得多出任何文档。
+        let (d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "outside.md", "x");
+        let path = file.to_string_lossy().into_owned();
+
+        svc.save_external(&path, "y").unwrap();
+        assert!(svc.list().unwrap().is_empty(), "no workspace document created");
+        let notes: Vec<_> = std::fs::read_dir(d.path().join(workspace::NOTES_DIR))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        assert!(notes.is_empty(), "notes/ must stay empty");
+    }
+
+    #[test]
+    fn saving_an_external_file_over_the_size_limit_writes_nothing() {
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "big.md", "original");
+        let path = file.to_string_lossy().into_owned();
+
+        let big = "a".repeat((workspace::MAX_TRANSFER_BYTES + 1) as usize);
+        let err = svc.save_external(&path, &big).unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "original",
+            "must not leave a partial or truncated file"
+        );
+    }
+
+    #[test]
+    fn saving_an_external_file_with_a_missing_parent_fails() {
+        let (_d, svc) = svc();
+        let outside = outside();
+        let target = outside.path().join("no-such-dir").join("x.md");
+        let err = svc.save_external(&target.to_string_lossy(), "x").unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+    }
+
+    #[test]
+    fn forgetting_an_external_file_keeps_the_file_on_disk() {
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "forget.md", "还在");
+        let path = file.to_string_lossy().into_owned();
+        svc.read_external(&path).unwrap();
+
+        svc.forget_external(&path).unwrap();
+        assert!(svc.list_external().unwrap().is_empty());
+        assert!(file.is_file(), "forget must not delete the user's file");
+        // 幂等：再移除一次不报错。
+        svc.forget_external(&path).unwrap();
+    }
+
+    #[test]
+    fn a_file_deleted_outside_is_marked_missing_instead_of_disappearing() {
+        // 记录还在、文件没了：界面要显示「已失效」，用户才能自己清理。
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "gone.md", "x");
+        let path = file.to_string_lossy().into_owned();
+        svc.read_external(&path).unwrap();
+        std::fs::remove_file(&file).unwrap();
+
+        let listed = svc.list_external().unwrap();
+        assert_eq!(listed.len(), 1, "record must stay until the user removes it");
+        assert!(listed[0].missing);
+    }
+
+    #[test]
+    fn external_path_resolves_and_reports_a_deleted_file() {
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "reveal.md", "x");
+        let path = file.to_string_lossy().into_owned();
+        assert_eq!(svc.external_path(&path).unwrap(), file);
+
+        std::fs::remove_file(&file).unwrap();
+        assert_eq!(svc.external_path(&path).unwrap_err().code(), "NOT_FOUND");
+    }
+
+    #[test]
+    fn external_file_operations_are_independent_of_the_workspace_switch() {
+        // 外部文件记录存在**工作区自己的**库里：换目录等于换一套记录，
+        // 与文档列表的行为一致，而不是把上一个工作区的记录带过去。
+        let (d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "ws.md", "x");
+        let path = file.to_string_lossy().into_owned();
+        svc.read_external(&path).unwrap();
+        assert_eq!(svc.list_external().unwrap().len(), 1);
+
+        let other = tempfile::tempdir().unwrap();
+        svc.switch_workspace(other.path().to_path_buf()).unwrap();
+        assert!(svc.list_external().unwrap().is_empty(), "new workspace, new catalog");
+
+        svc.switch_workspace(d.path().to_path_buf()).unwrap();
+        assert_eq!(svc.list_external().unwrap().len(), 1, "switching back restores it");
+    }
+
+    #[test]
+    fn hostile_paths_never_escape_the_filesystem_contract() {
+        // 外部路径来自文件对话框或数据库，仍要做存在性检查而不是盲目读写。
+        let (_d, svc) = svc();
+        assert!(svc.read_external("").is_err());
+        assert!(svc.read_external("C:\\no\\such\\file.md").is_err());
     }
 }

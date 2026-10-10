@@ -605,6 +605,9 @@ button.cm-button.cm-search-close:focus-visible,
   min-height: 0;
   padding: var(--space-6) var(--space-8) var(--space-12);
   overflow-y: auto;
+  overflow-x: hidden;
+  overflow-wrap: break-word;
+  word-break: normal;
   line-height: var(--leading-prose);
   color: var(--text-primary);
   /* 正文是基准：其余元素各自覆盖。 */
@@ -618,10 +621,39 @@ button.cm-button.cm-search-close:focus-visible,
   }
 }
 
-/* 长文可读性：限制内容宽度（UI §22）。 */
-.markdown-preview > * { max-width: 72ch; }
+/* ---------------------------------------------------------------------------
+   阅读栏长文排版（UI §22「clean reading surface」）
+   宽屏与纯阅读模式下，正文容器优雅居中展开（上限 860px，对标 Typora/GitHub），
+   两侧留出均衡对称的呼吸边距，彻底消除「内容贴死左侧、右侧空空如也」的观感。
+   --------------------------------------------------------------------------- */
 
-.markdown-preview--empty { color: var(--text-muted); }
+.markdown-preview-content,
+.markdown-preview .print-header,
+.markdown-preview .plain-text-body {
+  width: 100%;
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+/* 正文容器内部子元素自适应容器宽度 */
+.markdown-preview-content > * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* 单栏纯阅读模式下，两侧适当放宽内边距，提升沉浸感 */
+.app-panes[data-view="preview"] .markdown-preview {
+  padding: var(--space-8) var(--space-10) var(--space-12);
+}
+
+.markdown-preview--empty {
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 860px;
+  margin: var(--space-12) auto;
+}
 
 /* Mermaid 先显示受控源码，成功后由 MarkdownPreview effect 替换为 SVG。
    因而解析失败时仍有可复制、可读的源码，不会出现空白预览。 */
@@ -703,10 +735,14 @@ button.cm-button.cm-search-close:focus-visible,
 
 .markdown-preview pre {
   padding: var(--space-4);
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
+  box-sizing: border-box;
+  scrollbar-width: thin;
 }
 .markdown-preview pre code {
   padding: 0;
@@ -718,10 +754,12 @@ button.cm-button.cm-search-close:focus-visible,
 /* 增强型代码块容器（扁平卡片：左上语言名 + 右上图标按钮，无边框无分隔线） */
 .markdown-preview .code-block {
   margin: var(--space-4) 0;
+  max-width: 100%;
   background: var(--bg-surface);
   border: none;
   border-radius: var(--radius-md);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 /* 语言名/按钮行：靠上留出一段呼吸空间（参考图里标签距面板顶约 25px） */
@@ -782,6 +820,11 @@ button.cm-button.cm-search-close:focus-visible,
   border-radius: 0 !important;
   padding: 12px 14px 20px !important;
   background: transparent !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  box-sizing: border-box !important;
+  scrollbar-width: thin;
 }
 
 /* highlight.js 语义色映射：与 MarkdownEditor.tsx 的 markdownHighlight 使用同一批
@@ -996,13 +1039,35 @@ button.cm-button.cm-search-close:focus-visible,
   color: var(--text-on-accent, #ffffff);
 }
 
+/* 引用条：独立的灰色圆角小竖条（与编辑器即时渲染的 .cm-live-quote 同款）。
+   用伪元素画条，而不是 border-left —— 只设 border-left 时浏览器只会弯
+   竖条的**外沿**，内侧仍是直角，画出来是半个「D」；伪元素是一个独立盒子，
+   四个角才能都圆起来。
+   padding-left 补回原来 border 占的 3px，正文位置保持不变。 */
 .markdown-preview blockquote {
+  position: relative;
   margin: 0 0 var(--space-4);
-  padding-left: var(--space-4);
+  padding-left: calc(var(--space-4) + 3px);
   color: var(--text-secondary);
-  border-left: 3px solid var(--border-default);
+  border-left: none;
   font-family: var(--preview-font-quote, var(--font-ui));
   font-size: var(--preview-size-quote, 16px);
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+}
+
+.markdown-preview blockquote::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: var(--radius-full);
+  background-color: var(--border-strong);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1021,20 +1086,39 @@ button.cm-button.cm-search-close:focus-visible,
    另按 UI §2.3，表格是内容而非浮动层，因此不加 box-shadow。
    --------------------------------------------------------------------------- */
 
+.markdown-preview .table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: var(--space-4) 0;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
 .markdown-preview table,
 .cm-live-table-widget table {
   display: table !important;
-  /* max-content：按内容撑开、不折行。Live Preview 的 Widget 必须这样，
-     否则长单元格折行会改变高度，聚焦/失焦切换又会出现上下跳动。
-     宽度由 max-width 兜住，过宽时回到容器内。 */
+  /* max-content：按内容撑开、不折行。在 .table-wrapper 内部滚动 */
   width: max-content !important;
-  max-width: 100% !important;
+  min-width: 100%;
   border-collapse: separate !important;
   border-spacing: 0 !important;
   background-color: var(--bg-app) !important;
   border: 1px solid var(--border-default) !important;
   border-radius: var(--radius-md) !important;
-  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* 兜底：未包装在 .table-wrapper 里的直接子表格 */
+.markdown-preview > table {
+  display: block !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin;
+  margin: var(--space-4) 0;
 }
 
 /* 排版变量只挂在预览表格上。
@@ -1128,6 +1212,15 @@ button.cm-button.cm-search-close:focus-visible,
   font-size: var(--preview-size-math, 18px);
 }
 
+.markdown-preview .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: var(--space-2) 0;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+}
+
 .markdown-preview img { max-width: 100%; height: auto; }
 
 /* 状态栏是底部「带」，与工具栏对称：壳色 + 结构性上边框。 */
@@ -1135,7 +1228,7 @@ button.cm-button.cm-search-close:focus-visible,
   display: flex;
   gap: var(--space-4);
   align-items: center;
-  height: 26px;
+  height: var(--density-status-height, 26px);
   padding: 0 var(--space-4);
   font-size: var(--text-xs);
   color: var(--text-muted);
@@ -1248,12 +1341,39 @@ button.cm-button.cm-search-close:focus-visible,
   color: var(--text-muted);
 }
 
-/* 引用行 */
+/* 引用行：独立的灰色圆角小竖条，与预览态 `.markdown-preview blockquote` 同款。
+   竖条画在伪元素上，而不是用 border-left —— 只设 border-left 时浏览器只弯
+   竖条的**外沿**，内侧仍是直角，画出来是半个「D」；伪元素是独立盒子，
+   四个角才都能圆。padding-left 补回原 border 占的 3.5px，正文位置不变。
+   注意：Decoration.line 是**逐行**加类的，多行引用会拿到多个 .cm-live-quote。
+   每行各画一条圆角条会变成一串「胶囊」，所以默认直角，只给整段引用的
+   首行顶端、末行底端收圆角，中间各段首尾相接成一条连续竖条。 */
 .cm-live-quote {
-  border-left: 3.5px solid var(--accent-solid, #2563eb) !important;
-  padding-left: 10px !important;
+  position: relative;
+  padding-left: 13.5px !important;
   color: var(--text-secondary) !important;
   font-style: italic;
+}
+
+.cm-live-quote::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3.5px;
+  background-color: var(--border-strong);
+  border-radius: 0;
+}
+
+.cm-live-quote:not(.cm-live-quote + .cm-live-quote)::before {
+  border-top-left-radius: var(--radius-full);
+  border-top-right-radius: var(--radius-full);
+}
+
+.cm-live-quote:not(:has(+ .cm-live-quote))::before {
+  border-bottom-left-radius: var(--radius-full);
+  border-bottom-right-radius: var(--radius-full);
 }
 
 /* 普通无序列表的项目符号 Widget：把源码里的 `-` 折叠成真正的圆点，
@@ -1335,11 +1455,15 @@ button.cm-button.cm-search-close:focus-visible,
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
-  overflow-x: auto;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  box-sizing: border-box !important;
+  scrollbar-width: thin;
   cursor: text !important;
   user-select: text !important;
 }
-
+ 
 .cm-live-block-math-widget .katex-display {
   margin: 0.3em 0 !important;
 }
@@ -1356,6 +1480,11 @@ button.cm-button.cm-search-close:focus-visible,
   cursor: text !important;
   user-select: text !important;
   width: 100%;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  box-sizing: border-box !important;
+  scrollbar-width: thin;
   /* Widget 里放的是**渲染后的 HTML**，不是待保留空白的源码。
      而 `.cm-content` 是 `white-space: pre`，会继承下来 —— 那样渲染结果里
      任何换行（例如 markdown-it 输出末尾的 "\n"）都会被当成真实换行渲染，
@@ -1490,4 +1619,55 @@ button.cm-button.cm-search-close:focus-visible,
 
 .cm-live-code-copy[data-copied="true"] {
   color: var(--success, #16a34a) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   内部横向滚动条优化（表格、代码块、引用块、公式）
+   轻量、纤细（6px 高度），优雅自包含在元素内部，杜绝出现页面级横向滚动条
+   --------------------------------------------------------------------------- */
+
+.markdown-preview .table-wrapper::-webkit-scrollbar,
+.markdown-preview table::-webkit-scrollbar,
+.markdown-preview pre::-webkit-scrollbar,
+.markdown-preview .code-block pre::-webkit-scrollbar,
+.markdown-preview blockquote::-webkit-scrollbar,
+.markdown-preview .katex-display::-webkit-scrollbar,
+.cm-live-table-widget::-webkit-scrollbar,
+.cm-live-block-math-widget::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.markdown-preview .table-wrapper::-webkit-scrollbar-track,
+.markdown-preview table::-webkit-scrollbar-track,
+.markdown-preview pre::-webkit-scrollbar-track,
+.markdown-preview .code-block pre::-webkit-scrollbar-track,
+.markdown-preview blockquote::-webkit-scrollbar-track,
+.markdown-preview .katex-display::-webkit-scrollbar-track,
+.cm-live-table-widget::-webkit-scrollbar-track,
+.cm-live-block-math-widget::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.markdown-preview .table-wrapper::-webkit-scrollbar-thumb,
+.markdown-preview table::-webkit-scrollbar-thumb,
+.markdown-preview pre::-webkit-scrollbar-thumb,
+.markdown-preview .code-block pre::-webkit-scrollbar-thumb,
+.markdown-preview blockquote::-webkit-scrollbar-thumb,
+.markdown-preview .katex-display::-webkit-scrollbar-thumb,
+.cm-live-table-widget::-webkit-scrollbar-thumb,
+.cm-live-block-math-widget::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+.markdown-preview .table-wrapper::-webkit-scrollbar-thumb:hover,
+.markdown-preview table::-webkit-scrollbar-thumb:hover,
+.markdown-preview pre::-webkit-scrollbar-thumb:hover,
+.markdown-preview .code-block pre::-webkit-scrollbar-thumb:hover,
+.markdown-preview blockquote::-webkit-scrollbar-thumb:hover,
+.markdown-preview .katex-display::-webkit-scrollbar-thumb:hover,
+.cm-live-table-widget::-webkit-scrollbar-thumb:hover,
+.cm-live-block-math-widget::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-muted);
 }

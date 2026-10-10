@@ -1,19 +1,19 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { Input } from "antd";
 import {
   ArrowRight,
   BookOpen,
   Clock,
+  FileInput,
   FilePlus,
   FileSearch,
   FileText,
-  FolderOpen,
   HardDrive,
   Keyboard,
   Search,
   Settings,
-  X,
 } from "lucide-react";
-import type { DocumentSummary, SearchHit } from "../../types/document";
+import type { DocumentSummary, RecentFileView, SearchHit } from "../../types/document";
 import { api } from "../../lib/api";
 import { Button } from "../ui/Button";
 import { FileIcon } from "../ui/FileIcon";
@@ -22,7 +22,9 @@ import "./home.css";
 
 export interface HomePageProps {
   documents: DocumentSummary[];
+  recentFiles?: RecentFileView[];
   onOpenDocument: (id: string) => void;
+  onOpenPath?: (path: string) => void;
   onNewDocument: () => void;
   onOpenFile: () => void;
   onOpenSettings: () => void;
@@ -87,7 +89,9 @@ function renderSnippet(snippet: string) {
 
 export function HomePage({
   documents,
+  recentFiles,
   onOpenDocument,
+  onOpenPath,
   onNewDocument,
   onOpenFile,
   onOpenSettings,
@@ -118,7 +122,10 @@ export function HomePage({
         setSearchResults(hits);
       } catch {
         // 异常或非 Tauri 环境下的降级匹配
-        const localHits: SearchHit[] = documents
+        const localHits: SearchHit[] = (recentFiles && recentFiles.length > 0
+          ? recentFiles.map((f) => ({ id: f.path, title: f.name }))
+          : documents.map((d) => ({ id: d.id, title: d.title }))
+        )
           .filter((d) => d.title.toLowerCase().includes(q.toLowerCase()))
           .map((d) => ({
             id: d.id,
@@ -134,14 +141,31 @@ export function HomePage({
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
-  }, [searchQuery, documents, onSearchFullText]);
+  }, [searchQuery, documents, recentFiles, onSearchFullText]);
 
-  // 按更新时间降序排布的最近笔记列表
-  const recentDocs = useMemo(() => {
-    return [...documents].sort((a, b) => {
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-  }, [documents]);
+  // 按更新时间排布的最近笔记列表（优先统一 recentFiles）
+  const displayedDocs = useMemo(() => {
+    if (recentFiles && recentFiles.length > 0) {
+      return recentFiles.map((f) => ({
+        id: f.path,
+        title: f.name,
+        path: f.path,
+        updatedAt: f.openedAt,
+        size: f.size,
+        isPath: true,
+      }));
+    }
+    return [...documents]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .map((d) => ({
+        id: d.id,
+        title: d.title,
+        path: d.virtualPath && d.virtualPath !== "/" ? d.virtualPath : "/",
+        updatedAt: d.updatedAt,
+        size: d.size,
+        isPath: false,
+      }));
+  }, [recentFiles, documents]);
 
   const isSearchActive = searchQuery.trim().length > 0;
 
@@ -188,27 +212,17 @@ export function HomePage({
         <div className="home-main-grid">
           {/* 左栏：搜索栏、最近笔记流或全文检索结果 */}
           <section className="home-content-section" aria-label={isSearchActive ? "搜索结果" : "最近笔记"}>
-            {/* 全局全文搜索输入框 */}
+            {/* 全局全文搜索输入框（antd Input，allowClear 自带清除） */}
             <div className="home-search-bar">
               <Search size={16} className="home-search-bar__icon" aria-hidden />
-              <input
-                type="text"
+              <Input
                 className="home-search-bar__input"
                 value={searchQuery}
                 placeholder="全局全文搜索：键入关键词检索所有笔记的标题与正文..."
                 aria-label="全局全文搜索"
+                allowClear
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="home-search-bar__clear"
-                  onClick={() => setSearchQuery("")}
-                  aria-label="清除搜索"
-                >
-                  <X size={14} />
-                </button>
-              )}
             </div>
 
             {/* 分区头部指示 */}
@@ -226,7 +240,7 @@ export function HomePage({
                   <>
                     <Clock size={16} className="home-section-bar__icon" aria-hidden />
                     <h2 className="home-section-bar__heading">最近笔记</h2>
-                    <span className="home-section-bar__count">{documents.length} 篇文档</span>
+                    <span className="home-section-bar__count">{displayedDocs.length} 篇文档</span>
                   </>
                 )}
               </div>
@@ -243,7 +257,7 @@ export function HomePage({
             </div>
 
             {/* 列表渲染：无文档、无匹配或列表卡片 */}
-            {documents.length === 0 ? (
+            {displayedDocs.length === 0 ? (
               <div className="home-empty">
                 <div className="home-empty__icon">
                   <FileText size={40} strokeWidth={1.5} />
@@ -270,24 +284,28 @@ export function HomePage({
               /* 全文搜索结果列表（带正文高亮片段） */
               <div className="home-notes-list">
                 {searchResults.map((hit) => {
-                  const doc = documents.find((d) => d.id === hit.id);
+                  const doc = displayedDocs.find((d) => d.id === hit.id);
                   const displayName = hit.title.toLowerCase().endsWith(".txt")
                     ? hit.title
                     : hit.title.endsWith(".md")
                       ? hit.title
                       : `${hit.title}.md`;
-                  const folder = doc?.virtualPath && doc.virtualPath !== "/" ? doc.virtualPath : "/";
+                  const folder = doc?.path && doc.path !== "/" ? doc.path : "/";
+                  const handleSelect = () => {
+                    if (doc?.isPath && onOpenPath) onOpenPath(hit.id);
+                    else onOpenDocument(hit.id);
+                  };
                   return (
                     <div
                       key={hit.id}
                       className="home-note-row home-note-row--search-hit"
                       role="button"
                       tabIndex={0}
-                      onClick={() => onOpenDocument(hit.id)}
+                      onClick={handleSelect}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          onOpenDocument(hit.id);
+                          handleSelect();
                         }
                       }}
                     >
@@ -329,24 +347,27 @@ export function HomePage({
             ) : (
               /* 常态最近笔记列表 */
               <div className="home-notes-list">
-                {recentDocs.slice(0, 10).map((doc) => {
+                {displayedDocs.slice(0, 10).map((doc) => {
                   const displayName = doc.title.toLowerCase().endsWith(".txt")
                     ? doc.title
                     : doc.title.endsWith(".md")
                       ? doc.title
                       : `${doc.title}.md`;
-                  const folder = doc.virtualPath && doc.virtualPath !== "/" ? doc.virtualPath : "/";
+                  const handleSelect = () => {
+                    if (doc.isPath && onOpenPath) onOpenPath(doc.id);
+                    else onOpenDocument(doc.id);
+                  };
                   return (
                     <div
                       key={doc.id}
                       className="home-note-row"
                       role="button"
                       tabIndex={0}
-                      onClick={() => onOpenDocument(doc.id)}
+                      onClick={handleSelect}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          onOpenDocument(doc.id);
+                          handleSelect();
                         }
                       }}
                     >
@@ -359,7 +380,7 @@ export function HomePage({
                             {displayName}
                           </span>
                           <div className="home-note-row__meta">
-                            <span className="home-note-row__path">{folder}</span>
+                            <span className="home-note-row__path">{doc.path}</span>
                             <span className="home-note-row__dot">·</span>
                             <span className="home-note-row__size">{formatBytes(doc.size)}</span>
                           </div>
@@ -389,8 +410,8 @@ export function HomePage({
                   aria-label="导入本地文件"
                   onClick={onOpenFile}
                 >
-                  <div className="home-card-action__icon home-card-action__icon--folder">
-                    <FolderOpen size={16} />
+                  <div className="home-card-action__icon home-card-action__icon--file">
+                    <FileInput size={16} />
                   </div>
                   <div className="home-card-action__text">
                     <span className="home-card-action__label">导入本地文件</span>

@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { ConfigProvider } from "antd";
+import zhCN from "antd/locale/zh_CN";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./components/editor/MarkdownEditor";
 import { EditorToolbar } from "./components/editor/EditorToolbar";
 import { EditorStatusBar } from "./components/editor/EditorStatusBar";
 import { MarkdownPreview } from "./components/editor/MarkdownPreview";
 import { AppToolbar } from "./components/workspace/AppToolbar";
-import { Sidebar } from "./components/workspace/Sidebar";
+import type { MenuBarMenu } from "./components/workspace/MenuBar";
+import { Sidebar, type SidebarTab } from "./components/workspace/Sidebar";
 import { UpdateBar } from "./components/workspace/UpdateBar";
 import { Breadcrumb } from "./components/workspace/Breadcrumb";
 import { TabBar } from "./components/workspace/TabBar";
@@ -16,11 +20,13 @@ import {
 } from "./components/workspace/CloseDocumentModal";
 import { clearRecoveryDraft } from "./lib/recovery";
 import { Splitter } from "./components/workspace/Splitter";
-import { SettingsPage, type SettingsSection } from "./components/settings/SettingsPage";
+import { SettingsPage } from "./components/settings/SettingsPage";
+import { AboutDialog } from "./components/settings/AboutDialog";
 import { Button } from "./components/ui/Button";
 import { Dialog } from "./components/ui/Dialog";
 import { Spinner } from "./components/ui/Spinner";
 import { Toast } from "./components/ui/Toast";
+import type { ContextMenuItem } from "./components/ui/ContextMenu";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { api } from "./lib/api";
 import { zh } from "./lib/i18n";
@@ -37,8 +43,15 @@ import {
   resolveTheme,
   systemPrefersDark,
   THEME_STORAGE_KEY,
+  type ResolvedTheme,
   type ThemePreference,
 } from "./lib/theme";
+import {
+  createRippleEnvironment,
+  freshOrigin,
+  runThemeTransition,
+  type StampedOrigin,
+} from "./lib/themeTransition";
 import {
   applyFontSize,
   applyFontStack,
@@ -55,11 +68,31 @@ import {
   type EditorLatinFont,
 } from "./lib/editorPrefs";
 import {
+  applyAccentColor,
+  applyDarkStyle,
+  applyUiDensity,
+  applyUiZoom,
+  readStoredAccentColor,
+  readStoredDarkStyle,
+  readStoredUiDensity,
+  readStoredUiZoom,
+  ACCENT_COLOR_KEY,
+  DARK_STYLE_KEY,
+  UI_DENSITY_KEY,
+  UI_ZOOM_KEY,
+  type AccentColor,
+  type DarkStyle,
+  type UiDensity,
+  type UiZoom,
+} from "./lib/appearancePrefs";
+import { getAntdTheme } from "./lib/antdTheme";
+import {
   nextViewMode,
   readStoredViewMode,
   showsEditor,
   showsPreview,
   VIEW_MODE_KEY,
+  VIEW_MODES,
   type ViewMode,
 } from "./lib/viewMode";
 import {
@@ -77,17 +110,46 @@ import {
   useSyncScroll,
 } from "./lib/syncScroll";
 import {
-  pickExportPath,
-  pickOpenFilePath,
-  runExport,
-  runOpenFile,
-} from "./lib/transfer";
+  AUTOSAVE_KEY,
+  LINE_NUMBERS_KEY,
+  LINE_WRAP_KEY,
+  readStoredAutosaveMode,
+  readStoredLineNumbers,
+  readStoredLineWrap,
+  type AutosaveMode,
+} from "./lib/editorSettings";
+import {
+  loadRenderToggles,
+  parseRenderToggles,
+  RENDER_TOGGLES_KEY,
+  setRenderToggles,
+} from "./lib/renderToggles";
+import { applyAutosaveMode } from "./stores/useWorkspaceStore";
+import { pickExportPath, pickOpenFilePath, runExport } from "./lib/transfer";
+import {
+  baseName,
+  externalPathOf,
+  externalTabId,
+  samePath,
+} from "./lib/externalFiles";
 import "./App.css";
 
 /** 面板宽度持久化的存储键。 */
 const SIDEBAR_WIDTH_KEY = "crab-md.sidebar-width";
 const PREVIEW_WIDTH_KEY = "crab-md.preview-width";
 const OPEN_TABS_KEY = "crab-md.open-tabs";
+/** 侧栏当前面板（大纲 / 文件 / 外部文件）。 */
+const SIDEBAR_TAB_KEY = "crab-md.sidebar-tab";
+
+/**
+ * 读取已保存的侧栏面板。
+ *
+ * 默认「文件」而不是「大纲」：新工作区里大纲必然是空的，只有文件面板
+ * 能给出可执行的动作（新建笔记），否则首次打开会先看到一块空面板。
+ */
+function readStoredSidebarTab(raw: string | null): SidebarTab {
+  return raw === "outline" || raw === "notes" || raw === "external" ? raw : "notes";
+}
 
 /** 读取已保存的面板宽度；无存储或值非法时回退到默认值。 */
 function readStoredWidth(key: string, fallback: number): number {
@@ -131,8 +193,38 @@ export default function App() {
   const recoveryCandidate = useWorkspaceStore((s) => s.recoveryCandidate);
   const restoreRecovery = useWorkspaceStore((s) => s.restoreRecovery);
   const discardRecovery = useWorkspaceStore((s) => s.discardRecovery);
+  // 打开过的外部文件清单（来自工作区数据库，只有元数据没有正文）。
+  // 这是「重启后还能看到」的依据：列表面板与标签标题都从它恢复。
+  const externalCatalog = useWorkspaceStore((s) => s.externalFiles);
+  const externalFilesLoaded = useWorkspaceStore((s) => s.externalFilesLoaded);
+  const loadExternalFiles = useWorkspaceStore((s) => s.loadExternalFiles);
+  const forgetExternalFile = useWorkspaceStore((s) => s.forgetExternalFile);
+  const openExternalDocument = useWorkspaceStore((s) => s.openExternal);
+  // 统一磁盘历史记录
+  const recentFiles = useWorkspaceStore((s) => s.recentFiles);
+  const loadRecentFiles = useWorkspaceStore((s) => s.loadRecentFiles);
+  const removeRecentFile = useWorkspaceStore((s) => s.removeRecentFile);
+  const deleteDiskFile = useWorkspaceStore((s) => s.deleteDiskFile);
+  const setFilePinned = useWorkspaceStore((s) => s.setFilePinned);
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
+  // 侧栏当前面板：大纲 / 文件，两者互斥（顶部标签页切换）。持久化。
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() =>
+    readStoredSidebarTab(typeof localStorage === "undefined" ? null : localStorage.getItem(SIDEBAR_TAB_KEY)),
+  );
+  // 「大纲正在显示」= 侧栏展开且停在「大纲」标签页。
+  // 之前它是一个独立的显隐开关；改成标签页后，显隐由「当前是哪个面板」
+  // 决定，不再需要第二份状态（两份状态迟早会互相矛盾）。
+  const outlineVisible = sidebarVisible && sidebarTab === "outline";
+  /** 视图菜单里的「大纲」：已显示则切回笔记，否则展开侧栏并切到大纲。 */
+  const toggleOutline = useCallback(() => {
+    if (outlineVisible) {
+      setSidebarTab("notes");
+    } else {
+      setSidebarTab("outline");
+      setSidebarVisible(true);
+    }
+  }, [outlineVisible]);
   // 视图模式：仅编辑 / 分栏 / 仅阅读（UI §11）。持久化，记住用户的选择。
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     readStoredViewMode(typeof localStorage === "undefined" ? null : localStorage.getItem(VIEW_MODE_KEY)),
@@ -144,6 +236,10 @@ export default function App() {
   const [cursor, setCursor] = useState({ line: 1, column: 1, selectedText: "" });
   // 编辑器句柄，供横跨全屏的工具栏派发格式化动作。
   const editorRef = useRef<MarkdownEditorHandle>(null);
+  // 最近一次指针按下位置与时刻；主题波纹以它为圆心（见 lib/themeTransition.ts）。
+  // 用「最近一次」而不是把坐标一路透传：主题入口有四个（工具栏、视图菜单、
+  // 命令面板、设置页），让每个控件都往外传事件会把改动扩散到无关组件。
+  const lastPointerRef = useRef<StampedOrigin | null>(null);
   const handleEditorAction = useCallback((action: MarkdownActionId) => {
     editorRef.current?.dispatchAction(action);
   }, []);
@@ -154,21 +250,6 @@ export default function App() {
   const [closePrompt, setClosePrompt] = useState<ClosePromptType | null>(null);
   // PDF 导出与打印排版沉浸式对话框
   const [printModalOpen, setPrintModalOpen] = useState(false);
-  // 打开的外部物理磁盘文件映射表（原位查看/编辑，绝不拷贝进数据库）
-  const [externalFiles, setExternalFiles] = useState<
-    Map<
-      string,
-      {
-        path: string;
-        name: string;
-        content: string;
-        initialContent: string;
-        dirty: boolean;
-        size: number;
-        modifiedAt: string;
-      }
-    >
-  >(new Map());
 
   // 顶部多标签栏打开的文档 ID 列表
   const [openTabIds, setOpenTabIds] = useState<string[]>(() => {
@@ -195,17 +276,27 @@ export default function App() {
     }
   }, [activeId]);
 
-  // 清理已被删除的不存在文档（排除原位打开的外部文件）
+  /**
+   * 清理已经不复存在的标签。
+   *
+   * - 工作区文档：仍在列表里才保留（等文档列表加载完再判断，否则冷启动会闪掉）；
+   * - 外部文件：数据库里还记着就保留。**必须等清单加载完**再清理 ——
+   *   清单没读回来时所有记录都「不存在」，那时清理会把重启前的标签全删掉。
+   */
   useEffect(() => {
-    if (documents.length > 0) {
-      setOpenTabIds((prev) => {
-        const next = prev.filter(
-          (id) => id.startsWith("ext:") || documents.some((d) => d.id === id),
-        );
-        return next.length === prev.length ? prev : next;
+    setOpenTabIds((prev) => {
+      const next = prev.filter((id) => {
+        const extPath = externalPathOf(id);
+        if (extPath !== null) {
+          if (!externalFilesLoaded) return true;
+          return externalCatalog.some((f) => samePath(f.path, extPath));
+        }
+        if (documents.length === 0) return true;
+        return documents.some((d) => d.id === id);
       });
-    }
-  }, [documents]);
+      return next.length === prev.length ? prev : next;
+    });
+  }, [documents, externalCatalog, externalFilesLoaded]);
   // 大纲跳转目标；nonce 保证重复点同一标题也能再次跳转。
   const [jumpTarget, setJumpTarget] = useState<{ line: number; nonce: number } | null>(null);
   // 轻提示（UI §33）：保存成功/失败等非阻塞反馈。
@@ -216,9 +307,9 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   // 设置页开关（UI §34）。
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // 打开设置时要落到哪个分组。工具栏的更新入口需要直达「关于」，
-  // 否则用户点「有新版本」却停在「外观」，还要自己再找一次。
-  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  // 「关于」对话框开关（UI §16、§34）。它不再是设置页的一个分组：
+  // 关于只是应用信息 + 更新入口，用户不必先想到「设置」才能查版本。
+  const [aboutOpen, setAboutOpen] = useState(false);
   // 有新版时工具栏显示徽标；null 表示无更新（工具栏保持安静，§2.1）。
   const updateStatus = useUpdateStore((s) => s.status);
   const pendingUpdateVersion =
@@ -228,11 +319,35 @@ export default function App() {
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
     readStoredPreference(typeof localStorage === "undefined" ? null : localStorage.getItem(THEME_STORAGE_KEY)),
   );
+  // 主题的只读镜像。`cycleTheme` 被快捷键监听闭包持有，若直接依赖
+  // themePreference，每切一次主题都要重装一次 keydown 监听 ——
+  // 用 ref 既拿到最新值，又让 `cycleTheme` 的引用保持稳定。
+  const themePreferenceRef = useRef(themePreference);
+  themePreferenceRef.current = themePreference;
+  // 当前**实际生效**的明暗，由下面的主题 effect 写入。偏好从 system 切成
+  // 与系统同名的固定值时（跟随系统·亮 → 浅色），偏好变了但画面没变，
+  // 不该为一次零视觉差异的切换播满屏波纹。
+  const resolvedThemeRef = useRef<ResolvedTheme | null>(null);
+  // resolved theme 的响应式镜像：antd ConfigProvider 的 token 配置是
+  // JS 对象而非 CSS 变量，主题切换时要触发重渲染才能换肤（data-theme 只够 CSS 用）。
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
   // 编辑器字号与主题同属「纯展示偏好」，都由 App 持有 ——
   // 只有这样它才会在**启动时**生效；若只由设置页持有，
   // 就必须先打开设置页才应用，重启即回到默认值。
   const [fontSize, setFontSize] = useState<EditorFontSize>(() =>
     readStoredFontSize(typeof localStorage === "undefined" ? null : localStorage.getItem(FONT_SIZE_KEY)),
+  );
+  const [accentColor, setAccentColor] = useState<AccentColor>(() =>
+    readStoredAccentColor(typeof localStorage === "undefined" ? null : localStorage.getItem(ACCENT_COLOR_KEY)),
+  );
+  const [uiZoom, setUiZoom] = useState<UiZoom>(() =>
+    readStoredUiZoom(typeof localStorage === "undefined" ? null : localStorage.getItem(UI_ZOOM_KEY)),
+  );
+  const [uiDensity, setUiDensity] = useState<UiDensity>(() =>
+    readStoredUiDensity(typeof localStorage === "undefined" ? null : localStorage.getItem(UI_DENSITY_KEY)),
+  );
+  const [darkStyle, setDarkStyle] = useState<DarkStyle>(() =>
+    readStoredDarkStyle(typeof localStorage === "undefined" ? null : localStorage.getItem(DARK_STYLE_KEY)),
   );
 
   /**
@@ -283,6 +398,25 @@ export default function App() {
   const handleResetPreviewTypography = useCallback(() => {
     setPreviewTypography(defaultPreviewTypography());
   }, []);
+
+  // 编辑器行为偏好（行号 / 自动换行）：与字号同属「启动即生效」的纯展示偏好，
+  // 都由 App 持有 —— 只由设置页自持的话，重启即回到默认值。
+  const [lineNumbersOn, setLineNumbersOn] = useState<boolean>(() =>
+    readStoredLineNumbers(typeof localStorage === "undefined" ? null : localStorage.getItem(LINE_NUMBERS_KEY)),
+  );
+  const [lineWrapOn, setLineWrapOn] = useState<boolean>(() =>
+    readStoredLineWrap(typeof localStorage === "undefined" ? null : localStorage.getItem(LINE_WRAP_KEY)),
+  );
+
+  // 自动保存档位：App 持有并同步给 store（store 是模块级状态，不进 React）。
+  const [autosaveMode, setAutosaveMode] = useState<AutosaveMode>(() =>
+    readStoredAutosaveMode(typeof localStorage === "undefined" ? null : localStorage.getItem(AUTOSAVE_KEY)),
+  );
+
+  // 预览渲染开关（Mermaid / 公式）：读入后注入渲染管线的模块级状态。
+  const [renderToggles, setRenderTogglesState] = useState(() =>
+    parseRenderToggles(typeof localStorage === "undefined" ? null : localStorage.getItem(RENDER_TOGGLES_KEY)),
+  );
 
   const [editorScrollEl, setEditorScrollEl] = useState<HTMLElement | null>(null);
   const [previewScrollEl, setPreviewScrollEl] = useState<HTMLElement | null>(null);
@@ -337,6 +471,45 @@ export default function App() {
     }
   }, [latinFont, previewTypography]);
 
+  // 行号 / 自动换行：持久化。编辑器组件经 prop 拿到最新值，原地重配扩展。
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(LINE_NUMBERS_KEY, String(lineNumbersOn));
+    }
+  }, [lineNumbersOn]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(LINE_WRAP_KEY, String(lineWrapOn));
+    }
+  }, [lineWrapOn]);
+
+  // 自动保存档位：同步给 store（模块级状态），同时持久化。
+  useEffect(() => {
+    applyAutosaveMode(autosaveMode);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(AUTOSAVE_KEY, autosaveMode);
+    }
+  }, [autosaveMode]);
+
+  // 渲染开关：注入渲染管线（markdown.ts / livePreview.ts 的模块级状态），同时持久化。
+  // 启动时统一走 loadRenderToggles，保证任何早于首帧的渲染读到的也是持久值。
+  useEffect(() => {
+    setRenderToggles(renderToggles);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(RENDER_TOGGLES_KEY, JSON.stringify(renderToggles));
+    }
+  }, [renderToggles]);
+
+  // 自动保存档位同样在首帧前生效：初始化 effect 按 useState 顺序先于子组件渲染执行，
+  // 这里再跑一次 loadRenderToggles 是为了兜住「渲染先于 effect」的极端路径（无副作用）。
+  useEffect(() => {
+    loadRenderToggles(typeof localStorage === "undefined" ? null : localStorage);
+    applyAutosaveMode(autosaveMode);
+    // 仅启动时执行一次：后续变化由上面的 effect 即时同步。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 主题：写入 <html data-theme>，CSS 变量随之切换（UI_DESIGN_SYSTEM.md §4.1）。
   // 偏好为 system 时还要监听系统变化，用户切换系统主题应当即时跟随。
   //
@@ -349,6 +522,8 @@ export default function App() {
 
     const sync = () => {
       const resolved = resolveTheme(themePreference, systemPrefersDark());
+      resolvedThemeRef.current = resolved;
+      setResolvedTheme(resolved);
       applyTheme(resolved);
       void applyWindowTheme(resolved);
     };
@@ -367,6 +542,34 @@ export default function App() {
   }, [themePreference]);
 
   useEffect(() => {
+    applyAccentColor(accentColor, resolvedTheme);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(ACCENT_COLOR_KEY, accentColor);
+    }
+  }, [accentColor, resolvedTheme]);
+
+  useEffect(() => {
+    applyUiZoom(uiZoom);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(UI_ZOOM_KEY, uiZoom);
+    }
+  }, [uiZoom]);
+
+  useEffect(() => {
+    applyUiDensity(uiDensity);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(UI_DENSITY_KEY, uiDensity);
+    }
+  }, [uiDensity]);
+
+  useEffect(() => {
+    applyDarkStyle(darkStyle);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(DARK_STYLE_KEY, darkStyle);
+    }
+  }, [darkStyle]);
+
+  useEffect(() => {
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
     }
@@ -377,6 +580,12 @@ export default function App() {
       localStorage.setItem(PREVIEW_WIDTH_KEY, String(previewWidth));
     }
   }, [previewWidth]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(SIDEBAR_TAB_KEY, sidebarTab);
+    }
+  }, [sidebarTab]);
 
   /**
    * 启动时后台检查更新。
@@ -428,8 +637,62 @@ export default function App() {
     }
   }, [viewMode]);
 
+  /**
+   * 切换主题偏好。工具栏、视图菜单、命令面板、设置页四个入口共用这一条路径，
+   * 这样波纹动画与原生标题栏同步不需要在四处各写一遍。
+   *
+   * 为什么不能只 `setThemePreference`：
+   * - 转场快照在回调**执行的那一刻**抓取，`data-theme` 必须在那之前改完；
+   *   交给渲染后的 effect 写入就晚了，波纹扫过的是同一套配色；
+   * - `flushSync` 让 React 立即提交，于是图标的明暗、菜单勾选、设置页分段
+   *   控件的选中态与新主题同处一张快照，不会在动画结束后才「跳」一下。
+   *
+   * 系统偏好变化不在这里 —— 那是外部事件，没有可用的指针起点，
+   * 仍由上面的 effect 同步应用。
+   */
+  const changeTheme = useCallback((next: ThemePreference) => {
+    // 重复选中当前项（例如菜单里点已勾选的那一行）不该再播一次全屏波纹。
+    if (next === themePreferenceRef.current) return;
+    const resolved = resolveTheme(next, systemPrefersDark());
+
+    // 偏好变了、画面没变：「跟随系统」（系统为亮）切到「浅色」就是这种情况。
+    // 直接改状态，不铺开波纹 —— 否则会为一次零视觉差异的切换播满屏动画。
+    if (resolved === resolvedThemeRef.current) {
+      flushSync(() => setThemePreference(next));
+      return;
+    }
+
+    runThemeTransition(
+      () => {
+        resolvedThemeRef.current = resolved;
+        applyTheme(resolved);
+        void applyWindowTheme(resolved);
+        flushSync(() => setThemePreference(next));
+      },
+      freshOrigin(lastPointerRef.current, Date.now()),
+      createRippleEnvironment(),
+    );
+  }, []);
+
   const cycleTheme = useCallback(() => {
-    setThemePreference((p) => (p === "system" ? "light" : p === "light" ? "dark" : "system"));
+    const current = themePreferenceRef.current;
+    changeTheme(current === "system" ? "light" : current === "light" ? "dark" : "system");
+  }, [changeTheme]);
+
+  /**
+   * 记录指针按下位置，供主题波纹取圆心。
+   *
+   * 用捕获阶段挂在 window 上：切换主题的入口分散在工具栏按钮、菜单项、
+   * 命令面板与设置页分段控件里，逐个透传事件会污染它们的公共接口
+   * （ContextMenu 的 `onSelect()`、SegmentedControl 的 `onChange(value)`
+   * 都不带事件对象）。在顶层记一次，四个入口自动都有起点。
+   */
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      lastPointerRef.current = { origin: { x: e.clientX, y: e.clientY }, at: Date.now() };
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
   }, []);
 
   // 关窗前强制落盘。
@@ -488,6 +751,78 @@ export default function App() {
     [openDocument],
   );
 
+  // 当前激活的外部文件：标签页 id 里有路径，库里有名字（拿不到时退回文件名）。
+  const activeExtPath = activeId ? externalPathOf(activeId) : null;
+  const activeExtRecord = activeExtPath
+    ? externalCatalog.find((f) => samePath(f.path, activeExtPath))
+    : undefined;
+  const activeExt = activeExtPath
+    ? { path: activeExtPath, name: activeExtRecord?.name ?? baseName(activeExtPath) }
+    : null;
+  const activeDoc =
+    activeId && !activeExtPath ? documents.find((d) => d.id === activeId) : null;
+  const activeTitle = activeExt ? activeExt.name : (activeDoc?.title ?? "");
+  const activePath = activeExt ? activeExt.path : activeTitle;
+  const isPlainText = activeTitle.toLowerCase().endsWith(".txt");
+
+  /**
+   * 打开（或切换回）一个外部文件标签页。
+   *
+   * 正文每次都**从磁盘读**：外部文件可能已被别的程序改动，缓存一份旧正文
+   * 会让用户看到过期内容。读盘成功的同时 Rust 会刷新库里的记录，
+   * 因此顺带重拉一次清单（大小 / 修改时间）。
+   *
+   * 读失败（被移动、删除、过大、非 UTF-8）只提示并**保留记录** ——
+   * 列表里会把它标成「文件不存在」，由用户决定何时移除。
+   */
+  const openExternalTab = useCallback(
+    async (path: string) => {
+      try {
+        const file = await api.readExternalFile(path);
+        const tabId = externalTabId(file.path);
+        setOpenTabIds((prev) => (prev.includes(tabId) ? prev : [...prev, tabId]));
+        openExternalDocument(file.path, file.content);
+        await loadExternalFiles();
+      } catch {
+        setToast({ message: zh.toast.openFailed, tone: "error" });
+      }
+    },
+    [loadExternalFiles, openExternalDocument],
+  );
+
+  const handleSelectTab = useCallback(
+    async (id: string | null) => {
+      // 切换前必须先落盘当前编辑；**落盘失败就放弃切换**。
+      // 若失败也照切，下面的 setState 会覆盖 activeContent —— 那是静默丢内容
+      // （ARCHITECTURE.md §18.1、UI §42.10 明令禁止）。
+      // 外部文件与工作区文档共用这条规则：两者都在编辑区里。
+      if (activeId !== null && activeId !== id) {
+        if (!(await useWorkspaceStore.getState().flushActive())) {
+          setToast({ message: zh.toast.saveFailed, tone: "error" });
+          return;
+        }
+      }
+
+      if (id === null) {
+        // 切换到主页
+        useWorkspaceStore.setState({
+          activeId: null,
+          activeContent: "",
+          dirty: false,
+          externalBaseline: null,
+        });
+      } else if (id.startsWith("ext:")) {
+        // 点已经打开的那条标签是无操作：重新读盘会把编辑区的未保存内容
+        // 换成磁盘上的旧版本。上面那条 flush 守卫在 activeId === id 时不生效，
+        // 因此这里必须自己挡一次。
+        if (id !== activeId) await openExternalTab(id.slice(4));
+      } else {
+        await handleOpenDocument(id);
+      }
+    },
+    [activeId, handleOpenDocument, openExternalTab],
+  );
+
   const finalizeCloseTab = useCallback(
     async (id: string) => {
       newDocumentIdsRef.current.delete(id);
@@ -498,71 +833,37 @@ export default function App() {
         if (nextTabs.length > 0) {
           const currentIndex = openTabIds.indexOf(id);
           const nextIndex = Math.min(currentIndex, nextTabs.length - 1);
-          await openDocument(nextTabs[nextIndex]);
+          // 下一个标签可能是外部文件，必须走同一套分流逻辑，
+          // 否则会把 `ext:` 当成文档 id 去读库（必然失败）。
+          await handleSelectTab(nextTabs[nextIndex]);
         } else {
-          useWorkspaceStore.setState({ activeId: null, activeContent: "", dirty: false });
-        }
-      }
-    },
-    [activeId, openTabIds, openDocument],
-  );
-
-  const activeExt = activeId?.startsWith("ext:") ? externalFiles.get(activeId) : null;
-  const activeDoc =
-    activeId && !activeId.startsWith("ext:")
-      ? documents.find((d) => d.id === activeId)
-      : null;
-  const activeTitle = activeExt ? activeExt.name : (activeDoc?.title ?? "");
-  const activePath = activeExt ? activeExt.path : activeTitle;
-  const isPlainText = activeTitle.toLowerCase().endsWith(".txt");
-
-  const handleSelectTab = useCallback(
-    async (id: string | null) => {
-      if (id === null) {
-        // 切换到主页
-        if (dirty && activeId) {
-          await saveActive();
-        }
-        useWorkspaceStore.setState({ activeId: null, activeContent: "", dirty: false });
-      } else if (id.startsWith("ext:")) {
-        // 切换到外部原位文件
-        if (dirty && activeId) {
-          await saveActive();
-        }
-        const entry = externalFiles.get(id);
-        if (entry) {
           useWorkspaceStore.setState({
-            activeId: id,
-            activeContent: entry.content,
-            dirty: entry.dirty,
+            activeId: null,
+            activeContent: "",
+            dirty: false,
+            externalBaseline: null,
           });
         }
-      } else {
-        await handleOpenDocument(id);
       }
     },
-    [activeId, dirty, externalFiles, handleOpenDocument, saveActive],
+    [activeId, openTabIds, handleSelectTab],
   );
 
   const handleCloseTab = useCallback(
     async (id: string) => {
-      // 场景 0：外部物理文件（原位编辑，不入库）
-      if (id.startsWith("ext:")) {
-        const entry = externalFiles.get(id);
-        const isModified = id === activeId ? dirty : (entry?.dirty ?? false);
-        if (isModified) {
+      // 场景 0：外部物理文件（原位保存，只删标签不改磁盘）
+      const extPath = externalPathOf(id);
+      if (extPath !== null) {
+        // 只有当前激活的那条可能有未落盘的编辑：切换标签前必先 flush，
+        // 因此不需要额外维护一份 per-tab 脏标记（两份状态迟早会矛盾）。
+        if (id === activeId && dirty) {
           setClosePrompt({
             kind: "save-changes",
             id,
-            title: entry?.name ?? "外部文件",
+            title: baseName(extPath),
           });
           return;
         }
-        setExternalFiles((prev) => {
-          const next = new Map(prev);
-          next.delete(id);
-          return next;
-        });
         await finalizeCloseTab(id);
         return;
       }
@@ -628,7 +929,6 @@ export default function App() {
       activeContent,
       dirty,
       documents,
-      externalFiles,
       openTabIds,
       deleteDocument,
       finalizeCloseTab,
@@ -641,21 +941,16 @@ export default function App() {
       if (!closePrompt) return;
       const targetId = closePrompt.id;
 
+      // 外部文件先原位写回，再关闭标签：记录仍然留在列表里，
+      // 用户随时能再打开它 —— 关闭标签不等于「从列表移除」。
       if (targetId.startsWith("ext:")) {
-        const entry = externalFiles.get(targetId);
-        if (entry) {
-          try {
-            await api.saveExternalFile(entry.path, activeContent);
-          } catch {
-            setToast({ message: zh.toast.saveFailed, tone: "error" });
-          }
-        }
-        setExternalFiles((prev) => {
-          const next = new Map(prev);
-          next.delete(targetId);
-          return next;
-        });
         setClosePrompt(null);
+        // flushActive 在写入期间用户又改了字时返回 false（dirty 仍为真），
+        // 此时保留标签而不是关掉：关掉就等于把新输入丢进垃圾堆。
+        if (!(await useWorkspaceStore.getState().flushActive())) {
+          setToast({ message: zh.toast.saveFailed, tone: "error" });
+          return;
+        }
         await finalizeCloseTab(targetId);
         return;
       }
@@ -664,12 +959,16 @@ export default function App() {
         await renameDocument(targetId, name.trim());
       }
       if (targetId === activeId) {
-        await saveActive();
+        if (!(await useWorkspaceStore.getState().flushActive())) {
+          setToast({ message: zh.toast.saveFailed, tone: "error" });
+          setClosePrompt(null);
+          return;
+        }
       }
       setClosePrompt(null);
       await finalizeCloseTab(targetId);
     },
-    [activeContent, activeId, closePrompt, externalFiles, finalizeCloseTab, renameDocument, saveActive],
+    [activeId, closePrompt, finalizeCloseTab, renameDocument],
   );
 
   const handleDiscardAndClose = useCallback(async () => {
@@ -677,11 +976,14 @@ export default function App() {
     const targetId = closePrompt.id;
 
     if (targetId.startsWith("ext:")) {
-      setExternalFiles((prev) => {
-        const next = new Map(prev);
-        next.delete(targetId);
-        return next;
-      });
+      // 丢弃改动：把编辑区还原到磁盘上的那一版，标签照常关闭。
+      // 记录不动 —— 「关标签」与「从列表移除」是两件事。
+      if (targetId === activeId) {
+        const baseline = useWorkspaceStore.getState().externalBaseline;
+        if (baseline !== null) {
+          useWorkspaceStore.setState({ activeContent: baseline, dirty: false });
+        }
+      }
       setClosePrompt(null);
       await finalizeCloseTab(targetId);
       return;
@@ -699,25 +1001,19 @@ export default function App() {
     }
     setClosePrompt(null);
     await finalizeCloseTab(targetId);
-  }, [activeId, closePrompt, deleteDocument, externalFiles, finalizeCloseTab]);
+  }, [activeId, closePrompt, deleteDocument, finalizeCloseTab]);
 
+  /**
+   * 编辑区内容变化。
+   *
+   * 外部文件的「脏」由 store 依据磁盘基准推导（见 `setContent`），
+   * 这里不再需要额外的 per-tab 状态 —— 那是两份迟早会互相矛盾的状态。
+   */
   const handleContentChange = useCallback(
     (newContent: string) => {
       setContent(newContent);
-      if (activeId?.startsWith("ext:")) {
-        setExternalFiles((prev) => {
-          const next = new Map(prev);
-          const existing = next.get(activeId);
-          if (existing) {
-            const isDirty = newContent !== existing.initialContent;
-            next.set(activeId, { ...existing, content: newContent, dirty: isDirty });
-            useWorkspaceStore.setState({ dirty: isDirty });
-          }
-          return next;
-        });
-      }
     },
-    [activeId, setContent],
+    [setContent],
   );
 
   const handleCloseOtherTabs = useCallback(
@@ -744,12 +1040,20 @@ export default function App() {
   );
 
   const handleCloseAllTabs = useCallback(async () => {
-    if (dirty && activeId) {
-      await saveActive();
+    // 全部关闭前必须确认落盘成功，失败则保持标签不动 ——
+    // 关闭不等于丢弃（外部文件与工作区文档同理）。
+    if (activeId !== null && !(await useWorkspaceStore.getState().flushActive())) {
+      setToast({ message: zh.toast.saveFailed, tone: "error" });
+      return;
     }
     setOpenTabIds([]);
-    useWorkspaceStore.setState({ activeId: null, activeContent: "", dirty: false });
-  }, [activeId, dirty, saveActive]);
+    useWorkspaceStore.setState({
+      activeId: null,
+      activeContent: "",
+      dirty: false,
+      externalBaseline: null,
+    });
+  }, [activeId]);
 
   const handleToggleTask = useCallback(
     (taskIndex: number) => {
@@ -759,41 +1063,20 @@ export default function App() {
     [activeContent, handleContentChange],
   );
 
-  // 保存并给出反馈（UI §33）。自动保存与 Ctrl+S 都经过这里。
+  /**
+   * 保存并给出反馈（UI §33）。自动保存与 Ctrl+S 都经过这里。
+   *
+   * 外部文件与工作区文档走同一个入口：store 的 `saveActive` 依据 `activeId`
+   * 是否带 `ext:` 前缀决定写回磁盘原文件还是写工作区（原位编辑语义）。
+   */
   const handleSave = useCallback(async () => {
-    if (activeId?.startsWith("ext:")) {
-      const entry = externalFiles.get(activeId);
-      if (entry) {
-        try {
-          const saved = await api.saveExternalFile(entry.path, activeContent);
-          setExternalFiles((prev) => {
-            const next = new Map(prev);
-            next.set(activeId, {
-              ...entry,
-              content: activeContent,
-              initialContent: activeContent,
-              dirty: false,
-              size: saved.size,
-              modifiedAt: saved.modifiedAt,
-            });
-            return next;
-          });
-          useWorkspaceStore.setState({ dirty: false });
-          setToast({ message: zh.toast.saved, tone: "success" });
-        } catch {
-          setToast({ message: zh.toast.saveFailed, tone: "error" });
-        }
-        return;
-      }
-    }
-
     await saveActive();
     if (useWorkspaceStore.getState().error) {
       setToast({ message: zh.toast.saveFailed, tone: "error" });
     } else {
       setToast({ message: zh.toast.saved, tone: "success" });
     }
-  }, [activeContent, activeId, externalFiles, saveActive]);
+  }, [saveActive]);
 
   const handlePrint = useCallback(() => {
     if (!activeId) {
@@ -851,54 +1134,85 @@ export default function App() {
     }
   }, []);
 
-  /** 打开指定路径：保留原始磁盘位置原位查看/编辑，绝不拷贝进数据库。 */
-  const handleOpenPath = useCallback(async (sourcePath: string) => {
+  /**
+   * 在系统文件管理器里定位文件（右键菜单「打开文件所在位置」）。
+   *
+   * 工作区笔记与外部文件分别走各自的命令：前者由 Rust 解析 UUID 文件名，
+   * 后者直接用 `ext:` 标签页里的原始绝对路径。成功不弹提示 ——
+   * 文件管理器窗口已经把文件摆到眼前了；失败必须说出来，否则用户
+   * 分不清「没反应」和「坏了」。
+   */
+  const handleReveal = useCallback(async (id: string, title: string) => {
     try {
-      const file = await api.readExternalFile(sourcePath);
-      const tabId = `ext:${file.path}`;
-      setExternalFiles((prev) => {
-        const next = new Map(prev);
-        next.set(tabId, {
-          path: file.path,
-          name: file.name,
-          content: file.content,
-          initialContent: file.content,
-          dirty: false,
-          size: file.size,
-          modifiedAt: file.modifiedAt,
-        });
-        return next;
-      });
-      setOpenTabIds((prev) => (prev.includes(tabId) ? prev : [...prev, tabId]));
-      useWorkspaceStore.setState({ activeId: tabId, activeContent: file.content, dirty: false });
-      setToast({ message: zh.toast.opened(file.name), tone: "success" });
-    } catch {
-      // 降级：若在无 Tauri IPC 的单测环境中，回退兼容
-      const store = useWorkspaceStore.getState();
-      const outcome = await runOpenFile({
-        pickOpenFile: async () => sourcePath,
-        openFile: store.importDocument,
-      });
-      if (outcome.kind === "ok") {
-        setToast({ message: zh.toast.opened(outcome.title), tone: "success" });
-      } else if (outcome.kind === "failed") {
-        setToast({ message: zh.toast.openFailed, tone: "error" });
+      const extPath = externalPathOf(id);
+      if (extPath !== null) {
+        await api.revealExternalFile(extPath);
+      } else {
+        await api.revealDocument(id);
       }
+    } catch {
+      setToast({ message: zh.toast.revealFailed(title), tone: "error" });
     }
   }, []);
 
-  /** 打开文件：弹系统「打开文件」，由 Rust 收进工作区并打开。取消时不提示。 */
+  /**
+   * 从外部文件列表移除一条记录（**不删除磁盘文件**）。
+   *
+   * 顺便关掉对应的标签页：记录一没，标签就成了一条打不开的死项。
+   * 注意拖动关闭用的 `finalizeCloseTab` 会去读「下一个标签」，
+   * 所以先把标签关掉再移除记录，顺序反了会读到刚被移除的那条。
+   */
+  const handleForgetExternal = useCallback(
+    async (path: string) => {
+      const tabId = externalTabId(path);
+      if (openTabIds.includes(tabId)) {
+        await handleCloseTab(tabId);
+      }
+      const ok = await forgetExternalFile(path);
+      if (ok) {
+        setToast({ message: zh.toast.removedFromList, tone: "success" });
+      } else {
+        setToast({ message: zh.toast.removeFromListFailed, tone: "error" });
+      }
+    },
+    [openTabIds, handleCloseTab, forgetExternalFile],
+  );
+
+  /**
+   * 打开指定路径的外部文件：保留原始磁盘位置原位查看/编辑，
+   * 绝不把正文复制进工作区（用户要求库里只存路径/名称）。
+   *
+   * 打开成功时 Rust 已把这条记录写进数据库，因此它会在重启后仍然出现。
+   */
+  const handleOpenPath = useCallback(
+    async (sourcePath: string) => {
+      await openExternalTab(sourcePath);
+    },
+    [openExternalTab],
+  );
+
+  /** 打开文件：弹系统「打开文件」对话框。取消时不提示（那只是改了主意）。 */
   const handleOpenFile = useCallback(async () => {
     const sourcePath = await pickOpenFilePath();
     if (sourcePath !== null) await handleOpenPath(sourcePath);
   }, [handleOpenPath]);
 
-  /** 启动时接收 Windows 文件关联传入的路径，并复用同一套打开流程。 */
+  /**
+   * 启动时恢复上次打开的文件。
+   *
+   * 两件事，顺序不能反：
+   * 1. 先读**数据库里的外部文件清单** —— 它是列表与标签的权威来源；
+   * 2. 再接收 Windows 文件关联传入的路径（双击 .md 启动时），走同一套打开流程。
+   *
+   * 标签 id 早就由 localStorage 恢复了（见 openTabIds 初始化），
+   * 但那时清单还没读回来，所以清理 effect 必须等 `externalFilesLoaded`
+   * 才允许删标签，否则重启后第一帧就会把外部标签全删掉。
+   */
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
-      await loadDocuments();
+      await Promise.all([loadDocuments(), loadExternalFiles(), loadRecentFiles()]);
       if (cancelled) return;
 
       try {
@@ -916,7 +1230,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [handleOpenPath, loadDocuments]);
+  }, [handleOpenPath, loadDocuments, loadExternalFiles, loadRecentFiles]);
 
   // 全局快捷键（UI_DESIGN_SYSTEM.md §29）。集中在此处而非散落各页面。
   useEffect(() => {
@@ -965,12 +1279,14 @@ export default function App() {
   }, [handleNewDocument, handleSave, cycleTheme, activeId, handleCloseTab]);
 
   const tabsList = openTabIds.map((id) => {
-    if (id.startsWith("ext:")) {
-      const ext = externalFiles.get(id);
+    const extPath = externalPathOf(id);
+    if (extPath !== null) {
+      // 名字优先取库里的记录（用户看到的原始文件名），退回路径末段。
+      const record = externalCatalog.find((f) => samePath(f.path, extPath));
       return {
         id,
-        title: ext?.name ?? id.replace(/^ext:/, ""),
-        dirty: id === activeId ? dirty : (ext?.dirty ?? false),
+        title: record?.name ?? baseName(extPath),
+        dirty: id === activeId ? dirty : false,
       };
     }
     const doc = documents.find((d) => d.id === id);
@@ -981,18 +1297,242 @@ export default function App() {
     };
   });
 
+  /**
+   * 顶部菜单栏的内容（文件 / 编辑 / 视图 / 帮助）。
+   *
+   * 菜单项只做「转发」：每一项都调用页面上已有的那一个回调，所以菜单、
+   * 快捷键、命令面板三条入口走的是同一条代码路径，不会各自漂移。
+   * 不可用的命令用 `disabled` 明示，而不是点了没反应。
+   */
+  const menus: MenuBarMenu[] = useMemo(() => {
+    // 下列菜单项只在有活动文档时才有意义；闭包里用局部常量保住收窄后的类型，
+    // 免得在回调里写一堆非空断言。
+    const currentId = activeId;
+    const currentTitle = activeTitle;
+    const hasDocument = currentId !== null;
+    // 有文档时才有意义的动作统一走这里：函数内部自己挡一次 null，
+    // 既让 `disabled` 与行为一致，也避免在回调里散落非空断言。
+    const withDocument = (run: (id: string) => void) => () => {
+      if (currentId === null) return;
+      run(currentId);
+    };
+    const viewLabels: Record<ViewMode, string> = {
+      edit: zh.toolbar.view.edit,
+      split: zh.toolbar.view.split,
+      preview: zh.toolbar.view.preview,
+    };
+    const formatIds: MarkdownActionId[] = [
+      "bold",
+      "italic",
+      "strikethrough",
+      "heading",
+      "bulletList",
+      "orderedList",
+      "quote",
+      "link",
+      "image",
+      "inlineCode",
+      "codeBlock",
+      "table",
+      "math",
+      "mathBlock",
+    ];
+
+    return [
+      {
+        id: "file",
+        label: zh.menu.file,
+        items: [
+          {
+            id: "file-new",
+            label: zh.toolbar.newDocument,
+            shortcut: "Ctrl+N",
+            onSelect: () => void handleNewDocument(),
+          },
+          {
+            id: "file-open",
+            label: zh.fileTree.openFile,
+            onSelect: () => void handleOpenFile(),
+          },
+          { id: "file-sep-1", separator: true },
+          {
+            id: "file-save",
+            label: zh.menu.save,
+            shortcut: "Ctrl+S",
+            disabled: !hasDocument,
+            onSelect: () => void handleSave(),
+          },
+          {
+            id: "file-export",
+            label: zh.fileTree.exportDoc,
+            disabled: !hasDocument,
+            onSelect: withDocument((id) => void handleExport(id, currentTitle)),
+          },
+          {
+            id: "file-reveal",
+            label: zh.fileTree.revealInExplorer,
+            disabled: !hasDocument,
+            onSelect: withDocument((id) => void handleReveal(id, currentTitle)),
+          },
+          { id: "file-sep-2", separator: true },
+          {
+            id: "file-close-tab",
+            label: zh.menu.closeTab,
+            shortcut: "Ctrl+W",
+            disabled: !hasDocument,
+            onSelect: withDocument((id) => void handleCloseTab(id)),
+          },
+          {
+            id: "file-close-all",
+            label: zh.menu.closeAllTabs,
+            onSelect: () => void handleCloseAllTabs(),
+          },
+        ],
+      },
+      {
+        id: "edit",
+        label: zh.menu.edit,
+        items: [
+          {
+            id: "edit-undo",
+            label: zh.editor.contextMenu.undo,
+            shortcut: "Ctrl+Z",
+            disabled: !hasDocument,
+            onSelect: () => editorRef.current?.undo(),
+          },
+          {
+            id: "edit-redo",
+            label: zh.editor.contextMenu.redo,
+            shortcut: "Ctrl+Y",
+            disabled: !hasDocument,
+            onSelect: () => editorRef.current?.redo(),
+          },
+          { id: "edit-sep-1", separator: true },
+          {
+            id: "edit-find",
+            label: zh.editor.contextMenu.findReplace,
+            shortcut: "Ctrl+F",
+            disabled: !hasDocument,
+            onSelect: () => setFindNonce((n) => n + 1),
+          },
+          {
+            id: "edit-palette",
+            label: zh.menu.palette,
+            shortcut: "Ctrl+Shift+P",
+            onSelect: () => setPaletteOpen(true),
+          },
+          { id: "edit-sep-2", separator: true },
+          {
+            id: "edit-format",
+            label: zh.editor.contextMenu.format,
+            disabled: !hasDocument || isPlainText,
+            submenu: formatIds.map((action) => ({
+              id: `edit-format-${action}`,
+              label: zh.editor.actions[action],
+              onSelect: () => handleEditorAction(action),
+            })),
+          },
+        ],
+      },
+      {
+        id: "view",
+        label: zh.menu.view,
+        items: [
+          ...VIEW_MODES.map(
+            (mode): ContextMenuItem => ({
+              id: `view-mode-${mode}`,
+              label: viewLabels[mode],
+              checked: viewMode === mode,
+              onSelect: () => setViewMode(mode),
+            }),
+          ),
+          { id: "view-sep-1", separator: true },
+          {
+            id: "view-sidebar",
+            label: zh.menu.sidebar,
+            checked: sidebarVisible,
+            onSelect: () => setSidebarVisible((v) => !v),
+          },
+          {
+            id: "view-outline",
+            label: zh.toolbar.toggleOutline,
+            checked: outlineVisible,
+            onSelect: toggleOutline,
+          },
+          {
+            id: "view-sync-scroll",
+            label: zh.toolbar.syncScroll,
+            checked: syncScroll,
+            onSelect: () => setSyncScroll((v) => !v),
+          },
+          { id: "view-sep-2", separator: true },
+          {
+            id: "view-theme",
+            label: zh.menu.theme,
+            submenu: (["light", "dark", "system"] as const).map((preference) => ({
+              id: `view-theme-${preference}`,
+              label: zh.toolbar.theme[preference],
+              checked: themePreference === preference,
+              onSelect: () => changeTheme(preference),
+            })),
+          },
+        ],
+      },
+      {
+        id: "help",
+        label: zh.menu.help,
+        items: [
+          {
+            id: "help-settings",
+            label: zh.toolbar.settings,
+            shortcut: "Ctrl+,",
+            onSelect: () => setSettingsOpen(true),
+          },
+          {
+            id: "help-about",
+            label: zh.about.title,
+            onSelect: () => setAboutOpen(true),
+          },
+        ],
+      },
+    ];
+  }, [
+    activeId,
+    activeTitle,
+    handleCloseAllTabs,
+    handleCloseTab,
+    handleEditorAction,
+    handleExport,
+    handleNewDocument,
+    handleOpenFile,
+    handleReveal,
+    handleSave,
+    isPlainText,
+    outlineVisible,
+    sidebarVisible,
+    syncScroll,
+    themePreference,
+    toggleOutline,
+    viewMode,
+  ]);
+
   return (
-    <div className="app-shell" data-sidebar={sidebarVisible || undefined}>
+    <ConfigProvider
+      locale={zhCN}
+      theme={getAntdTheme(resolvedTheme, accentColor)}
+      button={{ autoInsertSpace: false }}
+    >
+      <div className="app-shell" data-sidebar={sidebarVisible || undefined}>
       <AppToolbar
         onNewDocument={handleNewDocument}
         onToggleSidebar={() => setSidebarVisible((v) => !v)}
         sidebarVisible={sidebarVisible}
+        menus={menus}
         onOpenSettings={() => setSettingsOpen(true)}
         pendingVersion={pendingUpdateVersion}
         onOpenUpdate={() => {
-          // 直接落到「关于」分组 —— 用户点更新入口就是想安装。
-          setSettingsSection("about");
-          setSettingsOpen(true);
+          // 打开「关于」对话框 —— 更新详情与安装入口都在里面。
+          setAboutOpen(true);
         }}
         themePreference={themePreference}
         onCycleTheme={cycleTheme}
@@ -1006,13 +1546,28 @@ export default function App() {
           activeId={activeId}
           activeContent={activeContent}
           onJump={(line) => setJumpTarget({ line, nonce: Date.now() })}
+          tab={sidebarTab}
+          onChangeTab={setSidebarTab}
           onSelect={(id) => void handleOpenDocument(id)}
           onCreate={handleNewDocument}
           onRename={(id, title) => void renameDocument(id, title)}
           onDuplicate={(id, title) => void handleDuplicate(id, title)}
           onExport={(id, title) => void handleExport(id, title)}
+          onReveal={(id, title) => void handleReveal(id, title)}
           onOpenFile={() => void handleOpenFile()}
           onRequestDelete={(id, title) => setPendingDelete({ id, title })}
+          externalFiles={externalCatalog}
+          recentFiles={recentFiles}
+          // 走 handleSelectTab 而不是直接读盘：它会先落盘当前未保存的编辑，
+          // 否则从列表点开外部文件会静默丢掉正在编辑的文档（或外部文件）。
+          onOpenExternal={(path) => void handleSelectTab(externalTabId(path))}
+          onRevealExternal={(path) =>
+            void handleReveal(externalTabId(path), baseName(path))
+          }
+          onForgetExternal={(path) => void handleForgetExternal(path)}
+          onRemoveRecentFile={(path) => void removeRecentFile(path)}
+          onDeleteDiskFile={(path) => void deleteDiskFile(path)}
+          onTogglePin={(path, pinned) => void setFilePinned(path, pinned)}
           width={sidebarWidth}
           collapsed={!sidebarVisible}
         />
@@ -1052,6 +1607,7 @@ export default function App() {
             onRenameTab={(id, title) => void renameDocument(id, title)}
             onDuplicateTab={(id, title) => void handleDuplicate(id, title)}
             onExportTab={(id, title) => void handleExport(id, title)}
+            onRevealTab={(id, title) => void handleReveal(id, title)}
           />
 
           {activeId ? (
@@ -1097,6 +1653,10 @@ export default function App() {
                       jumpTarget={jumpTarget}
                       findNonce={findNonce}
                       onScrollDOM={setEditorScrollEl}
+                      lineNumbersEnabled={lineNumbersOn}
+                      lineWrapEnabled={lineWrapOn}
+                      // 分栏模式（右侧已有渲染预览）：左侧展示纯正的 Markdown 源码；单栏编辑模式则默认开启即时渲染。
+                      livePreviewEnabled={viewMode !== "split" && !isPlainText}
                     />
                   </div>
                 )}
@@ -1157,7 +1717,9 @@ export default function App() {
           ) : (
             <HomePage
               documents={documents}
+              recentFiles={recentFiles}
               onOpenDocument={(id) => void handleOpenDocument(id)}
+              onOpenPath={(path) => void handleSelectTab(externalTabId(path))}
               onNewDocument={handleNewDocument}
               onOpenFile={() => void handleOpenFile()}
               onOpenSettings={() => setSettingsOpen(true)}
@@ -1217,10 +1779,8 @@ export default function App() {
         onToggleSidebar={() => setSidebarVisible((v) => !v)}
         onCycleTheme={cycleTheme}
         onChangeViewMode={setViewMode}
-        onOpenSettings={(section?: SettingsSection) => {
-          if (section) setSettingsSection(section);
-          setSettingsOpen(true);
-        }}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenAbout={() => setAboutOpen(true)}
         onPrint={handlePrint}
       />
 
@@ -1232,14 +1792,18 @@ export default function App() {
 
       <SettingsPage
         open={settingsOpen}
-        onClose={() => {
-          setSettingsOpen(false);
-          // 关掉后清空指定分组，下次从默认分组开始。
-          setSettingsSection(null);
-        }}
+        onClose={() => setSettingsOpen(false)}
         onChanged={(message) => setToast({ message, tone: "success" })}
         themePreference={themePreference}
-        onChangeTheme={setThemePreference}
+        onChangeTheme={changeTheme}
+        accentColor={accentColor}
+        onChangeAccentColor={setAccentColor}
+        uiZoom={uiZoom}
+        onChangeUiZoom={setUiZoom}
+        uiDensity={uiDensity}
+        onChangeUiDensity={setUiDensity}
+        darkStyle={darkStyle}
+        onChangeDarkStyle={setDarkStyle}
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
         syncScroll={syncScroll}
@@ -1253,7 +1817,20 @@ export default function App() {
         previewTypography={previewTypography}
         onChangePreviewElement={handleChangePreviewElement}
         onResetPreviewTypography={handleResetPreviewTypography}
-        initialSection={settingsSection}
+        lineNumbersOn={lineNumbersOn}
+        onChangeLineNumbers={setLineNumbersOn}
+        lineWrapOn={lineWrapOn}
+        onChangeLineWrap={setLineWrapOn}
+        autosaveMode={autosaveMode}
+        onChangeAutosaveMode={setAutosaveMode}
+        renderToggles={renderToggles}
+        onChangeRenderToggles={setRenderTogglesState}
+      />
+
+      <AboutDialog
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        onSaveFailed={(message) => setToast({ message, tone: "error" })}
       />
 
       <PrintExportModal
@@ -1263,6 +1840,7 @@ export default function App() {
         isPlainText={isPlainText}
         onClose={() => setPrintModalOpen(false)}
       />
-    </div>
+      </div>
+    </ConfigProvider>
   );
 }

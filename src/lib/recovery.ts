@@ -106,14 +106,30 @@ export function clearAllRecoveryDrafts(storage?: Storage | null): void {
   const target = storageOrNull(storage);
   if (!target) return;
   try {
-    const keys: string[] = [];
-    for (let index = 0; index < target.length; index += 1) {
-      const key = target.key(index);
-      if (key?.startsWith(RECOVERY_STORAGE_PREFIX)) keys.push(key);
-    }
-    for (const key of keys) target.removeItem(key);
+    for (const key of allRecoveryKeys(target)) target.removeItem(key);
   } catch {
     // localStorage 不可用时没有可安全执行的补偿动作。
+  }
+}
+
+/** 收集存储中全部恢复草稿的键（顺序与 Storage 一致）。 */
+function allRecoveryKeys(target: Storage): string[] {
+  const keys: string[] = [];
+  for (let index = 0; index < target.length; index += 1) {
+    const key = target.key(index);
+    if (key?.startsWith(RECOVERY_STORAGE_PREFIX)) keys.push(key);
+  }
+  return keys;
+}
+
+/** 当前存了多少份恢复草稿（设置页显示占用情况用）。读取失败按 0 处理。 */
+export function countRecoveryDrafts(storage?: Storage | null): number {
+  const target = storageOrNull(storage);
+  if (!target) return 0;
+  try {
+    return allRecoveryKeys(target).length;
+  } catch {
+    return 0;
   }
 }
 

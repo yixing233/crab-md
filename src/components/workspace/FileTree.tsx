@@ -22,6 +22,8 @@ export interface FileTreeProps {
   onDuplicate: (id: string, title: string) => void;
   /** 导出为 .md 文件（路径由系统对话框选定）。 */
   onExport: (id: string, title: string) => void;
+  /** 在系统文件管理器里定位该笔记的磁盘文件。 */
+  onReveal: (id: string, title: string) => void;
   /** 请求删除；确认对话框由上层负责。 */
   onRequestDelete: (id: string, title: string) => void;
 }
@@ -34,6 +36,7 @@ export function FileTree({
   onRename,
   onDuplicate,
   onExport,
+  onReveal,
   onRequestDelete,
 }: FileTreeProps) {
   const tree = useMemo(() => buildFileTree(documents), [documents]);
@@ -68,13 +71,18 @@ export function FileTree({
         onSelect: () => onExport(id, title),
       },
       {
+        id: "reveal",
+        label: zh.fileTree.revealInExplorer,
+        onSelect: () => onReveal(id, title),
+      },
+      {
         id: "delete",
         label: zh.fileTree.delete,
         danger: true,
         onSelect: () => onRequestDelete(id, title),
       },
     ],
-    [closeMenu, onDuplicate, onExport, onRequestDelete],
+    [closeMenu, onDuplicate, onExport, onReveal, onRequestDelete],
   );
 
   const startRename = useCallback((id: string) => {

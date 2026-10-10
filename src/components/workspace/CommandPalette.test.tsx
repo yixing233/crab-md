@@ -27,6 +27,7 @@ function renderPalette(over: Partial<CommandPaletteProps> = {}) {
     onCycleTheme: vi.fn(),
     onChangeViewMode: vi.fn(),
     onOpenSettings: vi.fn(),
+    onOpenAbout: vi.fn(),
     onPrint: vi.fn(),
     ...over,
   };
@@ -48,6 +49,7 @@ describe("CommandPalette", () => {
         onCycleTheme={vi.fn()}
         onChangeViewMode={vi.fn()}
         onOpenSettings={vi.fn()}
+        onOpenAbout={vi.fn()}
         onPrint={vi.fn()}
       />,
     );
@@ -91,5 +93,22 @@ describe("CommandPalette", () => {
     const props = renderPalette();
     await userEvent.keyboard("{Escape}");
     expect(props.onClose).toHaveBeenCalledOnce();
+  });
+
+  it("reaches the about dialog and the settings page as separate destinations", async () => {
+    const props = renderPalette();
+    const input = screen.getByPlaceholderText(/搜索文档跳转/);
+
+    // 「关于」不再是设置页里的一个分组，两者是并列命令。
+    await userEvent.type(input, "> 关于");
+    await userEvent.click(screen.getByText("关于 crab-md"));
+    expect(props.onOpenAbout).toHaveBeenCalledOnce();
+    expect(props.onOpenSettings).not.toHaveBeenCalled();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "> 设置");
+    await userEvent.click(screen.getByText("设置"));
+
+    expect(props.onOpenSettings).toHaveBeenCalledOnce();
   });
 });

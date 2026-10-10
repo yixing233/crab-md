@@ -1,20 +1,27 @@
 import { useEffect, useState } from "react";
+import { Switch } from "antd";
 import {
   ArrowUpDown,
   Check,
   Copy,
-  Download,
+  Eye,
   FolderOpen,
   HardDrive,
-  Info,
   Moon,
-  RefreshCw,
+  MoonStar,
+  Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PenLine,
   RotateCcw,
+  Rows3,
   SquarePen,
   Sun,
   SunMoon,
   Type,
   X,
+  ZoomIn,
+  type LucideIcon,
 } from "lucide-react";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { zh } from "../../lib/i18n";
@@ -31,6 +38,21 @@ import {
   type EditorLatinFont,
 } from "../../lib/editorPrefs";
 import {
+  ACCENT_COLORS,
+  ACCENT_PALETTES,
+  DARK_STYLES,
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_DARK_STYLE,
+  DEFAULT_UI_DENSITY,
+  DEFAULT_UI_ZOOM,
+  UI_DENSITIES,
+  UI_ZOOMS,
+  type AccentColor,
+  type DarkStyle,
+  type UiDensity,
+  type UiZoom,
+} from "../../lib/appearancePrefs";
+import {
   PREVIEW_ELEMENTS,
   type ElementTypography,
   type PreviewElementId,
@@ -38,49 +60,34 @@ import {
 } from "../../lib/previewTypography";
 import type { ViewMode } from "../../lib/viewMode";
 import type { ThemePreference } from "../../lib/theme";
+import { NAV_COLLAPSED_KEY, readStoredNavCollapsed } from "../../lib/settingsNav";
+import { AUTOSAVE_MODES, type AutosaveMode } from "../../lib/editorSettings";
+import type { RenderToggles } from "../../lib/renderToggles";
+import { clearAllRecoveryDrafts, countRecoveryDrafts } from "../../lib/recovery";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { FontPicker, type FontPickerOption } from "../ui/FontPicker";
 import { PreviewTypeRow } from "./PreviewTypeRow";
 import { SegmentedControl, type SegmentedOption } from "../ui/SegmentedControl";
-import {
-  type UpdateStatus,
-} from "../../lib/updater";
-import { useUpdateStore } from "../../stores/useUpdateStore";
 import "./settings.css";
 
-/** 把更新状态翻成一句给用户看的话。 */
-function updateMessage(status: UpdateStatus): string {
-  switch (status.kind) {
-    case "idle":
-      return "";
-    case "checking":
-      return zh.settings.update.checking;
-    case "up-to-date":
-      return zh.settings.update.upToDate;
-    case "available":
-      return zh.settings.update.available(status.version);
-    case "downloading":
-      return status.total === null
-        ? zh.settings.update.downloadingUnknown
-        : zh.settings.update.downloading(Math.round((status.downloaded / status.total) * 100));
-    case "ready":
-      return zh.settings.update.restarting;
-    case "error":
-      return zh.settings.update.failed;
-  }
-}
-
 /** 左侧分组。用稳定 id 而非索引，避免将来插入分组时页面错位。 */
-export type SettingsSection = "appearance" | "editor" | "preview" | "files" | "about";
+export type SettingsSection = "appearance" | "editor" | "preview" | "files";
 
 const SECTION_ORDER: readonly SettingsSection[] = [
   "appearance",
   "editor",
   "preview",
   "files",
-  "about",
 ] as const;
+
+/** 各分组导航图标。与文字一起降低扫视成本（图标仅装饰，aria-hidden）。 */
+const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
+  appearance: Palette,
+  editor: PenLine,
+  preview: Eye,
+  files: HardDrive,
+};
 
 export interface SettingsPageProps {
   open: boolean;
@@ -90,6 +97,14 @@ export interface SettingsPageProps {
   /** 主题偏好由 App 持有（工具栏主题按钮与这里改的是同一份状态）。 */
   themePreference: ThemePreference;
   onChangeTheme: (pref: ThemePreference) => void;
+  accentColor?: AccentColor;
+  onChangeAccentColor?: (color: AccentColor) => void;
+  uiZoom?: UiZoom;
+  onChangeUiZoom?: (zoom: UiZoom) => void;
+  uiDensity?: UiDensity;
+  onChangeUiDensity?: (density: UiDensity) => void;
+  darkStyle?: DarkStyle;
+  onChangeDarkStyle?: (style: DarkStyle) => void;
   /** 视图模式同样由 App 持有。 */
   viewMode: ViewMode;
   onChangeViewMode: (mode: ViewMode) => void;
@@ -117,20 +132,29 @@ export interface SettingsPageProps {
   previewTypography: PreviewTypography;
   onChangePreviewElement: (element: PreviewElementId, next: ElementTypography) => void;
   onResetPreviewTypography: () => void;
-  /**
-   * 打开时要落到哪个分组（如工具栏的更新入口直达「关于」）。
-   * null 表示保持上次/默认分组。
-   */
-  initialSection?: SettingsSection | null;
+  /** 编辑器行为偏好（行号 / 自动换行 / 自动保存），状态由 App 持有（启动即生效）。 */
+  lineNumbersOn: boolean;
+  onChangeLineNumbers: (enabled: boolean) => void;
+  lineWrapOn: boolean;
+  onChangeLineWrap: (enabled: boolean) => void;
+  autosaveMode: AutosaveMode;
+  onChangeAutosaveMode: (mode: AutosaveMode) => void;
+  /** 预览渲染开关（Mermaid / 公式），同样由 App 持有。 */
+  renderToggles: RenderToggles;
+  onChangeRenderToggles: (next: RenderToggles) => void;
 }
 
 /**
  * 设置页（UI_DESIGN_SYSTEM.md §34）。
  *
  * §34 要求按**用户心智模型**分组，而不是按实现模块 —— 因此分组是
- * 外观 / 编辑器 / 文件与数据 / 关于，而不是「数据库 / 路径 / 缓存」。
+ * 外观 / 编辑器 / 预览排版 / 文件与数据，而不是「数据库 / 路径 / 缓存」。
  *
- * 布局用左侧分组导航 + 右侧内容，而不是把四组堆成一长列：
+ * 「关于」**不在这里**：它不是设置，而是应用信息 + 更新入口，
+ * 已独立为 `AboutDialog`。塞进设置页意味着用户要先想到「设置」
+ * 才能查自己的版本号。
+ *
+ * 布局用左侧分组导航 + 右侧内容，而不是把几组堆成一长列：
  * 一列到底时用户要滚动才能确认「还有没有别的设置」。
  *
  * 面板自带遮罩，不复用 `Dialog`：面板内还要弹确认对话框，
@@ -143,6 +167,14 @@ export function SettingsPage({
   onChanged,
   themePreference,
   onChangeTheme,
+  accentColor = DEFAULT_ACCENT_COLOR,
+  onChangeAccentColor,
+  uiZoom = DEFAULT_UI_ZOOM,
+  onChangeUiZoom,
+  uiDensity = DEFAULT_UI_DENSITY,
+  onChangeUiDensity,
+  darkStyle = DEFAULT_DARK_STYLE,
+  onChangeDarkStyle,
   viewMode,
   onChangeViewMode,
   syncScroll,
@@ -156,35 +188,43 @@ export function SettingsPage({
   previewTypography,
   onChangePreviewElement,
   onResetPreviewTypography,
-  initialSection = null,
+  lineNumbersOn,
+  onChangeLineNumbers,
+  lineWrapOn,
+  onChangeLineWrap,
+  autosaveMode,
+  onChangeAutosaveMode,
+  renderToggles,
+  onChangeRenderToggles,
 }: SettingsPageProps) {
   const settings = useWorkspaceStore((s) => s.settings);
   const loadSettings = useWorkspaceStore((s) => s.loadSettings);
   const setWorkspaceRoot = useWorkspaceStore((s) => s.setWorkspaceRoot);
   const resetWorkspaceRoot = useWorkspaceStore((s) => s.resetWorkspaceRoot);
-  const flushActive = useWorkspaceStore((s) => s.flushActive);
-
-  // 更新状态来自共享 store：工具栏徽标、提示条、这里三处必须是同一份，
-  // 各自 useState 会互相看不见（字号曾犯过同类错）。
-  const update = useUpdateStore((s) => s.status);
-  const check = useUpdateStore((s) => s.check);
-  const install = useUpdateStore((s) => s.install);
 
   const [section, setSection] = useState<SettingsSection>("appearance");
+  // 左侧导航折叠（仅显示图标）。初始值读 localStorage：纯展示偏好，
+  // 与视图模式同款做法 —— 打开面板即生效，不必等挂载 effect。
+  const [navCollapsed, setNavCollapsed] = useState<boolean>(() => {
+    try {
+      return readStoredNavCollapsed(localStorage.getItem(NAV_COLLAPSED_KEY));
+    } catch {
+      return false; // localStorage 不可用（隐私模式等）时保持默认展开。
+    }
+  });
   const [defaultRoot, setDefaultRoot] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   // 待确认的目标目录；非空时弹出确认对话框。
   const [pending, setPending] = useState<string | null>(null);
-  const [pendingInstall, setPendingInstall] = useState<string | null>(null);
-  // 「关于」页的版本：由后端给出（与更新器比较的版本同源）。
-  // 初始值用构建期常量，避免 IPC 回来前显示空白。
-  const [version, setVersion] = useState<string>(__APP_VERSION__);
+  // 崩溃恢复草稿数量：打开设置页时清点，清理后刷新。
+  const [draftCount, setDraftCount] = useState<number>(() => countRecoveryDrafts());
 
-  // 外部指定分组（如点工具栏的更新入口）时切换过去。
+  // 打开时刷新草稿计数，避免显示过期数字。
   useEffect(() => {
-    if (open && initialSection) setSection(initialSection);
-  }, [open, initialSection]);
+    if (!open) return;
+    setDraftCount(countRecoveryDrafts());
+  }, [open]);
 
   // 打开时刷新，避免显示过期路径。
   useEffect(() => {
@@ -194,11 +234,6 @@ export function SettingsPage({
       .defaultWorkspaceRoot()
       .then(setDefaultRoot)
       .catch(() => setDefaultRoot(null));
-    // 版本以后端为准；取不到就退回构建期常量（不影响其它功能）。
-    void api
-      .appVersion()
-      .then(setVersion)
-      .catch(() => {});
   }, [open, loadSettings]);
 
   // Escape 关闭面板 —— 但确认对话框打开时让它先处理。
@@ -216,6 +251,19 @@ export function SettingsPage({
   }, [open, pending, onClose]);
 
   if (!open) return null;
+
+  /** 切换导航折叠并持久化；写入失败不影响本次切换（仅丢失记忆）。 */
+  function toggleNavCollapsed() {
+    setNavCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(NAV_COLLAPSED_KEY, String(next));
+      } catch {
+        // 隐私模式等场景 localStorage 只读：偏好丢就丢，功能不受影响。
+      }
+      return next;
+    });
+  }
 
   /** 弹出系统目录选择器，返回所选路径（取消则为 null）。 */
   async function pickFolder(): Promise<string | null> {
@@ -261,26 +309,6 @@ export function SettingsPage({
     if (ok) onChanged(zh.settings.storage.done);
   };
 
-  /** 用户主动检查更新：失败要给出原因（与后台静默检查不同）。 */
-  const handleCheckUpdate = () => void check();
-
-  /**
-   * 安装更新。**顺序不可颠倒**：
-   * 1) 先把未保存内容落盘 —— 安装会关掉应用，不落盘等于丢数据；
-   * 2) 落盘失败就中止，绝不在有未保存内容时关应用；
-   * 3) 安装成功后再重启。
-   *
-   * 顺序由 store 的 install() 保证；这里只负责提供落盘回调。
-   */
-  const handleInstall = () => {
-    setPendingInstall(null);
-    void install(async () => {
-      const saved = await flushActive();
-      if (!saved) onChanged(zh.toast.saveFailed);
-      return saved;
-    });
-  };
-
   const lockedByEnv = settings?.workspaceRootIsFromEnv === true;
   const effectiveRoot = settings?.effectiveWorkspaceRoot ?? "";
 
@@ -289,6 +317,21 @@ export function SettingsPage({
     { value: "dark", label: zh.settings.appearance.themeOption.dark, icon: Moon },
     { value: "system", label: zh.settings.appearance.themeOption.system, icon: SunMoon },
   ];
+
+  const zoomOptions: readonly SegmentedOption<UiZoom>[] = UI_ZOOMS.map((z) => ({
+    value: z,
+    label: zh.settings.appearance.zoomOption[z],
+  }));
+
+  const densityOptions: readonly SegmentedOption<UiDensity>[] = UI_DENSITIES.map((d) => ({
+    value: d,
+    label: zh.settings.appearance.densityOption[d],
+  }));
+
+  const darkStyleOptions: readonly SegmentedOption<DarkStyle>[] = DARK_STYLES.map((s) => ({
+    value: s,
+    label: zh.settings.appearance.darkStyleOption[s],
+  }));
 
   const fontSizeOptions: readonly SegmentedOption<EditorFontSize>[] = EDITOR_FONT_SIZES.map(
     (size) => ({
@@ -328,12 +371,15 @@ export function SettingsPage({
     { value: "disabled", label: zh.settings.editor.syncScrollOption.disabled },
   ];
 
+  const autosaveOptions: readonly SegmentedOption<AutosaveMode>[] = AUTOSAVE_MODES.map(
+    (mode) => ({ value: mode, label: zh.settings.editor.autosaveOption[mode] }),
+  );
+
   const SECTION_LABEL: Record<SettingsSection, string> = {
     appearance: zh.settings.sections.appearance,
     editor: zh.settings.sections.editor,
     preview: zh.settings.preview.label,
     files: zh.settings.sections.files,
-    about: zh.settings.sections.about,
   };
 
   return (
@@ -355,18 +401,53 @@ export function SettingsPage({
 
           <div className="settings-body">
             {/* 左侧分组导航：让用户一眼看到「一共有几组」，不必滚动确认。 */}
-            <nav className="settings-nav" aria-label={zh.settings.navLabel}>
-              {SECTION_ORDER.map((id) => (                <button
-                  key={id}
-                  type="button"
-                  className="settings-nav__item"
-                  data-active={id === section || undefined}
-                  aria-current={id === section ? "true" : undefined}
-                  onClick={() => setSection(id)}
-                >
-                  {SECTION_LABEL[id]}
-                </button>
-              ))}
+            <nav
+              className="settings-nav"
+              data-collapsed={navCollapsed || undefined}
+              aria-label={zh.settings.navLabel}
+            >
+              <div className="settings-nav__list">
+                {SECTION_ORDER.map((id) => {
+                  const SectionIcon = SECTION_ICON[id];
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className="settings-nav__item"
+                      data-active={id === section || undefined}
+                      aria-current={id === section ? "true" : undefined}
+                      onClick={() => setSection(id)}
+                      title={SECTION_LABEL[id]}
+                    >
+                      <span className="settings-nav__icon" aria-hidden>
+                        <SectionIcon size={15} />
+                      </span>
+                      <span className={navCollapsed ? "settings-nav__label sr-only" : "settings-nav__label"}>
+                        {SECTION_LABEL[id]}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 折叠开关：沉底到导航栏最底部 */}
+              <button
+                type="button"
+                className="settings-nav__toggle"
+                aria-label={
+                  navCollapsed ? zh.settings.navCollapse.expand : zh.settings.navCollapse.collapse
+                }
+                aria-expanded={!navCollapsed}
+                onClick={toggleNavCollapsed}
+                title={navCollapsed ? zh.settings.navCollapse.expand : zh.settings.navCollapse.collapse}
+              >
+                <span className="settings-nav__icon" aria-hidden>
+                  {navCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+                </span>
+                <span className={navCollapsed ? "settings-nav__label sr-only" : "settings-nav__label"}>
+                  {zh.settings.navCollapse.collapse}
+                </span>
+              </button>
             </nav>
 
             <div className="settings-content">
@@ -377,8 +458,12 @@ export function SettingsPage({
                     {zh.settings.sections.appearance}
                   </h3>
 
+                  {/* 主题模式 */}
                   <div className="settings-field">
-                    <span className="settings-field__label">{zh.settings.appearance.theme}</span>
+                    <span className="settings-field__label">
+                      <SunMoon size={14} aria-hidden />
+                      {zh.settings.appearance.theme}
+                    </span>
                     <p className="settings-field__description">
                       {zh.settings.appearance.themeHint}
                     </p>
@@ -387,6 +472,96 @@ export function SettingsPage({
                       options={themeOptions}
                       onChange={onChangeTheme}
                       ariaLabel={zh.settings.appearance.theme}
+                      showLabels
+                    />
+                  </div>
+
+                  {/* 主题强调色 */}
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Palette size={14} aria-hidden />
+                      {zh.settings.appearance.accent}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.appearance.accentHint}
+                    </p>
+                    <div
+                      className="settings-accent-picker"
+                      role="radiogroup"
+                      aria-label={zh.settings.appearance.accent}
+                    >
+                      {ACCENT_COLORS.map((color) => {
+                        const active = color === accentColor;
+                        const hex = ACCENT_PALETTES[color].previewHex;
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            aria-label={zh.settings.appearance.accentOption[color]}
+                            className="settings-accent-button"
+                            data-active={active || undefined}
+                            onClick={() => onChangeAccentColor?.(color)}
+                          >
+                            <span className="settings-accent-swatch" style={{ backgroundColor: hex }} />
+                            <span>{zh.settings.appearance.accentOption[color]}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 界面缩放比例 */}
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <ZoomIn size={14} aria-hidden />
+                      {zh.settings.appearance.zoom}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.appearance.zoomHint}
+                    </p>
+                    <SegmentedControl
+                      value={uiZoom}
+                      options={zoomOptions}
+                      onChange={(z) => onChangeUiZoom?.(z)}
+                      ariaLabel={zh.settings.appearance.zoom}
+                      showLabels
+                    />
+                  </div>
+
+                  {/* 布局密度 */}
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Rows3 size={14} aria-hidden />
+                      {zh.settings.appearance.density}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.appearance.densityHint}
+                    </p>
+                    <SegmentedControl
+                      value={uiDensity}
+                      options={densityOptions}
+                      onChange={(d) => onChangeUiDensity?.(d)}
+                      ariaLabel={zh.settings.appearance.density}
+                      showLabels
+                    />
+                  </div>
+
+                  {/* 深色背景风格 */}
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <MoonStar size={14} aria-hidden />
+                      {zh.settings.appearance.darkStyle}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.appearance.darkStyleHint}
+                    </p>
+                    <SegmentedControl
+                      value={darkStyle}
+                      options={darkStyleOptions}
+                      onChange={(s) => onChangeDarkStyle?.(s)}
+                      ariaLabel={zh.settings.appearance.darkStyle}
                       showLabels
                     />
                   </div>
@@ -413,6 +588,40 @@ export function SettingsPage({
                       options={fontSizeOptions}
                       onChange={onChangeFontSize}
                       ariaLabel={zh.settings.editor.fontSize}
+                      showLabels
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Type size={14} aria-hidden />
+                      {zh.settings.editor.lineNumbers}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.editor.lineNumbersHint}
+                    </p>
+                    <SegmentedControl
+                      value={lineNumbersOn ? "enabled" : "disabled"}
+                      options={syncScrollOptions}
+                      onChange={(val) => onChangeLineNumbers(val === "enabled")}
+                      ariaLabel={zh.settings.editor.lineNumbers}
+                      showLabels
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Type size={14} aria-hidden />
+                      {zh.settings.editor.lineWrap}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.editor.lineWrapHint}
+                    </p>
+                    <SegmentedControl
+                      value={lineWrapOn ? "enabled" : "disabled"}
+                      options={syncScrollOptions}
+                      onChange={(val) => onChangeLineWrap(val === "enabled")}
+                      ariaLabel={zh.settings.editor.lineWrap}
                       showLabels
                     />
                   </div>
@@ -494,6 +703,23 @@ export function SettingsPage({
                       showLabels
                     />
                   </div>
+
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <SquarePen size={14} aria-hidden />
+                      {zh.settings.editor.autosave}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.editor.autosaveHint}
+                    </p>
+                    <SegmentedControl
+                      value={autosaveMode}
+                      options={autosaveOptions}
+                      onChange={onChangeAutosaveMode}
+                      ariaLabel={zh.settings.editor.autosave}
+                      showLabels
+                    />
+                  </div>
                 </section>
               )}
 
@@ -503,9 +729,44 @@ export function SettingsPage({
                   <h3 className="settings-section__title" id="set-preview">
                     {zh.settings.preview.label}
                   </h3>
-                  <p className="settings-field__description">
+                  <p className="settings-section__desc">
                     {zh.settings.preview.description}
                   </p>
+
+                  {/* 渲染开关：卡片化左右对齐布局（左文右关）。 */}
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Eye size={14} aria-hidden />
+                      {zh.settings.preview.render}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.preview.renderHint}
+                    </p>
+                    <div className="settings-card-group">
+                      <label className="settings-card-row">
+                        <span className="settings-card-row__label">{zh.settings.preview.mermaid}</span>
+                        <Switch
+                          size="small"
+                          checked={renderToggles.mermaid}
+                          aria-label={zh.settings.preview.mermaid}
+                          onChange={(checked) =>
+                            onChangeRenderToggles({ ...renderToggles, mermaid: checked })
+                          }
+                        />
+                      </label>
+                      <label className="settings-card-row">
+                        <span className="settings-card-row__label">{zh.settings.preview.math}</span>
+                        <Switch
+                          size="small"
+                          checked={renderToggles.math}
+                          aria-label={zh.settings.preview.math}
+                          onChange={(checked) =>
+                            onChangeRenderToggles({ ...renderToggles, math: checked })
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
 
                   {/* 西文是**全局一项**：拉丁字符的差异通常只需要
                       「衬线/无衬线」一次决定，逐元素重复设置没有意义。 */}
@@ -649,93 +910,34 @@ export function SettingsPage({
                       )}
                     </dl>
                   </div>
-                </section>
-              )}
 
-              {/* ---- 关于 ---- */}
-              {section === "about" && (
-                <section className="settings-section" aria-labelledby="set-about">
-                  <h3 className="settings-section__title" id="set-about">
-                    {zh.settings.sections.about}
-                  </h3>
-
+                  {/* 崩溃恢复草稿：本地备份的占用情况与手动清理。
+                      正常流程用不到它（保存成功自动删），这里是「我想现在就清掉」的出口。 */}
                   <div className="settings-field">
                     <span className="settings-field__label">
-                      <Info size={14} aria-hidden />
-                      {zh.app.name}
+                      <RotateCcw size={14} aria-hidden />
+                      {zh.settings.storage.recovery.label}
                     </span>
                     <p className="settings-field__description">
-                      {zh.settings.about.description}
+                      {zh.settings.storage.recovery.description}
                     </p>
-                    <dl className="settings-meta">
-                      <dt>{zh.settings.about.versionLabel}</dt>
-                      <dd data-testid="app-version">{version}</dd>
-                      <dt>{zh.settings.about.dataFormat}</dt>
-                      <dd>{zh.settings.about.dataFormatValue}</dd>
-                    </dl>
-                  </div>
-
-                  {/* ---- 软件更新 ---- */}
-                  <div className="settings-field">
-                    <span className="settings-field__label">
-                      <Download size={14} aria-hidden />
-                      {zh.settings.update.label}
-                    </span>
-                    <p className="settings-field__description">{zh.settings.update.hint}</p>
-
-                    {/* 状态一行：空 / 检查中 / 最新 / 有新版 / 下载中 / 失败。 */}
-                    <p className="settings-update-status" role="status" data-testid="update-status">
-                      {updateMessage(update)}
+                    <p className="settings-update-status" role="status">
+                      {zh.settings.storage.recovery.count(draftCount)}
                     </p>
-
-                    {update.kind === "error" && (
-                      <p className="settings-note settings-note--warn">
-                        {update.fatal
-                          ? zh.settings.update.installFailedHint
-                          : zh.settings.update.failedHint}
-                      </p>
-                    )}
-
-                    {/* 下载中的进度条：有总量才显示百分比，否则只显示忙态，
-                        不假装知道进度。 */}
-                    {update.kind === "downloading" && update.total !== null && (
-                      <progress
-                        className="settings-progress"
-                        value={update.downloaded}
-                        max={update.total}
-                        aria-label={zh.settings.update.label}
-                      />
-                    )}
-
                     <div className="settings-actions">
                       <Button
                         variant="secondary"
                         size="sm"
-                        disabled={update.kind === "checking" || update.kind === "downloading"}
-                        onClick={() => void handleCheckUpdate()}
+                        disabled={draftCount === 0}
+                        onClick={() => {
+                          clearAllRecoveryDrafts();
+                          setDraftCount(countRecoveryDrafts());
+                          onChanged(zh.settings.storage.recovery.cleaned);
+                        }}
                       >
-                        <RefreshCw size={14} aria-hidden />
-                        <span>
-                          {update.kind === "checking"
-                            ? zh.settings.update.checking
-                            : zh.settings.update.check}
-                        </span>
+                        <RotateCcw size={14} aria-hidden />
+                        <span>{zh.settings.storage.recovery.clean}</span>
                       </Button>
-
-                      {update.kind === "available" && (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => {
-                            // 安装会关闭应用：先确认，再落盘，最后才安装。
-                            // 顺序反了就会丢掉用户正在写的内容。
-                            setPendingInstall(update.version);
-                          }}
-                        >
-                          <Download size={14} aria-hidden />
-                          <span>{zh.settings.update.install}</span>
-                        </Button>
-                      )}
                     </div>
                   </div>
                 </section>
@@ -757,19 +959,6 @@ export function SettingsPage({
         }}
       >
         {pending ? zh.settings.storage.confirmBody(pending) : null}
-      </Dialog>
-
-      {/* 安装更新前确认：会关闭并重启应用，必须先说清。
-          文案同时说明「未保存内容会先自动保存」，避免用户不敢点。 */}
-      <Dialog
-        open={pendingInstall !== null}
-        title={zh.settings.update.confirmTitle}
-        confirmLabel={zh.settings.update.confirmOk}
-        cancelLabel={zh.settings.update.cancel}
-        onCancel={() => setPendingInstall(null)}
-        onConfirm={() => void handleInstall()}
-      >
-        {pendingInstall ? zh.settings.update.confirmBody(pendingInstall) : null}
       </Dialog>
     </>
   );

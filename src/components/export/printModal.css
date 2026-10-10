@@ -137,6 +137,11 @@
   background: transparent !important;
 }
 
+.print-modal__paper-content .markdown-preview-content {
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+
 .print-modal__paper-content .plain-text-body {
   font-family: var(--font-mono, monospace);
   font-size: 9.5pt;

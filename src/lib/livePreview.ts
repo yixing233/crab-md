@@ -8,6 +8,7 @@ import { Compartment, type Extension, type Range, StateField, EditorState } from
 import katex from "katex";
 import { renderMarkdown } from "./markdown";
 import { isMarkdownTableRow } from "./tableHelper";
+import { getRenderToggles } from "./renderToggles";
 import { CHECK_ICON_SVG, COPY_ICON_SVG } from "./codeBlockIcons";
 
 /**
@@ -320,9 +321,9 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
     const line = doc.line(ln);
     const lineText = line.text;
 
-    // A.1 单行独立数学公式：$$ formula $$
+    // A.1 单行独立数学公式：$$ formula $$（「渲染公式」关闭时保持源码）
     const singleLineMath = lineText.match(/^\s*\$\$(.+?)\$\$\s*$/);
-    if (singleLineMath) {
+    if (singleLineMath && getRenderToggles().math) {
       const formula = singleLineMath[1];
       const touchesCaret = state.selection.ranges.some(
         (r) => r.from <= line.to && r.to >= line.from,
@@ -340,8 +341,8 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
       continue;
     }
 
-    // A.2 多行独立数学公式识别：$$\n...\n$$
-    if (lineText.trim() === "$$") {
+    // A.2 多行独立数学公式识别：$$\n...\n$$（同受「渲染公式」开关约束）
+    if (lineText.trim() === "$$" && getRenderToggles().math) {
       let endLn = ln + 1;
       while (endLn <= doc.lines && doc.line(endLn).text.trim() !== "$$") {
         endLn++;
@@ -588,10 +589,12 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
       }
     }
 
-    // D.5 行内数学公式：$formula$（只要光标不在该公式字符内部即刻渲染，无需离开当前行）
+    // D.5 行内数学公式：$formula$（只要光标不在该公式字符内部即刻渲染，无需离开当前行；
+    //     「渲染公式」关闭时保持源码，与预览侧行为一致）
     const mathRegex = /(?<!\$)\$([^\$\n]+?)\$(?!\$)/g;
+    const mathEnabled = getRenderToggles().math;
     let mathMatch: RegExpExecArray | null;
-    while ((mathMatch = mathRegex.exec(lineText)) !== null) {
+    while (mathEnabled && (mathMatch = mathRegex.exec(lineText)) !== null) {
       const start = line.from + mathMatch.index;
       const end = start + mathMatch[0].length;
       const formula = mathMatch[1];
