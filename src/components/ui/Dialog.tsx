@@ -77,6 +77,11 @@ export function Dialog({
       mask={{ closable: true }}
       // 关闭即卸载（原实现 !open 时返回 null，无退场动画）。
       destroyOnHidden
+      // antd Modal 默认 zIndex=1000 且是内联样式，CSS 压不过；而设置面板
+      // （1050）与「关于」对话框（1060）都在它之上 —— 从这些面板里弹出的
+      // 确认框（如更新安装确认）会被整个压在面板后面且点不到。
+      // 1100 是既定层级：面板之上、菜单（1200）/toast（1300）之下。
+      zIndex={1100}
       width={400}
       centered
       // Escape 由 Modal 内置处理（keyboard 默认 true）。
