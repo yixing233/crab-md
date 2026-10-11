@@ -148,9 +148,7 @@ export function AppToolbar({
         </Button>
       </Tooltip>
 
-      {/* 按钮上文字本身可见，Tooltip 不再带快捷键 —— 快捷键归属
-          命令面板与菜单（那里有统一的 shortcut 列），工具栏保持安静。 */}
-      <Tooltip content={zh.toolbar.newDocument}>
+      <Tooltip content={`${zh.toolbar.newDocument}　Ctrl+N`}>
         <Button variant="primary" size="sm" onClick={onNewDocument}>
           <Plus size={14} aria-hidden />
           <span>{zh.toolbar.newDocument}</span>
