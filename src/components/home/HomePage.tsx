@@ -203,7 +203,6 @@ export function HomePage({
             >
               <FilePlus size={16} />
               <span>新建笔记</span>
-              <kbd className="home-header__kbd">Ctrl+N</kbd>
             </Button>
           </div>
         </header>

@@ -107,15 +107,6 @@
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
 }
 
-.home-header__kbd {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 1px 5px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
-  margin-left: 2px;
-}
-
 /* 主体两栏布局：左 65% + 右 35% */
 .home-main-grid {
   display: grid;
