@@ -35,9 +35,13 @@
   flex: 0 0 auto;
   display: block;
 }
+/* 非纯图标按钮的 children 被包在单个 label span 里（图标和文字都是它的
+   子元素），.ui-button 的 gap 管不到这一层 —— 间距在这里给，
+   与 .ui-button 的 gap 保持同一档，图标才不会贴着文字。 */
 .ui-button__label {
   display: inline-flex;
   align-items: center;
+  gap: var(--space-2);
 }
 
 /* antd loading 图标尺寸对齐原有 Spinner(14px)。 */
