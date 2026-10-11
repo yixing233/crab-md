@@ -699,8 +699,40 @@ impl DocumentService {
 
     /// 置顶/取消置顶历史文件。
     pub fn set_file_pinned(&self, path: &str, pinned: bool) -> AppResult<()> {
+        {
+            let st = self.lock()?;
+            if opened_files::set_pinned(&st.conn, path, pinned)? > 0 {
+                return Ok(());
+            }
+        }
+
+        // 没匹配到历史记录：这个条目是旧工作区文档 —— 列表把它以文档 id
+        // 充当路径展示（见 Sidebar 的合并逻辑），而它从未进过 opened_files
+        // 历史表，直接 UPDATE 匹配 0 行，置顶就静默无效。这里解析出真实
+        // 磁盘路径补记一条历史（与用户打开过它一次等效），标题沿用文档表
+        // 的 title，不让 UUID 文件名漏进界面。
+        let (note, title) = {
+            let st = self.lock()?;
+            let note = workspace::note_path(&st.root, path)?;
+            let title = docs::get(&st.conn, path)?
+                .map(|d| d.title)
+                .unwrap_or_else(|| external_file_name(&note));
+            (note, title)
+        };
+
+        let meta = std::fs::metadata(&note)?;
+        let modified_at = external_file_modified_at(&meta);
         let st = self.lock()?;
-        opened_files::set_pinned(&st.conn, path, pinned)?;
+        opened_files::upsert_and_index(
+            &st.conn,
+            &note.to_string_lossy(),
+            &title,
+            meta.len() as i64,
+            &modified_at,
+            &workspace::now_iso8601(),
+            None,
+        )?;
+        opened_files::set_pinned(&st.conn, &note.to_string_lossy(), pinned)?;
         Ok(())
     }
 }
@@ -1112,6 +1144,28 @@ mod tests {
         let created = svc.create("T", "/").unwrap();
         let path = workspace::note_path(d.path(), &created.id).unwrap();
         assert!(path.is_file(), "expected {} to exist", path.display());
+    }
+
+    #[test]
+    fn pinning_a_workspace_document_creates_its_history_record() {
+        let (_d, svc) = svc();
+        let created = svc.create("开题笔记", "/").unwrap();
+
+        // 文档从未打开过（历史表为空）：置顶不得静默无效，
+        // 而是补建历史记录并置顶。
+        svc.set_file_pinned(&created.id, true).unwrap();
+
+        let recent = svc.list_recent_files().unwrap();
+        assert_eq!(recent.len(), 1);
+        assert!(recent[0].record.pinned, "pinned should be true");
+        assert_eq!(recent[0].record.name, "开题笔记", "界面显示文档标题，不是 UUID 文件名");
+        assert!(recent[0].record.path.contains(&created.id));
+        assert!(recent[0].exists, "补记的历史指向真实磁盘文件");
+
+        // 取消置顶：这次按补记出的真实路径走 UPDATE，同样要生效。
+        svc.set_file_pinned(&created.id, false).unwrap();
+        let recent = svc.list_recent_files().unwrap();
+        assert!(!recent[0].record.pinned);
     }
 
     #[test]
