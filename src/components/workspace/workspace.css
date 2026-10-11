@@ -438,12 +438,23 @@
   cursor: col-resize;
   /* 命中区域比视觉宽度大，不必精确瞄准 1px 线。 */
   margin: 0 -2px;
+  position: relative;
   z-index: 5;
 }
 
-.splitter:hover,
-.splitter:focus-visible,
-.splitter[data-dragging] {
+/* 高亮画在伪元素上（2px 居中细线）：命中区仍是整条 5px，
+   但把整条命中区涂成强调色的话，悬停时就是一根粗蓝柱 ——
+   视觉线应与普通分隔线同宽，加亮只换颜色、不加宽。 */
+.splitter::after {
+  content: "";
+  position: absolute;
+  inset: 0 1.5px;
+  background: transparent;
+}
+
+.splitter:hover::after,
+.splitter:focus-visible::after,
+.splitter[data-dragging]::after {
   background: var(--border-focus);
 }
 
