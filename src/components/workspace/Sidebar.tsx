@@ -1,6 +1,6 @@
+import { useMemo } from "react";
 import { FileInput, Files, ListTree } from "lucide-react";
 import { Tabs } from "antd";
-import { FileTree } from "./FileTree";
 import { RecentFileList } from "./RecentFileList";
 import { OutlineTree } from "../editor/OutlineTree";
 import { Button } from "../ui/Button";
@@ -62,7 +62,7 @@ export function Sidebar({
   onCreate,
   onRename,
   onDuplicate,
-  onExport,
+  onExport: _onExport,
   onReveal,
   onOpenFile,
   onRequestDelete,
@@ -82,37 +82,61 @@ export function Sidebar({
 }: SidebarProps) {
   const currentWidth = width ?? 260;
 
-  // 将现有数据统一投影为 RecentFileView 列表
-  const displayedFiles: RecentFileView[] =
-    recentFiles && recentFiles.length > 0
-      ? recentFiles
-      : externalFiles.length > 0
-        ? externalFiles.map((f) => ({
-            pathKey: f.path.toLowerCase(),
-            path: f.path,
-            name: f.name,
-            size: f.size,
-            modifiedAt: f.modifiedAt,
-            openedAt: f.openedAt,
-            pinned: false,
-            cursorLine: 1,
-            cursorCol: 1,
-            scrollRatio: 0,
-            exists: !f.missing,
-          }))
-        : documents.map((d) => ({
-            pathKey: d.id,
-            path: d.id,
-            name: d.title,
-            size: d.size,
-            modifiedAt: d.updatedAt,
-            openedAt: d.updatedAt,
-            pinned: false,
-            cursorLine: 1,
-            cursorCol: 1,
-            scrollRatio: 0,
-            exists: true,
-          }));
+  // 将全部文件统一合并为一个扁平列表：优先真实磁盘历史，合并旧工作区文档，彻底消除“内部文档 vs 外部文件”的割裂
+  const displayedFiles = useMemo(() => {
+    const list: RecentFileView[] = [];
+    const seen = new Set<string>();
+
+    if (recentFiles && recentFiles.length > 0) {
+      for (const f of recentFiles) {
+        list.push(f);
+        seen.add(f.path.toLowerCase());
+        seen.add(f.name.toLowerCase());
+      }
+    } else if (externalFiles && externalFiles.length > 0) {
+      for (const f of externalFiles) {
+        list.push({
+          pathKey: f.path.toLowerCase(),
+          path: f.path,
+          name: f.name,
+          size: f.size,
+          modifiedAt: f.modifiedAt,
+          openedAt: f.openedAt,
+          pinned: false,
+          cursorLine: 1,
+          cursorCol: 1,
+          scrollRatio: 0,
+          exists: !f.missing,
+        });
+        seen.add(f.path.toLowerCase());
+        seen.add(f.name.toLowerCase());
+      }
+    }
+
+    // 补充工作区中的文档（如旧笔记或测试数据），确保统一在一个列表展示
+    for (const d of documents) {
+      const key = d.id.toLowerCase();
+      const nameKey = d.title.toLowerCase();
+      if (!seen.has(key) && !seen.has(nameKey) && !seen.has(`${nameKey}.md`)) {
+        list.push({
+          pathKey: d.id,
+          path: d.id,
+          name: d.title,
+          size: d.size,
+          modifiedAt: d.updatedAt,
+          openedAt: d.updatedAt,
+          pinned: false,
+          cursorLine: 1,
+          cursorCol: 1,
+          scrollRatio: 0,
+          exists: true,
+        });
+        seen.add(key);
+      }
+    }
+
+    return list;
+  }, [recentFiles, externalFiles, documents]);
 
   const activePath = activeId?.startsWith("ext:") ? activeId.slice(4) : activeId;
   const currentKey = tab === "outline" ? "outline" : "notes";
@@ -150,46 +174,42 @@ export function Sidebar({
       ),
       children: (
         <div className="app-sidebar__panel" id="sidebar-panel-notes">
-          {documents.length > 0 && (
-            <FileTree
-              documents={documents}
-              activeId={activeId}
-              onSelect={onSelect}
-              onCreate={onCreate}
-              onRename={onRename}
-              onDuplicate={onDuplicate}
-              onExport={onExport}
-              onReveal={onReveal}
-              onRequestDelete={onRequestDelete}
-            />
-          )}
-          {(documents.length === 0 || externalFiles.length > 0 || (recentFiles && recentFiles.length > 0)) && (
-            <RecentFileList
-              files={displayedFiles}
-              activePath={activePath}
-              onOpen={(path) => {
-                if (onOpenExternal) onOpenExternal(path);
-                else onSelect(path);
-              }}
-              onNew={onCreate}
-              onOpenFilePicker={onOpenFile}
-              onReveal={(path) => {
-                if (onRevealExternal) onRevealExternal(path);
-                else onReveal(path, "");
-              }}
-              onRemoveFromHistory={(path) => {
-                if (onRemoveRecentFile) onRemoveRecentFile(path);
-                else if (onForgetExternal) onForgetExternal(path);
-              }}
-              onDeleteFromDisk={(path) => {
-                if (onDeleteDiskFile) onDeleteDiskFile(path);
-                else onRequestDelete(path, "");
-              }}
-              onTogglePin={(path, pinned) => {
-                if (onTogglePin) onTogglePin(path, pinned);
-              }}
-            />
-          )}
+          <RecentFileList
+            files={displayedFiles}
+            activePath={activePath}
+            onOpen={(path) => {
+              if (onOpenExternal && (path.includes("/") || path.includes("\\") || path.startsWith("ext:"))) {
+                onOpenExternal(path);
+              } else {
+                onSelect(path);
+              }
+            }}
+            onNew={onCreate}
+            onOpenFilePicker={onOpenFile}
+            onDuplicate={onDuplicate}
+            onRename={onRename}
+            onReveal={(path, name) => {
+              if (onRevealExternal && (path.includes("/") || path.includes("\\") || path.startsWith("ext:"))) {
+                onRevealExternal(path);
+              } else {
+                onReveal(path, name);
+              }
+            }}
+            onRemoveFromHistory={(path) => {
+              if (onRemoveRecentFile) onRemoveRecentFile(path);
+              else if (onForgetExternal) onForgetExternal(path);
+            }}
+            onDeleteFromDisk={(path) => {
+              if (onDeleteDiskFile && (path.includes("/") || path.includes("\\") || path.startsWith("ext:"))) {
+                onDeleteDiskFile(path);
+              } else {
+                onRequestDelete(path, "");
+              }
+            }}
+            onTogglePin={(path, pinned) => {
+              if (onTogglePin) onTogglePin(path, pinned);
+            }}
+          />
         </div>
       ),
     },

@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
-import { FolderOpen, MoreHorizontal, Pin, Plus, TriangleAlert } from "lucide-react";
+import { MoreHorizontal, Pin, TriangleAlert } from "lucide-react";
 import type { RecentFileView } from "../../types/document";
 import { samePath } from "../../lib/externalFiles";
+import { zh } from "../../lib/i18n";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { Tooltip } from "../ui/Tooltip";
@@ -14,21 +15,23 @@ export interface RecentFileListProps {
   files: RecentFileView[];
   activePath: string | null;
   onOpen: (path: string) => void;
-  onNew: () => void;
-  onOpenFilePicker: () => void;
-  onReveal: (path: string) => void;
+  onNew?: () => void;
+  onOpenFilePicker?: () => void;
+  onDuplicate?: (path: string, title: string) => void;
+  onRename?: (path: string, title: string) => void;
+  onReveal: (path: string, name: string) => void;
   onRemoveFromHistory: (path: string) => void;
   onDeleteFromDisk: (path: string) => void;
   onTogglePin: (path: string, pinned: boolean) => void;
 }
 
 /**
- * 统一文件面板：展示在软件中打开过的所有磁盘文件历史与工作台记录。
+ * 统一文件列表面板：对标原生文件管理器与纯文本编辑器（如 Typora / VS Code）。
  *
- * 核心理念：
- * - 软件不存文件，一切皆磁盘文件；
- * - 列表展示真实物理路径与最后访问时间；
- * - 无论软件自建还是外部导入，身份地位完全一致。
+ * 核心设计：
+ * - 纯净单行条目（图标 + 文件名 + 右侧悬浮操作），无多余卡片边框与标签堆叠；
+ * - 绝对不把冗长物理路径挤进条目内（悬停 title 提示完整路径）；
+ * - 统一处理新建、副本、重命名、在文件管理器中显示、置顶与彻底删除。
  */
 export function RecentFileList({
   files,
@@ -36,6 +39,8 @@ export function RecentFileList({
   onOpen,
   onNew,
   onOpenFilePicker,
+  onDuplicate,
+  onRename,
   onReveal,
   onRemoveFromHistory,
   onDeleteFromDisk,
@@ -54,10 +59,23 @@ export function RecentFileList({
         onSelect: () => onTogglePin(file.path, !file.pinned),
       },
       {
+        id: "duplicate",
+        label: zh.fileTree.duplicate,
+        onSelect: () => {
+          onDuplicate?.(file.path, file.name);
+        },
+      },
+      {
+        id: "rename",
+        label: zh.fileTree.rename,
+        shortcut: "F2",
+        onSelect: () => onRename?.(file.path, file.name),
+      },
+      {
         id: "reveal",
-        label: "在文件管理器中显示",
+        label: zh.fileTree.revealInExplorer,
         disabled: !file.exists,
-        onSelect: () => onReveal(file.path),
+        onSelect: () => onReveal(file.path, file.name),
       },
       {
         id: "remove-history",
@@ -72,160 +90,121 @@ export function RecentFileList({
         onSelect: () => setPendingDelete({ file, mode: "disk" }),
       },
     ],
-    [onTogglePin, onReveal],
+    [onTogglePin, onReveal, onDuplicate, onRename],
   );
+
+  if (files.length === 0) {
+    return (
+      <EmptyState
+        title="还没有打开过文档"
+        description="软件中打开或创建的所有 Markdown 文件都会记录在这里。"
+        action={
+          <div className="recent-file-empty-actions">
+            {onNew && (
+              <Button variant="primary" size="sm" onClick={onNew}>
+                <span>新建笔记</span>
+              </Button>
+            )}
+            {onOpenFilePicker && (
+              <Button variant="secondary" size="sm" onClick={onOpenFilePicker}>
+                <span>打开文件</span>
+              </Button>
+            )}
+          </div>
+        }
+      />
+    );
+  }
 
   return (
     <div className="recent-file-list" role="region" aria-label="文件列表">
-      {/* 顶部轻量工具栏：新建与打开 */}
-      <div className="recent-file-list__header">
-        <span className="recent-file-list__title">最近文档</span>
-        <div className="recent-file-list__actions">
-          <Tooltip content="新建笔记">
-            <Button variant="ghost" size="sm" iconOnly aria-label="新建笔记" onClick={onNew}>
-              <Plus size={15} aria-hidden />
-            </Button>
-          </Tooltip>
-          <Tooltip content="打开本地文件">
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              aria-label="打开本地文件"
-              onClick={onOpenFilePicker}
-            >
-              <FolderOpen size={15} aria-hidden />
-            </Button>
-          </Tooltip>
-        </div>
-      </div>
+      <div className="recent-file-tree" role="tree" aria-label={zh.fileTree.ariaLabel}>
+        {files.map((file) => {
+          const isActive = activePath
+            ? samePath(file.path, activePath) || file.path === activePath || file.pathKey === activePath
+            : false;
 
-      {files.length === 0 ? (
-        <EmptyState
-          title="还没有打开过文档"
-          description="软件中打开或创建的所有 Markdown 文件都会记录在这里。"
-          action={
-            <div className="recent-file-list__empty-actions">
-              <Button variant="primary" size="sm" onClick={onNew}>
-                <Plus size={14} aria-hidden />
-                <span>新建笔记</span>
-              </Button>
-              <Button variant="secondary" size="sm" onClick={onOpenFilePicker}>
-                <FolderOpen size={14} aria-hidden />
-                <span>打开文件</span>
-              </Button>
-            </div>
-          }
-        />
-      ) : (
-        <ul className="recent-file-list__items" role="list">
-          {files.map((file) => {
-            const isActive = activePath ? samePath(file.path, activePath) : false;
-            return (
-              <li
-                key={file.pathKey}
+          return (
+            <div key={file.pathKey} className="recent-file-row" role="treeitem">
+              <button
+                type="button"
                 className="recent-file-item"
-                data-active={isActive || undefined}
+                data-selected={isActive || undefined}
                 data-missing={!file.exists || undefined}
-                data-pinned={file.pinned || undefined}
+                aria-label={!file.exists ? `${file.name}，文件不存在` : file.name}
+                onClick={() => onOpen(file.path)}
+                title={file.path}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ file, x: e.clientX, y: e.clientY });
                 }}
               >
-                <button
-                  type="button"
-                  className="recent-file-item__body"
-                  aria-label={!file.exists ? `${file.name}，文件不存在` : file.name}
-                  data-missing={!file.exists || undefined}
-                  onClick={() => onOpen(file.path)}
-                  title={file.path}
-                >
-                  <span className="recent-file-item__icon">
-                    <FileIcon filename={file.name} />
-                  </span>
+                <FileIcon filename={file.name} size={14} aria-hidden />
+                <span className="recent-file-name">{file.name}</span>
 
-                  <span className="recent-file-item__info">
-                    <span className="recent-file-item__name">
-                      {file.name}
-                      {file.pinned && <Pin size={11} className="recent-file-item__pin-icon" aria-label="已置顶" />}
-                    </span>
-                    <span className="recent-file-item__path" title={file.path}>
-                      {file.path}
-                    </span>
-                  </span>
+                {file.pinned && (
+                  <Pin size={11} className="recent-file-pin" aria-label="已置顶" />
+                )}
 
-                  {!file.exists && (
-                    <Tooltip content="文件已从磁盘移动或删除">
-                      <span className="recent-file-item__missing-tag" aria-label="文件不存在">
-                        <TriangleAlert size={13} aria-hidden />
-                      </span>
-                    </Tooltip>
-                  )}
-                </button>
+                {!file.exists && (
+                  <Tooltip content="文件已从磁盘移动或删除">
+                    <TriangleAlert size={13} className="recent-file-missing" aria-label="文件不存在" />
+                  </Tooltip>
+                )}
+              </button>
 
+              <Tooltip content={zh.fileTree.moreActions}>
                 <Button
                   variant="ghost"
                   size="sm"
                   iconOnly
-                  className="recent-file-item__more"
-                  aria-label={`文档 ${file.name} 更多操作`}
+                  className="recent-file-more"
+                  aria-label={`${file.name} ${zh.fileTree.moreActions}`}
                   onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setMenu({ file, x: rect.right, y: rect.bottom });
+                    e.stopPropagation();
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setMenu({ file, x: r.left, y: r.bottom + 2 });
                   }}
                 >
                   <MoreHorizontal size={14} aria-hidden />
                 </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+              </Tooltip>
+            </div>
+          );
+        })}
+      </div>
 
-      {/* 右键/更多菜单 */}
-      {menu && (
-        <ContextMenu
-          open={true}
-          x={menu.x}
-          y={menu.y}
-          items={menuItems(menu.file)}
-          onClose={closeMenu}
-          ariaLabel={`文档 ${menu.file.name} 操作菜单`}
-        />
-      )}
+      <ContextMenu
+        open={menu !== null}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        items={menu ? menuItems(menu.file) : []}
+        onClose={closeMenu}
+      />
 
-      {/* 确认对话框：从历史移除 vs 从磁盘物理删除 */}
-      {pendingDelete && (
-        <Dialog
-          open={true}
-          title={pendingDelete.mode === "disk" ? `彻底删除 ${pendingDelete.file.name}？` : `从历史记录中移除？`}
-          confirmLabel={pendingDelete.mode === "disk" ? "删除文件" : "移除记录"}
-          cancelLabel="取消"
-          destructive={true}
-          onCancel={() => setPendingDelete(null)}
-          onConfirm={() => {
-            if (pendingDelete.mode === "disk") {
-              onDeleteFromDisk(pendingDelete.file.path);
-            } else {
-              onRemoveFromHistory(pendingDelete.file.path);
-            }
-            setPendingDelete(null);
-          }}
-        >
-          {pendingDelete.mode === "disk" ? (
-            <p className="ui-dialog__desc">
-              这将把该文件从你的磁盘中彻底删除，操作无法撤销：
-              <br />
-              <code>{pendingDelete.file.path}</code>
-            </p>
-          ) : (
-            <p className="ui-dialog__desc">
-              只从软件的最近打开记录中清除，<strong>磁盘上的原文件不会被删除</strong>。
-            </p>
-          )}
-        </Dialog>
-      )}
+      <Dialog
+        open={pendingDelete !== null}
+        title={pendingDelete?.mode === "disk" ? "彻底删除文件" : "从列表中移除"}
+        confirmLabel={pendingDelete?.mode === "disk" ? "从磁盘彻底删除" : "从列表中移除"}
+        cancelLabel="取消"
+        destructive={pendingDelete?.mode === "disk"}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          if (pendingDelete.mode === "disk") {
+            onDeleteFromDisk(pendingDelete.file.path);
+          } else {
+            onRemoveFromHistory(pendingDelete.file.path);
+          }
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      >
+        <p>
+          {pendingDelete?.mode === "disk"
+            ? `确定要从磁盘彻底删除文件「${pendingDelete.file.name}」吗？此操作无法撤销。`
+            : `确定要将「${pendingDelete?.file.name}」从历史记录中移除吗？磁盘上的物理文件不会被删除。`}
+        </p>
+      </Dialog>
     </div>
   );
 }

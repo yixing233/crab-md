@@ -7,6 +7,9 @@ const listExternalFiles = vi.fn();
 const readExternalFile = vi.fn();
 const saveExternalFile = vi.fn();
 const forgetExternalFile = vi.fn();
+
+let openFilesListener: ((paths: string[]) => Promise<void> | void) | undefined;
+
 vi.mock("./lib/api", () => ({
   api: {
     listDocuments: (...a: unknown[]) => listDocuments(...a),
@@ -16,6 +19,12 @@ vi.mock("./lib/api", () => ({
     renameDocument: vi.fn(),
     deleteDocument: vi.fn(),
     duplicateDocument: vi.fn(),
+    listenOpenFiles: vi.fn((handler: (paths: string[]) => Promise<void> | void) => {
+      openFilesListener = handler;
+      return Promise.resolve(() => {
+        openFilesListener = undefined;
+      });
+    }),
     // 外部文件：打开时读盘、保存时写回、列表来自数据库。
     readExternalFile: (...a: unknown[]) => readExternalFile(...a),
     saveExternalFile: (...a: unknown[]) => saveExternalFile(...a),
@@ -1170,5 +1179,28 @@ describe("external files survive a restart", () => {
     // 标签仍在，编辑内容仍在（脏标记让标签名带上「未保存」）。
     expect(screen.getByRole("tab", { name: /外部\.md/ })).toBeInTheDocument();
     expect(useWorkspaceStore.getState().activeContent).toBe("写不进去的改动");
+  });
+
+  it("opens a new tab in the running instance when receiving open-files event from a second process", async () => {
+    readExternalFile.mockResolvedValue({
+      path: "E:\\docs\\incoming.md",
+      name: "incoming.md",
+      content: "# 来自第二个进程",
+      size: 10,
+      modifiedAt: "2026-01-01T00:00:00Z",
+    });
+
+    render(<App />);
+    await screen.findByRole("banner");
+
+    // 模拟第二个进程向已有进程分发的 open-files 事件
+    await waitFor(() => expect(openFilesListener).toBeDefined());
+    await openFilesListener!(["E:\\docs\\incoming.md"]);
+
+    // 应在当前实例中直接打开对应的新标签页
+    await waitFor(() => expect(readExternalFile).toHaveBeenCalledWith("E:\\docs\\incoming.md"));
+    expect(await screen.findByRole("tab", { name: "incoming.md" })).toBeInTheDocument();
+    expect(useWorkspaceStore.getState().activeId).toBe("ext:E:\\docs\\incoming.md");
+    expect(useWorkspaceStore.getState().activeContent).toBe("# 来自第二个进程");
   });
 });

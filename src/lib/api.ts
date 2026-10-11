@@ -217,4 +217,21 @@ export const api = {
    * 不用前端构建期常量：那是另一份可能漂移的版本号。
    */
   appVersion: () => call<string>("app_version"),
+
+  /**
+   * 监听跨进程单实例文件打开事件（外部关联双击 / 命令行传参）。
+   * 返回一个退订函数（unlisten）。在非 Tauri 环境下返回空操作。
+   */
+  listenOpenFiles: async (handler: (paths: string[]) => void | Promise<void>): Promise<() => void> => {
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      return await listen<string[]>("open-files", (event) => {
+        if (Array.isArray(event.payload)) {
+          void handler(event.payload);
+        }
+      });
+    } catch {
+      return () => {};
+    }
+  },
 };

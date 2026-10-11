@@ -1232,6 +1232,35 @@ export default function App() {
     };
   }, [handleOpenPath, loadDocuments, loadExternalFiles, loadRecentFiles]);
 
+  /**
+   * 单实例跨进程打开文件监听：
+   * 当用户在外部（资源管理器双击 / 命令行）用本软件打开文件，而已有实例已在运行时，
+   * 后台会通过 single-instance 插件激活当前窗口并广播 "open-files" 事件。
+   * 此处在已有窗口中直接追加打开新标签页，绝不开启多余进程。
+   */
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    void (async () => {
+      const off = await api.listenOpenFiles(async (paths) => {
+        for (const path of paths) {
+          await handleOpenPath(path);
+        }
+      });
+      if (cancelled) {
+        off();
+      } else {
+        unlisten = off;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [handleOpenPath]);
+
   // 全局快捷键（UI_DESIGN_SYSTEM.md §29）。集中在此处而非散落各页面。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

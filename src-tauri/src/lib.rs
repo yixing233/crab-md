@@ -43,6 +43,26 @@ fn command_line_opened_files() -> Vec<String> {
         .collect()
 }
 
+fn parse_instance_args(args: &[String], cwd: &str) -> Vec<String> {
+    args.iter()
+        .skip(1)
+        .filter_map(|arg| {
+            let p = Path::new(arg);
+            let extension = p.extension()?.to_str()?.to_ascii_lowercase();
+            if matches!(extension.as_str(), "txt" | "md" | "markdown") {
+                let absolute = if p.is_relative() {
+                    Path::new(cwd).join(p)
+                } else {
+                    p.to_path_buf()
+                };
+                Some(absolute.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// 取走启动时由文件关联传入的路径；重复调用不会重复打开同一个文件。
 #[tauri::command]
 fn opened_files(files: tauri::State<'_, OpenedFiles>) -> Vec<String> {
@@ -104,6 +124,29 @@ fn app_version(app: tauri::AppHandle) -> String {
 pub fn run() {
     tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(command_line_opened_files())))
+        // 单实例模式：当应用已在运行，后续通过文件关联或命令行打开文件时，
+        // 将命令行参数转发给已运行的实例，唤醒窗口并在新标签页中打开，不启动重复进程。
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            let files = parse_instance_args(&args, &cwd);
+            if !files.is_empty() {
+                if let Some(opened) = app.try_state::<OpenedFiles>() {
+                    if let Ok(mut lock) = opened.0.lock() {
+                        for f in &files {
+                            if !lock.contains(f) {
+                                lock.push(f.clone());
+                            }
+                        }
+                    }
+                }
+                let _ = app.emit("open-files", &files);
+            }
+
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         // 设置页需要「浏览…」选目录；原生选择器交给官方插件，
         // 不在前端自造路径输入。

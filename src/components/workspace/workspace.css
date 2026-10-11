@@ -215,6 +215,132 @@
 }
 
 /* ---------------------------------------------------------------------------
+   统一文件列表样式（RecentFileList）
+   对标 VS Code / 原生文件树：紧凑精致、单行自适应、无多余边框、无黑点，与设计系统无缝契合
+   --------------------------------------------------------------------------- */
+
+.recent-file-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-1) var(--space-2) var(--space-3);
+  gap: 1px;
+}
+
+.recent-file-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.recent-file-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  flex: 1 1 100%;
+  min-width: 0;
+  height: var(--density-tree-item-height, 30px);
+  padding: 0 var(--space-2);
+  padding-right: 28px;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  background: transparent;
+  border: none !important;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  outline: none;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.recent-file-item:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.recent-file-item[data-selected] {
+  background: var(--bg-surface-active);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.recent-file-item[data-selected] svg {
+  color: var(--accent);
+}
+
+.recent-file-item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.recent-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.recent-file-pin {
+  margin-left: 4px;
+  color: var(--accent-solid);
+  flex-shrink: 0;
+}
+
+.recent-file-missing {
+  color: var(--danger);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin-left: var(--space-1);
+}
+
+/* 移动/删除失效文件：中划线弱化 */
+.recent-file-item[data-missing] .recent-file-name {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.recent-file-more {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  padding: 0 !important;
+  margin: 0 !important;
+  opacity: 0;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  z-index: 2;
+  transition: opacity var(--duration-fast) ease,
+              background-color var(--duration-fast) ease;
+}
+
+.recent-file-row:hover .recent-file-more,
+.recent-file-more:focus-visible,
+.recent-file-more[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.recent-file-more:hover {
+  background-color: var(--bg-surface-active);
+  color: var(--text-primary);
+}
+
+.recent-file-empty-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* ---------------------------------------------------------------------------
    Breadcrumb（UI §17）
    --------------------------------------------------------------------------- */
 
