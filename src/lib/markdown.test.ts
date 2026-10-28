@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  LOCAL_IMAGE_PLACEHOLDER_PREFIX,
+  localImagePlaceholder,
   renderMarkdown,
   resolveKatexPlugin,
   sanitizeMermaidSvg,
@@ -365,5 +367,195 @@ describe("Task Lists", () => {
         setRenderToggles({ mermaid: true });
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 页内锚点：标题 id 生成（`[见下文](#标题)` 跳转的另一半在点击侧）
+// ---------------------------------------------------------------------------
+
+describe("renderMarkdown heading anchors", () => {
+  it("gives every heading a stable anchor id", () => {
+    const html = renderMarkdown("# 开始\n\n正文\n\n## 小节");
+    expect(html).toContain(`<h1 id="h-${encodeURIComponent("开始")}"`);
+    expect(html).toContain(`<h2 id="h-${encodeURIComponent("小节")}"`);
+  });
+
+  it("disambiguates duplicate headings with a counter suffix", () => {
+    const html = renderMarkdown("# 同名\n\n# 同名\n\n# 同名");
+    const ids = [...html.matchAll(/<h1 id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toEqual([
+      `h-${encodeURIComponent("同名")}`,
+      `h-${encodeURIComponent("同名")}-2`,
+      `h-${encodeURIComponent("同名")}-3`,
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 脚注（markdown-it-footnote）
+// ---------------------------------------------------------------------------
+
+describe("renderMarkdown footnotes", () => {
+  it("renders footnote references and the sanitized endnote section", () => {
+    const html = renderMarkdown("正文[^1]继续。\n\n[^1]: 这是脚注说明。");
+    expect(html).toContain('class="footnote-ref"');
+    expect(html).toContain('href="#fn1"');
+    expect(html).toContain('class="footnote-backref"');
+    expect(html).toContain("这是脚注说明。");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// YAML front matter（Obsidian / Jekyll 等导出文件的文件头元信息）
+// ---------------------------------------------------------------------------
+
+describe("renderMarkdown front matter", () => {
+  it("renders YAML front matter as a metadata table before the body", () => {
+    const html = renderMarkdown("---\ntitle: 我的笔记\ntags: 随笔\n---\n\n# 正文标题");
+    expect(html).toContain('class="front-matter"');
+    expect(html).toContain("<th>title</th>");
+    expect(html).toContain("<td>我的笔记</td>");
+    expect(html).toContain("<h1");
+    expect(html.indexOf("front-matter")).toBeLessThan(html.indexOf("<h1"));
+  });
+
+  it("escapes front matter values (untrusted input)", () => {
+    const html = renderMarkdown("---\ntitle: <img src=x onerror=alert(1)>\n---\n\n正文");
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img");
+  });
+
+  it("does not add a metadata table when there is no front matter", () => {
+    const html = renderMarkdown("# 直接开始");
+    expect(html).not.toContain("front-matter");
+  });
+
+  it("keeps an ordinary thematic break after content as-is", () => {
+    const html = renderMarkdown("第一段\n\n---\n\n第二段");
+    expect(html).toContain("<hr");
+    expect(html).not.toContain("front-matter");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 本地图片占位符（外部文件预览的相对路径图片）
+// ---------------------------------------------------------------------------
+
+describe("renderMarkdown local images", () => {
+  it("leaves image sources untouched by default (workspace docs)", () => {
+    const html = renderMarkdown("![图](./images/pic.png)");
+    expect(html).toContain('src="./images/pic.png"');
+  });
+
+  it("rewrites local image sources into loadable placeholders on request", () => {
+    const html = renderMarkdown("![图](./images/pic.png)", { localImages: true });
+    expect(html).toContain(
+      `src="${LOCAL_IMAGE_PLACEHOLDER_PREFIX}${encodeURIComponent("./images/pic.png")}"`,
+    );
+  });
+
+  it("decodes percent-encoded references before re-encoding into the placeholder", () => {
+    // normalizeLink 先把中文编码成 %XX；渲染器必须解回原文再进占位符，
+    // 否则 Rust 侧按 %XX 字面找文件会找不到。
+    const html = renderMarkdown("![图](截图.png)", { localImages: true });
+    expect(html).toContain(`src="${localImagePlaceholder("截图.png")}"`);
+  });
+
+  it("strips query and fragment from local references", () => {
+    const html = renderMarkdown("![图](./pic.png?v=2#frag)", { localImages: true });
+    expect(html).toContain(`src="${localImagePlaceholder("./pic.png")}"`);
+  });
+
+  it("keeps remote and data sources untouched", () => {
+    const html = renderMarkdown(
+      ["![a](https://example.com/x.png)", "![b](data:image/png;base64,AAAA)"].join("\n"),
+      { localImages: true },
+    );
+    expect(html).toContain('src="https://example.com/x.png"');
+    expect(html).toContain('src="data:image/png;base64,AAAA"');
+    expect(html).not.toContain("crab-md-local.invalid");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [[Wiki 链接]]（Obsidian 风格互链）
+// ---------------------------------------------------------------------------
+
+describe("renderMarkdown wiki links", () => {
+  it("renders [[笔记]] as a link to the sibling markdown file", () => {
+    const html = renderMarkdown("见 [[下一节]]。");
+    expect(html).toContain('class="wiki-link"');
+    expect(html).toContain('href="下一节.md"');
+    expect(html).toContain("下一节");
+    // `[[` / `]]` 标记不再出现在可见文本里
+    expect(html).not.toContain("[[");
+  });
+
+  it("honors the |alias| display text", () => {
+    const html = renderMarkdown("[[目标笔记|显示名字]]");
+    expect(html).toContain('href="目标笔记.md"');
+    expect(html).toContain(">显示名字</a>");
+    expect(html).not.toContain("目标笔记</a>");
+  });
+
+  it("keeps the #anchor in the href and the display text", () => {
+    const html = renderMarkdown("[[目标#小节]]");
+    expect(html).toContain('href="目标.md#小节"');
+    expect(html).toContain(">目标#小节</a>");
+  });
+
+  it("supports same-document anchors [[#标题]]", () => {
+    const html = renderMarkdown("[[#结论]]");
+    expect(html).toContain('href="#结论"');
+  });
+
+  it("does not append .md to explicit extensions", () => {
+    expect(renderMarkdown("[[notes.txt]]")).toContain('href="notes.txt"');
+    expect(renderMarkdown("[[a/b/c.md]]")).toContain('href="a/b/c.md"');
+  });
+
+  it("rejects scheme-carrying targets", () => {
+    // `:` 挡 scheme 注入：这类目标按普通文本渲染，不产生链接。
+    const html = renderMarkdown("[[javascript:alert(1)]]");
+    expect(html).not.toContain('href="javascript');
+    expect(html).not.toContain('class="wiki-link"');
+  });
+
+  it("leaves empty brackets as literal text", () => {
+    expect(renderMarkdown("[[]]")).not.toContain("wiki-link");
+  });
+
+  it("does not convert wiki links inside inline code", () => {
+    const html = renderMarkdown("`[[示例]]`");
+    expect(html).not.toContain('class="wiki-link"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 长代码块折叠（仅 env.collapsibleCode）
+// ---------------------------------------------------------------------------
+
+describe("renderMarkdown collapsible code blocks", () => {
+  const longBody = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join("\n");
+
+  it("marks long blocks collapsed with an expand button when requested", () => {
+    const html = renderMarkdown("```js\n" + longBody + "\n```", { collapsibleCode: true });
+    expect(html).toContain('data-collapsed="true"');
+    expect(html).toContain('data-line-count="30"');
+    expect(html).toContain('class="code-block__expand"');
+    expect(html).toContain("展开全部 30 行");
+  });
+
+  it("keeps short blocks uncollapsed", () => {
+    const html = renderMarkdown("```js\na\nb\n```", { collapsibleCode: true });
+    expect(html).not.toContain("data-collapsed");
+    expect(html).not.toContain("code-block__expand");
+  });
+
+  it("does not collapse without the env flag (editor widgets, print modal)", () => {
+    const html = renderMarkdown("```js\n" + longBody + "\n```");
+    expect(html).not.toContain("data-collapsed");
+    expect(html).not.toContain("code-block__expand");
   });
 });

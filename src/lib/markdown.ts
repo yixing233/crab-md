@@ -1,6 +1,8 @@
 import DOMPurify from "dompurify";
 import MarkdownIt, { type StateInline } from "markdown-it";
 import katex from "@vscode/markdown-it-katex";
+import footnotePlugin from "markdown-it-footnote";
+import frontMatterPlugin from "markdown-it-front-matter";
 import { highlightCode } from "./codeHighlight";
 import { COPY_ICON_SVG } from "./codeBlockIcons";
 import { getRenderToggles } from "./renderToggles";
@@ -46,6 +48,21 @@ md.use(resolveKatexPlugin(katex) as typeof katex, {
   // 输出同时包含 MathML（无障碍朗读）与 HTML（视觉排版）。
   output: "htmlAndMathml",
 });
+
+// 脚注：`[^1]` … `[^1]: 说明` 渲染为文末注释区与可点击的往返链接。
+// 输出只有 sup/a/ol/section 等标准标签，DOMPurify 全部放行（有测试锁定）。
+md.use(resolveKatexPlugin(footnotePlugin) as typeof footnotePlugin);
+
+// YAML front matter（Obsidian/Jekyll 等导出文件的文件头元信息）。
+// 插件把它从正文里整体摘走（不再渲染成分隔线+裸文本），原始文本经
+// 回调捕获；renderMarkdown 里同步取出并渲染成元信息表。
+let capturedFrontMatter: string | null = null;
+md.use(
+  resolveKatexPlugin(frontMatterPlugin) as typeof frontMatterPlugin,
+  (raw: string) => {
+    capturedFrontMatter = raw;
+  },
+);
 
 /** 与插件一致：字母、数字、下划线都算「单词字符」。 */
 const WORD_CHAR = /[\w\d]/;
@@ -114,6 +131,95 @@ function mathInlineAnywhere(state: StateInline, silent: boolean): boolean {
 // 否则守卫会先把这里当成普通文本消费掉。
 md.inline.ruler.before("math_inline", "math_inline_anywhere", mathInlineAnywhere);
 
+// ---------------------------------------------------------------------------
+// [[Wiki 链接]]（Obsidian 风格的笔记互链）
+// ---------------------------------------------------------------------------
+
+/** Wiki 目标里禁止出现的字符：`:` 挡 scheme 注入，其余挡嵌套/换行。 */
+const WIKI_TARGET_FORBIDDEN = /[\[\]|\n\r]/;
+
+/**
+ * 把 `[[目标]]` 解析为 { target, anchor, alias }；不匹配或非法返回 null。
+ *
+ * 支持的写法（与 Obsidian 对齐）：
+ * - `[[笔记]]` → 同目录 `笔记.md`
+ * - `[[笔记|显示名]]` → 链接 `笔记.md`，显示「显示名」
+ * - `[[笔记#标题]]` / `[[#标题]]` → 带页内锚点 / 同文档锚点
+ */
+export function parseWikiLink(raw: string): { target: string; anchor: string | null; alias: string | null } | null {
+  // 字符类只排除括号与换行；`|` 是别名的分隔符，要在匹配之后才拆分。
+  const match = raw.match(/^\[\[([^\[\]\n\r]*?)\]\]/);
+  if (!match) return null;
+
+  let body = match[1];
+  let alias: string | null = null;
+  const pipe = body.indexOf("|");
+  if (pipe !== -1) {
+    alias = body.slice(pipe + 1).trim() || null;
+    body = body.slice(0, pipe);
+  }
+
+  let target = body.trim();
+  let anchor: string | null = null;
+  const hash = target.lastIndexOf("#");
+  if (hash !== -1) {
+    anchor = target.slice(hash + 1).trim() || null;
+    target = target.slice(0, hash).trim();
+  }
+
+  if (target === "" && !anchor) return null;
+  if (WIKI_TARGET_FORBIDDEN.test(target)) return null;
+  // `:` 在 Windows 文件名里非法，也顺带挡死 `javascript:` 之类 scheme。
+  if (target.includes(":")) return null;
+
+  // 无扩展名的目标按 Markdown 笔记处理（Obsidian 的默认语义）。
+  if (target !== "" && !/\.(md|markdown|txt)$/i.test(target)) {
+    target = `${target}.md`;
+  }
+  return { target, anchor, alias };
+}
+
+/**
+ * Wiki 链接的最终 href：与相对路径互链完全同一形态，
+ * 复用既有的解析与打开管线（resolveLocalLink / 锚点滚动）。
+ */
+export function wikiLinkHref(parsed: { target: string; anchor: string | null }): string {
+  if (parsed.target === "") return `#${parsed.anchor ?? ""}`;
+  return parsed.anchor ? `${parsed.target}#${parsed.anchor}` : parsed.target;
+}
+
+/** Wiki 链接显示文本：显式别名优先，否则目标名（去扩展名，保留锚点）。 */
+export function wikiLinkText(parsed: { target: string; anchor: string | null; alias: string | null }): string {
+  if (parsed.alias !== null) return parsed.alias;
+  const name = parsed.target.replace(/\.(md|markdown|txt)$/i, "");
+  return parsed.anchor ? `${name}#${parsed.anchor}` : name;
+}
+
+/**
+ * `[[...]]` 内联规则。必须排在 `link` 之前：CommonMark 对 `[[x]]` 的解析
+ * 结果是字面文本（外层候选链失败），但我们要抢在它之前整体消费。
+ */
+function wikiLinkInline(state: StateInline, silent: boolean): boolean {
+  if (state.src[state.pos] !== "[" || state.src[state.pos + 1] !== "[") return false;
+
+  const consumed = state.src.slice(state.pos).match(/^\[\[[^\[\]\n\r]*?\]\]/);
+  if (!consumed) return false;
+  const parsed = parseWikiLink(consumed[0]);
+  if (!parsed) return false;
+
+  if (!silent) {
+    const open = state.push("link_open", "a", 1);
+    open.attrSet("href", wikiLinkHref(parsed));
+    open.attrSet("class", "wiki-link");
+    const text = state.push("text", "", 0);
+    text.content = wikiLinkText(parsed);
+    state.push("link_close", "a", -1);
+  }
+  state.pos += consumed[0].length;
+  return true;
+}
+md.inline.ruler.before("link", "wiki_link", wikiLinkInline);
+
 /**
  * 「渲染公式」开关的运行时闸门。
  *
@@ -177,18 +283,64 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
       ? rawRendered
       : `<pre><code class="hljs language-${md.utils.escapeHtml(langLabel)}">${highlighted}</code></pre>\n`;
 
+  // 长代码块默认折叠（仅预览 env 请求时）：先看到开头，感兴趣再展开。
+  // 打印/PDF 由 @media print 强制展开，不会打出半截代码。
+  const lineCount = token.content.replace(/\n$/, "").split("\n").length;
+  const collapsible = env?.collapsibleCode === true && lineCount > CODE_COLLAPSE_THRESHOLD;
+
   return [
-    `<div class="code-block" data-language="${md.utils.escapeHtml(langLabel)}">`,
+    `<div class="code-block" data-language="${md.utils.escapeHtml(langLabel)}"`,
+    collapsible
+      ? ` data-collapsed="true" data-line-count="${lineCount}">`
+      : ">",
     '  <div class="code-block__header">',
     `    <span class="code-block__lang">${md.utils.escapeHtml(langLabel)}</span>`,
     '    <button type="button" class="code-block__copy" aria-label="复制代码" title="复制代码">',
     `      ${COPY_ICON_SVG}`,
-    '    </button>',
-    '  </div>',
+    "    </button>",
+    "  </div>",
     codeHtml,
+    collapsible
+      ? `  <button type="button" class="code-block__expand">展开全部 ${lineCount} 行</button>\n`
+      : "",
     '</div>\n',
   ].join("\n");
 };
+
+/** 页内锚点 id 的统一前缀；点击 `#标题` 链接时按同一规则反查。 */
+export const HEADING_ID_PREFIX = "h-";
+
+/**
+ * 为标题生成页内锚点 id：`h-` + encodeURIComponent(标题文本)。
+ * 同名标题依次追加 `-2`、`-3`…… 链接只能指向第一个同名标题（与 GitHub 一致）。
+ *
+ * 之所以自己生成而不是用 markdown-it-anchor：点击侧的反查必须与生成侧
+ * 完全同规则（中文标题会先被 normalizeLink 编码成 %XX），一份规则两处
+ * 复用才不会出现「生成的 id 和链接对不上」。
+ */
+function headingAnchorId(text: string, occurrence: number): string {
+  const base = `${HEADING_ID_PREFIX}${encodeURIComponent(text)}`;
+  return occurrence === 0 ? base : `${base}-${occurrence + 1}`;
+}
+
+/** 页内锚点：为每个标题注入 id，让 `[见下文](#标题)` 可以真正跳转。 */
+md.core.ruler.after("inline", "heading_anchor", (state) => {
+  const used = new Map<string, number>();
+  for (let i = 0; i < state.tokens.length; i++) {
+    if (state.tokens[i].type !== "heading_open") continue;
+    const inline = state.tokens[i + 1];
+    const text = (inline?.children ?? [])
+      .map((child) => child.content)
+      .join("")
+      .trim();
+    if (!text) continue;
+
+    const key = text.toLowerCase();
+    const occurrence = used.get(key) ?? 0;
+    used.set(key, occurrence + 1);
+    state.tokens[i].attrSet("id", headingAnchorId(text, occurrence));
+  }
+});
 
 /** 任务清单解析器（- [ ] 与 - [x] 渲染为可交互复选框） */
 md.core.ruler.after("inline", "task_list", (state) => {
@@ -247,6 +399,70 @@ md.renderer.rules.table_open = function (tokens, idx, options, env, self) {
 md.renderer.rules.table_close = function (tokens, idx, options, env, self) {
   return defaultTableClose(tokens, idx, options, env, self) + "</div>";
 };
+
+/**
+ * 本地图片占位 URL 的固定来源。
+ *
+ * 外部磁盘文件里的 `![](./images/x.png)` 不能直接交给 webview：
+ * 相对 src 会按应用自身路径解析成破图，`E:\...` 盘符路径会被 DOMPurify
+ * 当成未知协议剥掉。因此渲染时先改写成这个固定 https 占位符（能安全
+ * 通过消毒），预览组件再按占位符从磁盘读图、注入本地 blob URL。
+ */
+export const LOCAL_IMAGE_PLACEHOLDER_PREFIX = "https://crab-md-local.invalid/";
+
+/** 从已渲染 HTML 中找出本地图片占位符；捕获组是整体编码后的引用。 */
+export const LOCAL_IMAGE_PLACEHOLDER_RE =
+  /https:\/\/crab-md-local\.invalid\/([^\s"'<>]+)/g;
+
+/** 本地图片引用占位符：整体再编码一次，保证占位 URL 自身永远合法。 */
+export function localImagePlaceholder(reference: string): string {
+  return LOCAL_IMAGE_PLACEHOLDER_PREFIX + encodeURIComponent(reference);
+}
+
+/** 从占位符还原原始引用；编码损坏时返回 null（加载侧跳过）。 */
+export function decodeLocalImageRef(encoded: string): string | null {
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+}
+
+/** 视为远程/内联、不做本地解析的 src 协议。file: 一并排除（安全边界）。 */
+const NON_LOCAL_IMAGE_RE = /^(?:https?:|data:|blob:|file:|mailto:)/i;
+
+const defaultImageRenderer = md.renderer.rules.image;
+md.renderer.rules.image = (tokens, index, options, env, self) => {
+  const token = tokens[index];
+  // markdown-it v15 的 attr 值类型是 string | number；这里按字符串处理。
+  const src = String(token.attrGet("src") ?? "");
+
+  // 仅在外层明确启用时改写（外部文件预览）；工作区文档与既有测试
+  // 看到的 src 保持原样。
+  if (env?.localImages === true && src && !NON_LOCAL_IMAGE_RE.test(src)) {
+    // markdown-it 的 normalizeLink 已把非 ASCII 编码成 %XX；先解回原文
+    // 再编码进占位符，取出时解码才能得到与磁盘一致的文件名。
+    let reference = src;
+    try {
+      reference = decodeURIComponent(src);
+    } catch {
+      // 保留原样（畸形编码按字面处理）。
+    }
+    // 本地路径没有查询/片段成分，`x.png?v=2` 实际指向 x.png。
+    reference = reference.split("#")[0].split("?")[0];
+    if (reference) {
+      token.attrSet("src", localImagePlaceholder(reference));
+    }
+  }
+
+  return (
+    defaultImageRenderer?.(tokens, index, options, env, self) ??
+    self.renderToken(tokens, index, options)
+  );
+};
+
+/** 预览中超过该行数的代码块默认折叠（env.collapsibleCode 开启时）。 */
+export const CODE_COLLAPSE_THRESHOLD = 20;
 
 /**
  * 切换 Markdown 源码中第 taskIndex 个复选框的状态（[ ] ↔ [x]）。
@@ -322,18 +538,26 @@ export function sanitizeMermaidSvg(svg: string): string {
   });
 }
 
+let mermaidInitialized = false;
+
 /**
  * Parse and render one Mermaid source string, returning only sanitized SVG.
  * `htmlLabels: false` keeps Mermaid's labels in SVG text nodes rather than
  * introducing HTML `foreignObject` content that would need to be trusted.
+ *
+ * `initialize` 只执行一次：配置固定不变，逐图重初始化纯属浪费
+ * （一篇文档可能有十几个图，每个都重走一遍全局配置）。
  */
 export async function renderMermaidDiagram(source: string, id: string): Promise<string> {
   const mermaid = await loadMermaid();
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: "strict",
-    htmlLabels: false,
-  });
+  if (!mermaidInitialized) {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      htmlLabels: false,
+    });
+    mermaidInitialized = true;
+  }
 
   const result = await mermaid.render(id, source);
   const svg = typeof result === "string" ? result : result.svg;
@@ -428,6 +652,27 @@ function installStyleFilter(): void {
 installStyleFilter();
 
 /**
+ * 把捕获到的 front matter 渲染成安静的元信息表。
+ *
+ * 只做行级 `key: value` 解析：front matter 的键值对是元信息展示，
+ * 嵌套结构（列表、多行值）不是给阅读者的，略去不强求 YAML 完备性。
+ * 没有可解析的键值对时不输出任何东西。
+ */
+function renderFrontMatterTable(raw: string): string {
+  const rows: string[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z0-9_\-. ]+?)\s*:\s*(.*)$/);
+    if (!match) continue;
+    rows.push(
+      `<tr><th>${md.utils.escapeHtml(match[1])}</th>` +
+        `<td>${md.utils.escapeHtml(match[2])}</td></tr>`,
+    );
+  }
+  if (rows.length === 0) return "";
+  return `<div class="front-matter"><table><tbody>${rows.join("")}</tbody></table></div>\n`;
+}
+
+/**
  * 渲染 Markdown 为可安全插入 DOM 的 HTML。
  *
  * `html: true` 是必要的（用户可能写居中标签），但同步内容是不可信输入
@@ -435,13 +680,33 @@ installStyleFilter();
  *
  * 这里同时放行 MathML（`mathMl` profile）：KaTeX 输出 MathML 供屏幕阅读器
  * 朗读公式，只保留 HTML profile 会让公式对无障碍工具不可读。
+ *
+ * `env.localImages`：外部文件预览置 true 时，本地图片 src 会被改写成
+ * 占位符（见上方渲染器规则），供预览组件按占位符注入磁盘读出的 blob。
+ * `env.collapsibleCode`：预览置 true 时，超长代码块默认折叠。
  */
-export function renderMarkdown(source: string): string {
+export interface RenderMarkdownEnv {
+  localImages?: boolean;
+  collapsibleCode?: boolean;
+  /** markdown-it 的 Env 允许携带任意附加键（插件约定），保留索引签名。 */
+  [key: string]: unknown;
+}
+
+export function renderMarkdown(source: string, env?: RenderMarkdownEnv): string {
   if (!source || !source.trim()) {
     return "";
   }
-  const raw = md.render(source);
-  return DOMPurify.sanitize(raw, {
+  // front matter 回调是渲染期间的唯一出口；同步渲染内取用即清，
+  // 避免残留影响下一次调用（markdown-it 解析是同步的，无并发问题）。
+  capturedFrontMatter = null;
+  // markdown-it 的 Env 带 symbol 索引签名，与本接口的可选键形状不完全
+  // 重合；这里传的就是本模块自产的 env，收窄一次即可。
+  const raw = md.render(source, env as Parameters<typeof md.render>[1]);
+  const frontHtml =
+    capturedFrontMatter !== null ? renderFrontMatterTable(capturedFrontMatter) : "";
+  capturedFrontMatter = null;
+
+  return DOMPurify.sanitize(frontHtml + raw, {
     USE_PROFILES: { html: true, mathMl: true, svg: true },
     FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form"],
     ADD_ATTR: [
@@ -449,6 +714,8 @@ export function renderMarkdown(source: string): string {
       "checked",
       "disabled",
       "data-language",
+      "data-collapsed",
+      "data-line-count",
       "viewBox",
       "stroke-width",
       "stroke-linecap",
