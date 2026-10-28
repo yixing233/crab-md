@@ -1,11 +1,12 @@
 import { useMemo } from "react";
-import { FileInput, Files, ListTree } from "lucide-react";
+import { FileInput, Files, ListTree, PanelLeftClose } from "lucide-react";
 import { Tabs } from "antd";
 import { RecentFileList } from "./RecentFileList";
 import { OutlineTree } from "../editor/OutlineTree";
 import { Button } from "../ui/Button";
 import { Tooltip } from "../ui/Tooltip";
 import type { DocumentSummary, ExternalFileView, RecentFileView } from "../../types/document";
+import { pathKey } from "../../lib/externalFiles";
 import { zh } from "../../lib/i18n";
 import "./workspace.css";
 
@@ -49,6 +50,8 @@ export interface SidebarProps {
   width?: number;
   /** 是否折叠（用于平滑展开/收起过渡动画）。 */
   collapsed?: boolean;
+  /** 收起侧边栏（按钮放在侧栏自己的头部，不占顶部工具栏）。 */
+  onCollapse?: () => void;
 }
 
 /**
@@ -79,38 +82,43 @@ export function Sidebar({
   onJump = () => {},
   width,
   collapsed = false,
+  onCollapse,
 }: SidebarProps) {
   const currentWidth = width ?? 260;
 
-  // 将全部文件统一合并为一个扁平列表：优先真实磁盘历史，合并旧工作区文档，彻底消除“内部文档 vs 外部文件”的割裂
+  // 将全部文件统一合并为一个扁平列表：统一磁盘历史 + 旧外部文件清单 + 工作区文档。
+  //
+  // 不能二选一（只取其一）：统一历史非空时，文件关联「打开方式」刚打开的
+  // 文件只登记在旧外部清单里（旧版本行为），二选一会把它整个藏掉 ——
+  // 用户看到标签页开了、文件树里却找不到。按路径归一键去重后三路合并。
   const displayedFiles = useMemo(() => {
     const list: RecentFileView[] = [];
     const seen = new Set<string>();
 
-    if (recentFiles && recentFiles.length > 0) {
-      for (const f of recentFiles) {
-        list.push(f);
-        seen.add(f.path.toLowerCase());
-        seen.add(f.name.toLowerCase());
-      }
-    } else if (externalFiles && externalFiles.length > 0) {
-      for (const f of externalFiles) {
-        list.push({
-          pathKey: f.path.toLowerCase(),
-          path: f.path,
-          name: f.name,
-          size: f.size,
-          modifiedAt: f.modifiedAt,
-          openedAt: f.openedAt,
-          pinned: false,
-          cursorLine: 1,
-          cursorCol: 1,
-          scrollRatio: 0,
-          exists: !f.missing,
-        });
-        seen.add(f.path.toLowerCase());
-        seen.add(f.name.toLowerCase());
-      }
+    for (const f of recentFiles ?? []) {
+      list.push(f);
+      seen.add(pathKey(f.path));
+      seen.add(f.name.toLowerCase());
+    }
+
+    // 旧外部文件清单：统一历史里没有的条目补进来（历史版本只登记了这张表）。
+    for (const f of externalFiles ?? []) {
+      if (seen.has(pathKey(f.path))) continue;
+      list.push({
+        pathKey: pathKey(f.path),
+        path: f.path,
+        name: f.name,
+        size: f.size,
+        modifiedAt: f.modifiedAt,
+        openedAt: f.openedAt,
+        pinned: false,
+        cursorLine: 1,
+        cursorCol: 1,
+        scrollRatio: 0,
+        exists: !f.missing,
+      });
+      seen.add(pathKey(f.path));
+      seen.add(f.name.toLowerCase());
     }
 
     // 补充工作区中的文档（如旧笔记或测试数据），确保统一在一个列表展示
@@ -224,6 +232,22 @@ export function Sidebar({
       style={{ flexBasis: collapsed ? 0 : currentWidth }}
     >
       <div className="app-sidebar__inner" style={{ width: currentWidth }}>
+        {/* 头部：收起按钮住在侧栏自己的区域里（顶部工具栏不再负责这件事）。 */}
+        {onCollapse && (
+          <div className="app-sidebar__header">
+            <Tooltip content={zh.sidebar.collapse}>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                aria-label={zh.sidebar.collapse}
+                onClick={onCollapse}
+              >
+                <PanelLeftClose size={14} aria-hidden />
+              </Button>
+            </Tooltip>
+          </div>
+        )}
         <Tabs
           className="app-sidebar__antd-tabs"
           activeKey={currentKey}

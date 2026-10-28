@@ -797,3 +797,29 @@ body[data-resizing="true"] .app-sidebar {
   white-space: nowrap;
   border-width: 0;
 }
+
+/* ===========================================================================
+   侧栏自身的显隐控制：收起按钮在侧栏头部，收起后留一条窄轨放展开按钮
+   （顶部工具栏不再承担这件事）。
+   =========================================================================== */
+.app-sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 30px;
+  flex: none;
+  padding-right: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.app-sidebar-rail {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 0 0 34px;
+  width: 34px;
+  padding-top: 6px;
+  box-sizing: border-box;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-default);
+}

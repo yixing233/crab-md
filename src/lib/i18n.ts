@@ -80,6 +80,10 @@ export const zh = {
     filesTab: "文件",
     /** 「外部文件」面板：从磁盘直接打开、原位编辑的那些文件。 */
     externalTab: "外部文件",
+    /** 收起侧边栏（按钮在侧栏自己头部）。 */
+    collapse: "收起侧边栏",
+    /** 展开侧边栏（按钮在收起后留下的窄轨上）。 */
+    expand: "展开侧边栏",
     /** 侧栏顶部两个面板的切换组无障碍名称。 */
     tabsLabel: "侧栏面板",
     emptyOutlineTitle: "暂无文档大纲",
@@ -302,6 +306,13 @@ export const zh = {
       lineNumbersHint: "在编辑区左侧显示行号。",
       lineWrap: "自动换行",
       lineWrapHint: "关闭后长句保持单行，可横向滚动查看。",
+      pasteHtmlAsMarkdown: "富文本粘贴转 Markdown",
+      pasteHtmlAsMarkdownHint:
+        "从网页或 Word 复制的内容粘贴时转换成 Markdown；关闭后按纯文本插入。",
+      typewriter: "打字机滚动",
+      typewriterHint: "键入时保持光标行位于视口固定高度，长文写作不追光标（F8）。",
+      paragraphFocus: "当前段落聚焦",
+      paragraphFocusHint: "淡化光标所在段落之外的内容，帮助专注（F9）。",
       autosave: "自动保存",
       autosaveHint: "停止输入后延迟落盘；关闭后仍可用 Ctrl+S 保存，崩溃恢复草稿不受影响。",
       autosaveOption: {

@@ -6,8 +6,6 @@ import { AppToolbar } from "./AppToolbar";
 function props(over: Partial<Parameters<typeof AppToolbar>[0]> = {}) {
   return {
     onNewDocument: vi.fn(),
-    onToggleSidebar: vi.fn(),
-    sidebarVisible: true,
     onOpenSettings: vi.fn(),
     onSearch: vi.fn(),
     onPrint: vi.fn(),

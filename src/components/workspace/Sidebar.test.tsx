@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
-import type { RecentFileView } from "../../types/document";
+import type { ExternalFileView, RecentFileView } from "../../types/document";
 
 function file(path: string, name: string, exists = true): RecentFileView {
   return {
@@ -17,6 +17,17 @@ function file(path: string, name: string, exists = true): RecentFileView {
     cursorCol: 1,
     scrollRatio: 0,
     exists,
+  };
+}
+
+function external(path: string, name: string, missing = false): ExternalFileView {
+  return {
+    path,
+    name,
+    size: 64,
+    modifiedAt: "2026-01-01T00:00:00Z",
+    openedAt: "2026-01-03T00:00:00Z",
+    missing,
   };
 }
 
@@ -143,5 +154,40 @@ describe("Sidebar unified recent files", () => {
 
     expect(screen.getByText("gone.md")).toBeInTheDocument();
     expect(screen.getByLabelText("文件不存在")).toBeInTheDocument();
+  });
+
+  it("shows an external-only file even when the unified history is non-empty", () => {
+    // 文件关联打开的文件先登记在旧外部清单里：统一历史非空时它也必须可见，
+    // 否则「标签开了、文件树里找不到」。
+    renderSidebar({
+      tab: "notes",
+      recentFiles: [file("E:\\notes\\a.md", "a.md")],
+      externalFiles: [external("E:\\docs\\b.md", "b.md")],
+    });
+
+    expect(screen.getByText("a.md")).toBeInTheDocument();
+    expect(screen.getByText("b.md")).toBeInTheDocument();
+  });
+
+  it("does not duplicate a file that is in both histories", () => {
+    renderSidebar({
+      tab: "notes",
+      recentFiles: [file("E:\\notes\\a.md", "a.md")],
+      externalFiles: [external("E:/notes/a.md", "a.md")],
+    });
+
+    expect(screen.getAllByText("a.md")).toHaveLength(1);
+  });
+
+  it("opens a merged external-only file through its disk path", async () => {
+    const props = renderSidebar({
+      tab: "notes",
+      recentFiles: [file("E:\\notes\\a.md", "a.md")],
+      externalFiles: [external("E:\\docs\\b.md", "b.md")],
+    });
+
+    await userEvent.click(screen.getByText("b.md"));
+
+    expect(props.onOpenExternal).toHaveBeenCalledWith("E:\\docs\\b.md");
   });
 });

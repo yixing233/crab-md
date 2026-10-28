@@ -201,8 +201,6 @@ function Harness() {
       <UpdateBar onInstall={() => {}} />
       <AppToolbar
         onNewDocument={() => {}}
-        onToggleSidebar={() => {}}
-        sidebarVisible
         menus={menus}
         onOpenSettings={() => {}}
          onSearch={() => {}}
@@ -283,6 +281,12 @@ function Harness() {
         onChangeLineNumbers={() => {}}
         lineWrapOn={true}
         onChangeLineWrap={() => {}}
+        pasteHtmlAsMarkdownOn={true}
+        onChangePasteHtmlAsMarkdown={() => {}}
+        typewriterOn={false}
+        onChangeTypewriter={() => {}}
+        paragraphFocusOn={false}
+        onChangeParagraphFocus={() => {}}
         autosaveMode="1s"
         onChangeAutosaveMode={() => {}}
         renderToggles={{ mermaid: true, math: true }}

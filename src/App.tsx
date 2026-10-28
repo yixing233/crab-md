@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
+import { PanelLeftOpen } from "lucide-react";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./components/editor/MarkdownEditor";
 import { EditorToolbar } from "./components/editor/EditorToolbar";
 import { EditorStatusBar } from "./components/editor/EditorStatusBar";
@@ -23,6 +24,7 @@ import { Splitter } from "./components/workspace/Splitter";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { AboutDialog } from "./components/settings/AboutDialog";
 import { Button } from "./components/ui/Button";
+import { Tooltip } from "./components/ui/Tooltip";
 import { Dialog } from "./components/ui/Dialog";
 import { Spinner } from "./components/ui/Spinner";
 import { Toast } from "./components/ui/Toast";
@@ -113,9 +115,15 @@ import {
   AUTOSAVE_KEY,
   LINE_NUMBERS_KEY,
   LINE_WRAP_KEY,
+  PASTE_HTML_AS_MARKDOWN_KEY,
+  PARAGRAPH_FOCUS_KEY,
+  TYPEWRITER_KEY,
   readStoredAutosaveMode,
   readStoredLineNumbers,
   readStoredLineWrap,
+  readStoredParagraphFocus,
+  readStoredPasteHtmlAsMarkdown,
+  readStoredTypewriter,
   type AutosaveMode,
 } from "./lib/editorSettings";
 import {
@@ -407,6 +415,20 @@ export default function App() {
   const [lineWrapOn, setLineWrapOn] = useState<boolean>(() =>
     readStoredLineWrap(typeof localStorage === "undefined" ? null : localStorage.getItem(LINE_WRAP_KEY)),
   );
+  const [pasteHtmlAsMarkdownOn, setPasteHtmlAsMarkdownOn] = useState<boolean>(() =>
+    readStoredPasteHtmlAsMarkdown(
+      typeof localStorage === "undefined" ? null : localStorage.getItem(PASTE_HTML_AS_MARKDOWN_KEY),
+    ),
+  );
+  // 写作模式（F8 / F9 也可切换）：状态在这里，编辑器快捷键只是上报意图。
+  const [typewriterOn, setTypewriterOn] = useState<boolean>(() =>
+    readStoredTypewriter(typeof localStorage === "undefined" ? null : localStorage.getItem(TYPEWRITER_KEY)),
+  );
+  const [paragraphFocusOn, setParagraphFocusOn] = useState<boolean>(() =>
+    readStoredParagraphFocus(
+      typeof localStorage === "undefined" ? null : localStorage.getItem(PARAGRAPH_FOCUS_KEY),
+    ),
+  );
 
   // 自动保存档位：App 持有并同步给 store（store 是模块级状态，不进 React）。
   const [autosaveMode, setAutosaveMode] = useState<AutosaveMode>(() =>
@@ -483,6 +505,24 @@ export default function App() {
       localStorage.setItem(LINE_WRAP_KEY, String(lineWrapOn));
     }
   }, [lineWrapOn]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(PASTE_HTML_AS_MARKDOWN_KEY, String(pasteHtmlAsMarkdownOn));
+    }
+  }, [pasteHtmlAsMarkdownOn]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(TYPEWRITER_KEY, String(typewriterOn));
+    }
+  }, [typewriterOn]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(PARAGRAPH_FOCUS_KEY, String(paragraphFocusOn));
+    }
+  }, [paragraphFocusOn]);
 
   // 自动保存档位：同步给 store（模块级状态），同时持久化。
   useEffect(() => {
@@ -743,6 +783,10 @@ export default function App() {
     }
   }, [createDocument]);
 
+  // 主页态：无活动文档时侧栏整体隐藏（主页自身就是文件入口，左侧再挂一列
+  // 文件列表是重复）。打开任意文档后按 sidebarVisible 偏好恢复。
+  const onHomePage = activeId === null;
+
   const handleOpenDocument = useCallback(
     async (id: string) => {
       setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -769,8 +813,9 @@ export default function App() {
    * 打开（或切换回）一个外部文件标签页。
    *
    * 正文每次都**从磁盘读**：外部文件可能已被别的程序改动，缓存一份旧正文
-   * 会让用户看到过期内容。读盘成功的同时 Rust 会刷新库里的记录，
-   * 因此顺带重拉一次清单（大小 / 修改时间）。
+   * 会让用户看到过期内容。读盘成功的同时 Rust 会把记录写进两张登记表
+   * （标签恢复用的外部清单 + 文件树用的统一历史），因此两张清单都要重拉，
+   * 否则刚打开的文件不会出现在左侧文件树里。
    *
    * 读失败（被移动、删除、过大、非 UTF-8）只提示并**保留记录** ——
    * 列表里会把它标成「文件不存在」，由用户决定何时移除。
@@ -782,12 +827,12 @@ export default function App() {
         const tabId = externalTabId(file.path);
         setOpenTabIds((prev) => (prev.includes(tabId) ? prev : [...prev, tabId]));
         openExternalDocument(file.path, file.content);
-        await loadExternalFiles();
+        await Promise.all([loadExternalFiles(), loadRecentFiles()]);
       } catch {
         setToast({ message: zh.toast.openFailed, tone: "error" });
       }
     },
-    [loadExternalFiles, openExternalDocument],
+    [loadExternalFiles, loadRecentFiles, openExternalDocument],
   );
 
   const handleSelectTab = useCallback(
@@ -1198,6 +1243,29 @@ export default function App() {
   }, [handleOpenPath]);
 
   /**
+   * 打开文档内互链指向的本地笔记（`[xxx](./other.md)` 相对路径）。
+   *
+   * 只有外部文件（原位打开的磁盘文件）才有「所在目录」可依据；
+   * 工作区文档的相对链接没有解析基准（notes/ 下是 UUID 文件名），直接忽略。
+   * 链接可能带 `#锚点`，解析前剥掉 —— 锚点跨文档跳转暂不支持。
+   */
+  const handleOpenMarkdownLink = useCallback(
+    async (href: string) => {
+      const basePath = activeExtPath;
+      if (!basePath) return;
+      const reference = href.split("#")[0].split("?")[0];
+      if (!reference) return;
+      try {
+        const resolved = await api.resolveLocalLink(basePath, reference);
+        await handleOpenPath(resolved);
+      } catch {
+        setToast({ message: zh.toast.openFailed, tone: "error" });
+      }
+    },
+    [activeExtPath, handleOpenPath],
+  );
+
+  /**
    * 启动时恢复上次打开的文件。
    *
    * 两件事，顺序不能反：
@@ -1551,11 +1619,9 @@ export default function App() {
       theme={getAntdTheme(resolvedTheme, accentColor)}
       button={{ autoInsertSpace: false }}
     >
-      <div className="app-shell" data-sidebar={sidebarVisible || undefined}>
+      <div className="app-shell" data-sidebar={(sidebarVisible && !onHomePage) || undefined}>
       <AppToolbar
         onNewDocument={handleNewDocument}
-        onToggleSidebar={() => setSidebarVisible((v) => !v)}
-        sidebarVisible={sidebarVisible}
         menus={menus}
         onOpenSettings={() => setSettingsOpen(true)}
         pendingVersion={pendingUpdateVersion}
@@ -1568,6 +1634,23 @@ export default function App() {
       />
 
       <UpdateBar onInstall={handleInstallUpdate} />
+
+      {/* 顶部多标签栏：横贯窗口全宽（侧栏从它下方开始），
+          与 VS Code / 浏览器的「标签在最上、内容分区在下」同一结构。 */}
+      <TabBar
+        tabs={tabsList}
+        activeId={activeId}
+        onSelectTab={(id) => void handleSelectTab(id)}
+        onCloseTab={(id) => void handleCloseTab(id)}
+        onNewTab={handleNewDocument}
+        onCloseOtherTabs={(id) => void handleCloseOtherTabs(id)}
+        onCloseRightTabs={(id) => void handleCloseRightTabs(id)}
+        onCloseAllTabs={() => void handleCloseAllTabs()}
+        onRenameTab={(id, title) => void renameDocument(id, title)}
+        onDuplicateTab={(id, title) => void handleDuplicate(id, title)}
+        onExportTab={(id, title) => void handleExport(id, title)}
+        onRevealTab={(id, title) => void handleReveal(id, title)}
+      />
 
       <div className="app-body">
         <Sidebar
@@ -1598,10 +1681,28 @@ export default function App() {
           onDeleteDiskFile={(path) => void deleteDiskFile(path)}
           onTogglePin={(path, pinned) => void setFilePinned(path, pinned)}
           width={sidebarWidth}
-          collapsed={!sidebarVisible}
+          collapsed={!sidebarVisible || onHomePage}
+          onCollapse={() => setSidebarVisible(false)}
         />
+        {/* 收起后的窄轨：留一个「展开」入口在侧栏自己的区域里
+            （主页强制隐藏时窄轨同样不出现）。 */}
+        {!sidebarVisible && !onHomePage && (
+          <div className="app-sidebar-rail">
+            <Tooltip content={zh.sidebar.expand}>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                aria-label={zh.sidebar.expand}
+                onClick={() => setSidebarVisible(true)}
+              >
+                <PanelLeftOpen size={15} aria-hidden />
+              </Button>
+            </Tooltip>
+          </div>
+        )}
         {/* 侧栏在左，向右拖变宽（UI §11）。展开时才展示拖拽分隔条 */}
-        {sidebarVisible && (
+        {sidebarVisible && !onHomePage && (
           <Splitter
             value={sidebarWidth}
             onChange={setSidebarWidth}
@@ -1623,21 +1724,7 @@ export default function App() {
             </div>
           )}
 
-          {/* 顶部多标签栏 */}
-          <TabBar
-            tabs={tabsList}
-            activeId={activeId}
-            onSelectTab={(id) => void handleSelectTab(id)}
-            onCloseTab={(id) => void handleCloseTab(id)}
-            onNewTab={handleNewDocument}
-            onCloseOtherTabs={(id) => void handleCloseOtherTabs(id)}
-            onCloseRightTabs={(id) => void handleCloseRightTabs(id)}
-            onCloseAllTabs={() => void handleCloseAllTabs()}
-            onRenameTab={(id, title) => void renameDocument(id, title)}
-            onDuplicateTab={(id, title) => void handleDuplicate(id, title)}
-            onExportTab={(id, title) => void handleExport(id, title)}
-            onRevealTab={(id, title) => void handleReveal(id, title)}
-          />
+          {/* 顶部多标签栏已上移至 app-shell 层（横贯全宽）。 */}
 
           {activeId ? (
             <>
@@ -1686,6 +1773,12 @@ export default function App() {
                       lineWrapEnabled={lineWrapOn}
                       // 分栏模式（右侧已有渲染预览）：左侧展示纯正的 Markdown 源码；单栏编辑模式则默认开启即时渲染。
                       livePreviewEnabled={viewMode !== "split" && !isPlainText}
+                      onOpenLink={(href) => void handleOpenMarkdownLink(href)}
+                      pasteHtmlAsMarkdownEnabled={pasteHtmlAsMarkdownOn}
+                      typewriterEnabled={typewriterOn}
+                      paragraphFocusEnabled={paragraphFocusOn}
+                      onToggleTypewriter={() => setTypewriterOn((v) => !v)}
+                      onToggleParagraphFocus={() => setParagraphFocusOn((v) => !v)}
                     />
                   </div>
                 )}
@@ -1713,6 +1806,9 @@ export default function App() {
                         onToggleTask={handleToggleTask}
                         isPlainText={isPlainText}
                         documentTitle={activeTitle}
+                        documentPath={activeExtPath}
+                        onOpenLink={(href) => void handleOpenMarkdownLink(href)}
+                        resetKey={activeId}
                       />
                     </div>
                   </>
@@ -1733,6 +1829,8 @@ export default function App() {
                     source={activeContent}
                     isPlainText={isPlainText}
                     documentTitle={activeTitle}
+                    documentPath={activeExtPath}
+                    resetKey={activeId}
                   />
                 </div>
               )}
@@ -1747,6 +1845,7 @@ export default function App() {
             <HomePage
               documents={documents}
               recentFiles={recentFiles}
+              externalFiles={externalCatalog}
               onOpenDocument={(id) => void handleOpenDocument(id)}
               onOpenPath={(path) => void handleSelectTab(externalTabId(path))}
               onNewDocument={handleNewDocument}
@@ -1850,6 +1949,12 @@ export default function App() {
         onChangeLineNumbers={setLineNumbersOn}
         lineWrapOn={lineWrapOn}
         onChangeLineWrap={setLineWrapOn}
+        pasteHtmlAsMarkdownOn={pasteHtmlAsMarkdownOn}
+        onChangePasteHtmlAsMarkdown={setPasteHtmlAsMarkdownOn}
+        typewriterOn={typewriterOn}
+        onChangeTypewriter={setTypewriterOn}
+        paragraphFocusOn={paragraphFocusOn}
+        onChangeParagraphFocus={setParagraphFocusOn}
         autosaveMode={autosaveMode}
         onChangeAutosaveMode={setAutosaveMode}
         renderToggles={renderToggles}

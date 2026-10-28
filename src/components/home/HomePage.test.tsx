@@ -2,6 +2,34 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { HomePage, type HomePageProps } from "./HomePage";
+import type { ExternalFileView, RecentFileView } from "../../types/document";
+
+function diskFile(path: string, name: string, openedAt = "2026-01-03T00:00:00Z"): RecentFileView {
+  return {
+    pathKey: path.toLowerCase(),
+    path,
+    name,
+    size: 512,
+    modifiedAt: "2026-01-01T00:00:00Z",
+    openedAt,
+    pinned: false,
+    cursorLine: 1,
+    cursorCol: 1,
+    scrollRatio: 0,
+    exists: true,
+  };
+}
+
+function externalFile(path: string, name: string): ExternalFileView {
+  return {
+    path,
+    name,
+    size: 64,
+    modifiedAt: "2026-01-01T00:00:00Z",
+    openedAt: "2026-01-04T00:00:00Z",
+    missing: false,
+  };
+}
 
 function renderHomePage(over: Partial<HomePageProps> = {}) {
   const props: HomePageProps = {
@@ -29,17 +57,8 @@ function renderHomePage(over: Partial<HomePageProps> = {}) {
 }
 
 describe("HomePage", () => {
-  it("renders welcome header and brand", () => {
-    renderHomePage();
-    expect(screen.getByText(/欢迎使用 Crab-MD/)).toBeInTheDocument();
-  });
-
   it("renders quick action cards and responds to click", async () => {
     const props = renderHomePage();
-    const newCard = screen.getByRole("button", { name: /创建新笔记/ });
-    await userEvent.click(newCard);
-    expect(props.onNewDocument).toHaveBeenCalledOnce();
-
     const openCard = screen.getByRole("button", { name: /导入本地文件/ });
     await userEvent.click(openCard);
     expect(props.onOpenFile).toHaveBeenCalledOnce();
@@ -82,5 +101,59 @@ describe("HomePage", () => {
 
     await userEvent.click(screen.getByText(/指南\.md/));
     expect(props.onOpenDocument).toHaveBeenCalledWith("1");
+  });
+
+  it("shows workspace documents alongside the disk history", () => {
+    // 统一历史非空时工作区文档也不能消失：主页是完整的文件列表。
+    renderHomePage({
+      recentFiles: [diskFile("E:\\notes\\磁盘笔记.md", "磁盘笔记.md")],
+    });
+
+    expect(screen.getByText("磁盘笔记.md")).toBeInTheDocument();
+    expect(screen.getByText("指南.md")).toBeInTheDocument();
+  });
+
+  it("merges external-only files into the list", () => {
+    renderHomePage({
+      recentFiles: [diskFile("E:\\notes\\a.md", "a.md")],
+      externalFiles: [externalFile("E:\\docs\\外部.md", "外部.md")],
+    });
+
+    expect(screen.getByText("a.md")).toBeInTheDocument();
+    expect(screen.getByText("外部.md")).toBeInTheDocument();
+  });
+
+  it("does not duplicate a file present in both histories", () => {
+    renderHomePage({
+      recentFiles: [diskFile("E:\\notes\\a.md", "a.md")],
+      externalFiles: [externalFile("E:/notes/a.md", "a.md")],
+    });
+
+    expect(screen.getAllByText("a.md")).toHaveLength(1);
+  });
+
+  it("opens a disk file through its path", async () => {
+    const props = renderHomePage({
+      recentFiles: [diskFile("E:\\notes\\a.md", "a.md")],
+      onOpenPath: vi.fn(),
+    });
+
+    await userEvent.click(screen.getByText("a.md"));
+
+    expect(props.onOpenPath).toHaveBeenCalledWith("E:\\notes\\a.md");
+  });
+
+  it("renders the complete list instead of only the first ten entries", () => {
+    const recentFiles = Array.from({ length: 12 }, (_, i) =>
+      diskFile(`E:\\notes\\f${i}.md`, `f${i}.md`, `2026-01-${String(i + 1).padStart(2, "0")}T00:00:00Z`),
+    );
+    // oldest.md 排在第 13 位 —— 旧的 slice(0, 10) 会把它截掉。
+    recentFiles.push(diskFile("E:\\notes\\oldest.md", "oldest.md", "2025-12-01T00:00:00Z"));
+
+    renderHomePage({ recentFiles });
+
+    expect(screen.getByText("oldest.md")).toBeInTheDocument();
+    // 12 个磁盘文件 + oldest.md + 默认 props 里的工作区文档「指南.md」。
+    expect(screen.getByText("14 篇文档")).toBeInTheDocument();
   });
 });

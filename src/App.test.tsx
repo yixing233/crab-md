@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -549,7 +549,7 @@ describe("App panes and shortcuts", () => {
     );
   });
 
-  it("toggles the outline sidebar with the toggle button", async () => {
+  it("collapses the sidebar from its own header and restores it from the rail", async () => {
     const doc = {
       id: "d1", title: "甲", virtualPath: "/", revision: 1,
       contentHash: "sha256:x", createdAt: "2026-01-01T00:00:00Z",
@@ -562,11 +562,18 @@ describe("App panes and shortcuts", () => {
     render(<App />);
     await userEvent.click(await screen.findByText("甲"));
 
-    const toggle = await screen.findByRole("button", { name: "切换侧边栏" });
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    // 收起按钮在侧栏自己的头部（顶部工具栏不再有「切换侧边栏」）。
+    expect(screen.queryByRole("button", { name: "切换侧边栏" })).not.toBeInTheDocument();
 
-    await userEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    const sidebar = document.querySelector(".app-sidebar") as HTMLElement;
+    const collapse = await screen.findByRole("button", { name: "收起侧边栏" });
+    await userEvent.click(collapse);
+
+    await waitFor(() => expect(sidebar).toHaveAttribute("data-collapsed", "true"));
+    // 收起后左侧留窄轨，展开入口就在那里。
+    const expand = await screen.findByRole("button", { name: "展开侧边栏" });
+    await userEvent.click(expand);
+    await waitFor(() => expect(sidebar).not.toHaveAttribute("data-collapsed"));
   });
 
   it("toggles the outline with Ctrl+Shift+O", async () => {
@@ -581,11 +588,16 @@ describe("App panes and shortcuts", () => {
 
     render(<App />);
     await userEvent.click(await screen.findByText("甲"));
-    const toggle = await screen.findByRole("button", { name: "切换侧边栏" });
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
 
+    // Ctrl+Shift+O 收起后，窄轨上的展开按钮就是恢复入口。
     await userEvent.keyboard("{Control>}{Shift>}o{/Shift}{/Control}");
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    const expand = await screen.findByRole("button", { name: "展开侧边栏" });
+    expect(document.querySelector(".app-sidebar")).toHaveAttribute("data-collapsed", "true");
+
+    await userEvent.click(expand);
+    await waitFor(() =>
+      expect(document.querySelector(".app-sidebar")).not.toHaveAttribute("data-collapsed"),
+    );
   });
 
   it("switches the sidebar between the files and outline panels", async () => {
@@ -1103,15 +1115,62 @@ describe("external files survive a restart", () => {
   });
 
   it("marks a vanished file as missing in the list instead of hiding it", async () => {
+    // 主页不显示侧栏（主页自身就是文件入口），先打开一篇文档让侧栏出现。
+    const doc = {
+      id: "d1", title: "甲", virtualPath: "/", revision: 1,
+      contentHash: "sha256:x", createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z", size: 0,
+    };
+    const { api } = await import("./lib/api");
+    listDocuments.mockResolvedValue([doc]);
+    (api.readDocument as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...doc,
+      content: "内容",
+    });
     listExternalFiles.mockResolvedValue([record({ missing: true })]);
 
     render(<App />);
     await screen.findByRole("banner");
+    await userEvent.click(await screen.findByText("甲"));
 
-    expect(await screen.findByText("外部.md")).toBeInTheDocument();
+    // 主页现在也会列出该文件（三路合并），「文件不存在」标记只在侧栏列表里。
+    const sidebar = within(screen.getByRole("complementary", { name: "侧边栏" }));
+    expect(await sidebar.findByText("外部.md")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "外部.md，文件不存在" }),
     ).toBeInTheDocument();
+  });
+
+  it("hides the sidebar on the home page and restores it for documents", async () => {
+    const doc = {
+      id: "d1", title: "甲", virtualPath: "/", revision: 1,
+      contentHash: "sha256:x", createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z", size: 0,
+    };
+    const { api } = await import("./lib/api");
+    listDocuments.mockResolvedValue([doc]);
+    (api.readDocument as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...doc,
+      content: "内容",
+    });
+    listExternalFiles.mockResolvedValue([record()]);
+
+    const view = render(<App />);
+    await screen.findByRole("banner");
+
+    // 主页：侧栏不可见（visibility: hidden 由 collapsed 触发）。
+    expect(view.container.querySelector(".app-sidebar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+
+    // 打开文档：侧栏按用户偏好恢复（collapsed 属性消失 = 展开）。
+    await userEvent.click(await screen.findByText("甲"));
+    await waitFor(() =>
+      expect(view.container.querySelector(".app-sidebar")).not.toHaveAttribute(
+        "data-collapsed",
+      ),
+    );
   });
 
   it("keeps the current file open when switching would fail to save", async () => {

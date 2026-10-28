@@ -51,8 +51,11 @@ function isWindowsPath(path: string): boolean {
  * 大小写是否敏感必须先判、再转换分隔符：反过来做的话，
  * `/home/u/A.md` 被折成 `\home\u\A.md` 后看起来就像 Windows 路径，
  * 两个不同的 POSIX 文件会被误判成同一个。
+ *
+ * 与 Rust 侧 `path_key`（external_files.rs / opened_files.rs）是同一套规则：
+ * 列表合并、历史去重都靠它当键，两层各写各的必然漂移。
  */
-function normalizePath(path: string): string {
+export function pathKey(path: string): string {
   if (isWindowsPath(path)) {
     return path.replace(/\//g, "\\").toLowerCase();
   }
@@ -70,5 +73,5 @@ function normalizePath(path: string): string {
  * 返回值，都是规范绝对路径；多此一举的规范化反而可能改变语义。
  */
 export function samePath(a: string, b: string): boolean {
-  return normalizePath(a) === normalizePath(b);
+  return pathKey(a) === pathKey(b);
 }

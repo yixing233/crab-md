@@ -137,6 +137,14 @@ export interface SettingsPageProps {
   onChangeLineNumbers: (enabled: boolean) => void;
   lineWrapOn: boolean;
   onChangeLineWrap: (enabled: boolean) => void;
+  /** 富文本粘贴转 Markdown（粘贴行为偏好，同样由 App 持有）。 */
+  pasteHtmlAsMarkdownOn: boolean;
+  onChangePasteHtmlAsMarkdown: (enabled: boolean) => void;
+  /** 写作模式（打字机滚动 / 段落聚焦，F8 / F9 亦可切换）。 */
+  typewriterOn: boolean;
+  onChangeTypewriter: (enabled: boolean) => void;
+  paragraphFocusOn: boolean;
+  onChangeParagraphFocus: (enabled: boolean) => void;
   autosaveMode: AutosaveMode;
   onChangeAutosaveMode: (mode: AutosaveMode) => void;
   /** 预览渲染开关（Mermaid / 公式），同样由 App 持有。 */
@@ -192,6 +200,12 @@ export function SettingsPage({
   onChangeLineNumbers,
   lineWrapOn,
   onChangeLineWrap,
+  pasteHtmlAsMarkdownOn,
+  onChangePasteHtmlAsMarkdown,
+  typewriterOn,
+  onChangeTypewriter,
+  paragraphFocusOn,
+  onChangeParagraphFocus,
   autosaveMode,
   onChangeAutosaveMode,
   renderToggles,
@@ -622,6 +636,57 @@ export function SettingsPage({
                       options={syncScrollOptions}
                       onChange={(val) => onChangeLineWrap(val === "enabled")}
                       ariaLabel={zh.settings.editor.lineWrap}
+                      showLabels
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Type size={14} aria-hidden />
+                      {zh.settings.editor.pasteHtmlAsMarkdown}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.editor.pasteHtmlAsMarkdownHint}
+                    </p>
+                    <SegmentedControl
+                      value={pasteHtmlAsMarkdownOn ? "enabled" : "disabled"}
+                      options={syncScrollOptions}
+                      onChange={(val) => onChangePasteHtmlAsMarkdown(val === "enabled")}
+                      ariaLabel={zh.settings.editor.pasteHtmlAsMarkdown}
+                      showLabels
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Type size={14} aria-hidden />
+                      {zh.settings.editor.typewriter}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.editor.typewriterHint}
+                    </p>
+                    <SegmentedControl
+                      value={typewriterOn ? "enabled" : "disabled"}
+                      options={syncScrollOptions}
+                      onChange={(val) => onChangeTypewriter(val === "enabled")}
+                      ariaLabel={zh.settings.editor.typewriter}
+                      showLabels
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <span className="settings-field__label">
+                      <Type size={14} aria-hidden />
+                      {zh.settings.editor.paragraphFocus}
+                    </span>
+                    <p className="settings-field__description">
+                      {zh.settings.editor.paragraphFocusHint}
+                    </p>
+                    <SegmentedControl
+                      value={paragraphFocusOn ? "enabled" : "disabled"}
+                      options={syncScrollOptions}
+                      onChange={(val) => onChangeParagraphFocus(val === "enabled")}
+                      ariaLabel={zh.settings.editor.paragraphFocus}
                       showLabels
                     />
                   </div>

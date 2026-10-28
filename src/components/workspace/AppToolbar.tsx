@@ -1,4 +1,4 @@
-import { Download, Moon, PanelLeft, Plus, Printer, Search, Settings, Sun, SunMoon } from "lucide-react";
+import { Download, Moon, Plus, Printer, Search, Settings, Sun, SunMoon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
 import { Tooltip } from "../ui/Tooltip";
@@ -8,8 +8,6 @@ import "./workspace.css";
 
 export interface AppToolbarProps {
   onNewDocument: () => void;
-  onToggleSidebar: () => void;
-  sidebarVisible: boolean;
   /**
    * 顶部菜单栏（文件 / 编辑 / 视图 / 帮助）。
    *
@@ -45,8 +43,6 @@ const THEME_ICON = { light: Sun, dark: Moon, system: SunMoon } as const;
  */
 export function AppToolbar({
   onNewDocument,
-  onToggleSidebar,
-  sidebarVisible,
   menus,
   onOpenSettings,
   onSearch,
@@ -61,19 +57,6 @@ export function AppToolbar({
 
   return (
     <header className="app-toolbar" role="banner">
-      <Tooltip content={zh.toolbar.toggleSidebar}>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          onClick={onToggleSidebar}
-          aria-pressed={sidebarVisible}
-          aria-label={zh.toolbar.toggleSidebar}
-        >
-          <PanelLeft size={16} aria-hidden />
-        </Button>
-      </Tooltip>
-
       <span className="app-toolbar__title">{zh.app.name}</span>
 
       {menus && menus.length > 0 && <MenuBar menus={menus} />}

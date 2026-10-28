@@ -564,8 +564,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           // 内容又变了，但基准必须前移 —— 否则已落盘的那一版永远算「未保存」。
           set({ externalBaseline: savedContent });
         }
-        // 刷新列表里的大小/时间戳（不影响「最近打开」的顺序）。
-        await get().loadExternalFiles();
+        // 刷新列表里的大小/时间戳与磁盘存在性（不影响「最近打开」的顺序）。
+        // 统一历史（文件树的数据源）同样要拉：保存也会刷新那边的记录。
+        await Promise.all([get().loadExternalFiles(), get().loadRecentFiles()]);
         return;
       }
 
