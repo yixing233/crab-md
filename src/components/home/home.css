@@ -116,9 +116,11 @@
   flex-shrink: 0;
 }
 
+.home-search-bar__input.ant-input-affix-wrapper,
 .home-search-bar__input.ant-input,
 .home-search-bar__input .ant-input {
   flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
   outline: none;
@@ -129,8 +131,29 @@
   padding-left: 0;
 }
 
+/* allowClear 会额外生成一层 .ant-input-affix-wrapper，类名落在它身上。视觉外壳
+   由 .home-search-bar 承担，这层自身的边框、底色与内边距必须抹平，
+   否则会出现「框中框」。 */
+.home-search-bar__input.ant-input-affix-wrapper {
+  padding: 0;
+  outline: none;
+}
+
+/* 焦点环由外层 .home-search-bar:focus-within 统一给出。antd 在这层自己画的
+   1px outline 会与它叠成第二道框，必须一并关掉。 */
+.home-search-bar__input.ant-input-affix-wrapper:hover,
+.home-search-bar__input.ant-input-affix-wrapper-focused,
+.home-search-bar__input.ant-input-affix-wrapper:focus-within {
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
+
 .home-search-bar__input.ant-input:focus,
 .home-search-bar__input .ant-input:focus {
+  border: none;
+  background: transparent;
   box-shadow: none;
 }
 

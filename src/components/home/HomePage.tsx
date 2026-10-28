@@ -206,6 +206,7 @@ export function HomePage({
               <Search size={16} className="home-search-bar__icon" aria-hidden />
               <Input
                 className="home-search-bar__input"
+                variant="borderless"
                 value={searchQuery}
                 placeholder="全局全文搜索：键入关键词检索所有笔记的标题与正文..."
                 aria-label="全局全文搜索"
