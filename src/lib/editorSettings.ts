@@ -66,3 +66,41 @@ export function readStoredAutosaveMode(raw: string | null): AutosaveMode {
     ? (raw as AutosaveMode)
     : DEFAULT_AUTOSAVE_MODE;
 }
+
+// ---------------------------------------------------------------------------
+// 富文本粘贴转 Markdown
+// ---------------------------------------------------------------------------
+
+export const PASTE_HTML_AS_MARKDOWN_KEY = "crab-md.paste-html-as-markdown";
+
+/** 默认开启：网页/Word 复制的内容落盘为 Markdown，而不是混入 HTML 标签。 */
+export const DEFAULT_PASTE_HTML_AS_MARKDOWN = true;
+
+/** 校验并读取富文本粘贴转换开关；缺失或非法时回退默认。 */
+export function readStoredPasteHtmlAsMarkdown(raw: string | null): boolean {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return DEFAULT_PASTE_HTML_AS_MARKDOWN;
+}
+
+// ---------------------------------------------------------------------------
+// 写作模式（打字机滚动 / 当前段落聚焦）
+// ---------------------------------------------------------------------------
+
+export const TYPEWRITER_KEY = "crab-md.typewriter";
+export const PARAGRAPH_FOCUS_KEY = "crab-md.paragraph-focus";
+
+/** 默认关闭：写作模式是「进入写作状态」的显式动作，不是日常默认。 */
+export const DEFAULT_WRITING_MODE = false;
+
+export function readStoredTypewriter(raw: string | null): boolean {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return DEFAULT_WRITING_MODE;
+}
+
+export function readStoredParagraphFocus(raw: string | null): boolean {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return DEFAULT_WRITING_MODE;
+}

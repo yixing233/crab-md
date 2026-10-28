@@ -1,4 +1,4 @@
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownKeymap } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
@@ -7,6 +7,9 @@ import {
   defaultKeymap,
   history,
   historyKeymap,
+  indentLess,
+  indentMore,
+  indentWithTab,
   redo,
   redoDepth,
   selectAll,
@@ -17,9 +20,11 @@ import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { applyMarkdownAction, type MarkdownActionId } from "../../lib/markdownActions";
+import { htmlToMarkdown } from "../../lib/pasteHtml";
 import { markdownFoldLanguage } from "../../lib/markdownFoldLanguage";
 import { canOpenExternally, openExternalLink } from "../../lib/openExternalLink";
 import { livePreview, livePreviewCompartment, livePreviewField } from "../../lib/livePreview";
+import { paragraphFocus, typewriterScroll } from "../../lib/writingMode";
 import { cmPhrases, zh } from "../../lib/i18n";
 import {
   ContextMenu,
@@ -75,6 +80,24 @@ export interface MarkdownEditorProps {
   lineNumbersEnabled?: boolean;
   /** 是否自动换行（设置页 §34「编辑器」），默认开启；关闭时长行横向滚动。 */
   lineWrapEnabled?: boolean;
+  /**
+   * Ctrl+点击指向本地文件的链接（相对路径笔记互链）时触发。
+   * 页内锚点与外部链接由编辑器自行处理，不会走到这里。
+   */
+  onOpenLink?: (href: string) => void;
+  /**
+   * 粘贴富文本（text/html）时转成 Markdown 再插入；默认开启。
+   * 关闭后粘贴行为回到 CodeMirror 默认（插入纯文本）。
+   */
+  pasteHtmlAsMarkdownEnabled?: boolean;
+  /** 打字机滚动（写作模式之一，F8 切换）：键入时保持光标行在视口锚点。 */
+  typewriterEnabled?: boolean;
+  /** 当前段落聚焦（写作模式之一，F9 切换）：非活跃段落变暗。 */
+  paragraphFocusEnabled?: boolean;
+  /** F8 / 菜单切换打字机滚动时触发；状态由外层持有并持久化。 */
+  onToggleTypewriter?: () => void;
+  /** F9 / 菜单切换段落聚焦时触发。 */
+  onToggleParagraphFocus?: () => void;
 }
 
 /** 让 CodeMirror 读取应用主题令牌，避免出现与外壳无关的配色。 */
@@ -299,6 +322,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       livePreviewEnabled = true,
       lineNumbersEnabled = false,
       lineWrapEnabled = true,
+      onOpenLink,
+      pasteHtmlAsMarkdownEnabled = true,
+      typewriterEnabled = false,
+      paragraphFocusEnabled = false,
+      onToggleTypewriter,
+      onToggleParagraphFocus,
     }: MarkdownEditorProps,
     ref,
   ) {
@@ -322,6 +351,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     //（重建会丢光标位置与撤销历史，与字号走 CSS 变量是同一条纪律）。
     const gutterCompartment = useRef(new Compartment());
     const wrapCompartment = useRef(new Compartment());
+    // 写作模式（打字机滚动 / 段落聚焦）同款隔间。
+    const writingCompartment = useRef(new Compartment());
 
     useEffect(() => {
       const view = viewRef.current;
@@ -342,6 +373,19 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         ),
       });
     }, [lineWrapEnabled]);
+
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        effects: writingCompartment.current.reconfigure(
+          [
+            typewriterEnabled ? typewriterScroll() : null,
+            paragraphFocusEnabled ? paragraphFocus() : null,
+          ].filter((ext): ext is NonNullable<typeof ext> => ext !== null),
+        ),
+      });
+    }, [typewriterEnabled, paragraphFocusEnabled]);
 
     const [contextMenu, setContextMenu] = useState<EditorContextMenuState | null>(null);
     const [slashState, setSlashState] = useState<{
@@ -370,11 +414,19 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     const onPasteImageRef = useRef(onPasteImage);
     const onCursorRef = useRef(onCursor);
     const onScrollDOMRef = useRef(onScrollDOM);
+    const onOpenLinkRef = useRef(onOpenLink);
+    const pasteHtmlAsMarkdownRef = useRef(pasteHtmlAsMarkdownEnabled);
+    const onToggleTypewriterRef = useRef(onToggleTypewriter);
+    const onToggleParagraphFocusRef = useRef(onToggleParagraphFocus);
     onChangeRef.current = onChange;
     onSaveRef.current = onSave;
     onPasteImageRef.current = onPasteImage;
     onCursorRef.current = onCursor;
     onScrollDOMRef.current = onScrollDOM;
+    onOpenLinkRef.current = onOpenLink;
+    pasteHtmlAsMarkdownRef.current = pasteHtmlAsMarkdownEnabled;
+    onToggleTypewriterRef.current = onToggleTypewriter;
+    onToggleParagraphFocusRef.current = onToggleParagraphFocus;
 
     useImperativeHandle(
       ref,
@@ -533,17 +585,47 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
    * 只有地址真的可以交给系统浏览器时才拦（`canOpenExternally`）：
    * `[文字](相对路径)` 这类点击应当仍然只是普通的光标操作。
    */
-  const handleLinkMouseDown = (event: MouseEvent): boolean => {
+  const handleLinkMouseDown = (event: MouseEvent, editor: EditorView): boolean => {
     // button 0 = 主键；`ctrlKey` 在 macOS 上是右键菜单语义，改用 `metaKey`。
     if (event.button !== 0 || !(event.ctrlKey || event.metaKey)) return false;
 
     const target = event.target as HTMLElement | null;
     const anchor = target?.closest?.(".cm-live-link");
     const href = anchor?.getAttribute("data-href") ?? "";
-    if (!anchor || !canOpenExternally(href)) return false;
+    if (!anchor || !href) return false;
 
     event.preventDefault();
-    void openExternalLink(href);
+
+    // 页内锚点：跳到第一个文本匹配的标题行（与大纲树点击同一效果）。
+    if (href.startsWith("#")) {
+      let decoded = href.slice(1);
+      try {
+        decoded = decodeURIComponent(decoded);
+      } catch {
+        // 保留原样：畸形编码按字面比较。
+      }
+      const doc = editor.state.doc;
+      for (let ln = 1; ln <= doc.lines; ln++) {
+        const line = doc.line(ln);
+        const heading = line.text.match(/^#{1,6}\s+(.*?)\s*$/);
+        if (heading && heading[1] === decoded) {
+          editor.dispatch({
+            selection: { anchor: line.from + (heading[0].length - heading[1].length) },
+            scrollIntoView: true,
+          });
+          return true;
+        }
+      }
+      return true;
+    }
+
+    if (canOpenExternally(href)) {
+      void openExternalLink(href);
+      return true;
+    }
+
+    // 其余（相对路径的本地笔记等）交给外层：App 按当前文档目录解析后打开。
+    onOpenLinkRef.current?.(href);
     return true;
   };
 
@@ -556,6 +638,25 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     event.preventDefault();
     const { from, to } = editor.state.selection.main;
     void saveClipboardImage(file, editor, from, to);
+    return true;
+  };
+
+  /**
+   * 富文本粘贴转 Markdown（设置可关）。
+   *
+   * 只在剪贴板带 text/html 味道时介入：纯文本来源（别的编辑器、终端）
+   * 不设这个味道，粘贴完全不受影响。转换只改写插入内容，不碰剪贴板；
+   * 转换失败返回 false，回退到 CodeMirror 默认粘贴。
+   */
+  const handlePasteHtmlAsMarkdown = (event: ClipboardEvent, editor: EditorView): boolean => {
+    if (!pasteHtmlAsMarkdownRef.current) return false;
+    const html = event.clipboardData?.getData("text/html") ?? "";
+    if (!html.trim()) return false;
+    const markdown = htmlToMarkdown(html);
+    if (!markdown) return false;
+
+    event.preventDefault();
+    editor.dispatch(editor.state.replaceSelection(markdown));
     return true;
   };
 
@@ -580,6 +681,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           // 之后由上面的 effect 原地重配。
           gutterCompartment.current.of(lineNumbersEnabled ? [lineNumbers()] : []),
           wrapCompartment.current.of(lineWrapEnabled ? EditorView.lineWrapping : []),
+          writingCompartment.current.of(
+            [
+              typewriterEnabled ? typewriterScroll() : null,
+              paragraphFocusEnabled ? paragraphFocus() : null,
+            ].filter((ext): ext is NonNullable<typeof ext> => ext !== null),
+          ),
           search({ top: true, createPanel: createCustomSearchPanel }),
           livePreview(isLivePreview),
           appTheme,
@@ -603,6 +710,24 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
                 return true;
               },
             },
+            // 写作模式（Typora 同款键位）：F8 打字机滚动，F9 当前段落聚焦。
+            // 状态由外层（App）持有并持久化，这里只上报切换意图。
+            {
+              key: "F8",
+              preventDefault: true,
+              run: () => {
+                onToggleTypewriterRef.current?.();
+                return true;
+              },
+            },
+            {
+              key: "F9",
+              preventDefault: true,
+              run: () => {
+                onToggleParagraphFocusRef.current?.();
+                return true;
+              },
+            },
             // UI_DESIGN_SYSTEM.md §29：加粗 / 斜体 / 行内代码。
             { key: "Mod-b", preventDefault: true, run: (v) => (dispatchAction(v, "bold"), true) },
             { key: "Mod-i", preventDefault: true, run: (v) => (dispatchAction(v, "italic"), true) },
@@ -613,14 +738,25 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
             { key: "Mod-Alt-4", preventDefault: true, run: (v) => (dispatchAction(v, "h4"), true) },
             { key: "Mod-Alt-5", preventDefault: true, run: (v) => (dispatchAction(v, "h5"), true) },
             { key: "Mod-Alt-6", preventDefault: true, run: (v) => (dispatchAction(v, "h6"), true) },
+            // 列表升降级：Tab / Shift+Tab 与 VS Code 同款 Mod+] / Mod+[。
+            // indentWithTab 会让 Tab 永远落在编辑器内（Esc 可移出焦点）。
+            { key: "Mod-]", run: indentMore },
+            { key: "Mod-[", run: indentLess },
+            indentWithTab,
+            // 列表/引用延续：回车自动补下一个 `- `，Backspace 删标记。
+            // 必须排在 defaultKeymap 之前，否则 Enter 先被内置换行消费。
+            ...markdownKeymap,
             ...defaultKeymap,
             ...historyKeymap,
             ...searchKeymap,
             ...foldKeymap,
           ]),
           EditorView.domEventHandlers({
-            mousedown: (event) => handleLinkMouseDown(event),
-            paste: (event, editor) => handlePasteImage(event, editor),
+            mousedown: (event, editor) => handleLinkMouseDown(event, editor),
+            paste: (event, editor) => {
+              if (handlePasteImage(event, editor)) return true;
+              return handlePasteHtmlAsMarkdown(event, editor);
+            },
             drop: (event, editor) => handleDrop(event, editor),
             dragover: (event) => handleDragOver(event),
             contextmenu: (event, editor) => {

@@ -497,3 +497,59 @@ describe("livePreview", () => {
     host.remove();
   });
 });
+
+/** [[Wiki 链接]]：与 markdown.ts 的 parseWikiLink 同一套规则的编辑器侧呈现。 */
+describe("livePreview wiki links", () => {
+  function wikiMarks(doc: string) {
+    const state = EditorState.create({
+      doc,
+      selection: EditorSelection.cursor(doc.length),
+    });
+    const view = new EditorView({ state });
+    const marks: { text: string; href: string }[] = [];
+    const hidden: { from: number; to: number }[] = [];
+    const decos = buildLivePreviewDecorations(view);
+    decos.between(0, doc.length, (from, to, deco) => {
+      if (deco.spec.class?.includes("cm-live-wiki-link")) {
+        marks.push({ text: doc.slice(from, to), href: deco.spec.attributes?.["data-href"] });
+      } else if (deco.spec.widget === undefined && to > from) {
+        hidden.push({ from, to });
+      }
+    });
+    view.destroy();
+    return { marks, hidden };
+  }
+
+  it("hides the brackets and marks the target as a live link", () => {
+    const doc = "见 [[下一节]]。\n";
+    const { marks, hidden } = wikiMarks(doc);
+
+    expect(marks).toHaveLength(1);
+    expect(marks[0].text).toBe("下一节");
+    expect(marks[0].href).toBe("下一节.md");
+
+    const before = hidden.find((h) => h.to === doc.indexOf("下一节"));
+    const after = hidden.find((h) => h.from === doc.indexOf("下一节") + "下一节".length);
+    expect(doc.slice(before!.from, before!.to)).toBe("[[");
+    expect(doc.slice(after!.from, after!.to)).toBe("]]");
+  });
+
+  it("collapses the target and pipe for alias form, keeping only the alias visible", () => {
+    const doc = "[[目标笔记|显示名字]]\n";
+    const { marks, hidden } = wikiMarks(doc);
+
+    expect(marks).toHaveLength(1);
+    expect(marks[0].text).toBe("显示名字");
+    expect(marks[0].href).toBe("目标笔记.md");
+
+    const before = hidden.find((h) => h.to === doc.indexOf("显示名字"));
+    expect(doc.slice(before!.from, before!.to)).toBe("[[目标笔记|");
+  });
+
+  it("carries anchors into data-href for Ctrl+click routing", () => {
+    const doc = "[[目标#小节]]\n";
+    const { marks } = wikiMarks(doc);
+    expect(marks[0].href).toBe("目标.md#小节");
+    expect(marks[0].text).toBe("目标#小节");
+  });
+});

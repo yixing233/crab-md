@@ -59,6 +59,51 @@ describe("MarkdownEditor image paste", () => {
     expect(onPasteImage).not.toHaveBeenCalled();
   });
 
+  it("converts pasted rich text to markdown by default", () => {
+    const onChange = vi.fn();
+    const { getByTestId } = render(
+      <MarkdownEditor documentId="d1" value="" onChange={onChange} />,
+    );
+    const content = getByTestId("markdown-editor").querySelector(".cm-content") as HTMLElement;
+
+    fireEvent.paste(content, {
+      clipboardData: {
+        items: [],
+        files: [],
+        getData: (type: string) =>
+          type === "text/html" ? "<h1>标题</h1><p><strong>加粗</strong></p>" : "标题加粗",
+      },
+    });
+
+    // text/html 味道被转成 Markdown 落盘，而不是把标签存进文档。
+    expect(onChange).toHaveBeenCalledWith("# 标题\n\n**加粗**");
+  });
+
+  it("leaves paste to CodeMirror when the conversion is disabled", () => {
+    const onChange = vi.fn();
+    const { getByTestId } = render(
+      <MarkdownEditor
+        documentId="d1"
+        value=""
+        onChange={onChange}
+        pasteHtmlAsMarkdownEnabled={false}
+      />,
+    );
+    const content = getByTestId("markdown-editor").querySelector(".cm-content") as HTMLElement;
+
+    fireEvent.paste(content, {
+      clipboardData: {
+        items: [],
+        files: [],
+        getData: (type: string) =>
+          type === "text/html" ? "<strong>加粗</strong>" : "加粗",
+      },
+    });
+
+    // 关闭转换：走 CodeMirror 默认粘贴（插入 text/plain）。
+    expect(onChange).toHaveBeenCalledWith("加粗");
+  });
+
   it("intercepts dropped image and inserts its attachment reference", async () => {
     const onChange = vi.fn();
     const onPasteImage = vi.fn().mockResolvedValue("01993ab2-0000-7000-8000-000000000001");

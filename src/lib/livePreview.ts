@@ -6,7 +6,7 @@ import {
 } from "@codemirror/view";
 import { Compartment, type Extension, type Range, StateField, EditorState } from "@codemirror/state";
 import katex from "katex";
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown, parseWikiLink, wikiLinkHref } from "./markdown";
 import { isMarkdownTableRow } from "./tableHelper";
 import { getRenderToggles } from "./renderToggles";
 import { CHECK_ICON_SVG, COPY_ICON_SVG } from "./codeBlockIcons";
@@ -652,6 +652,43 @@ export function buildLivePreviewDecorations(stateOrView: EditorState | EditorVie
           }).range(textStart, textEnd),
         );
         decos.push(Decoration.replace({}).range(textEnd, end));
+      }
+
+      // D.6.1b Wiki 链接：[[目标]] / [[目标|别名]] / [[#锚点]]
+      //
+      // 解析复用 markdown.ts 的 parseWikiLink —— 编辑器与预览两侧各写
+      // 一套规则迟早对不上（Ctrl+点击打开的目标和预览不一致）。
+      // 形态与行内链接一致：折叠 `[[`/`]]`，正文挂 cm-live-link，
+      // Ctrl/Cmd+点击走同一条分流（锚点跳标题 / 相对路径交 App 打开）。
+      // 别名写法连 `目标|` 一起折叠，可见文本与预览的别名完全一致。
+      const wikiRegex = /\[\[[^\[\]\n\r]*?\]\]/g;
+      while ((match = wikiRegex.exec(lineText)) !== null) {
+        const parsed = parseWikiLink(match[0]);
+        if (!parsed) continue;
+
+        const href = wikiLinkHref(parsed);
+        const start = line.from + match.index;
+        const end = start + match[0].length;
+        const innerStart = start + 2; // 跳过 `[[`
+        const innerEnd = end - 2; // `]]` 之前
+
+        let markFrom = innerStart;
+        if (parsed.alias !== null) {
+          // `目标|` 整段（含竖线）折进头部 replace，只留别名可见。
+          const pipe = lineText.indexOf("|", match.index + 2);
+          if (pipe !== -1 && line.from + pipe < innerEnd) {
+            markFrom = line.from + pipe + 1;
+          }
+        }
+
+        decos.push(Decoration.replace({}).range(start, markFrom));
+        decos.push(
+          Decoration.mark({
+            class: "cm-live-link cm-live-wiki-link",
+            attributes: { "data-href": href, title: `Ctrl/Cmd + 点击打开：${href}` },
+          }).range(markFrom, Math.max(markFrom, innerEnd)),
+        );
+        decos.push(Decoration.replace({}).range(innerEnd, end));
       }
 
       // D.6.2 加粗：**文本** 或 __文本__

@@ -8,8 +8,8 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (url: string) => openUrl(url),
 }));
 
-function setup(value: string) {
-  render(<MarkdownEditor documentId="d1" value={value} onChange={() => {}} />);
+function setup(value: string, props: { onOpenLink?: (href: string) => void } = {}) {
+  render(<MarkdownEditor documentId="d1" value={value} onChange={() => {}} {...props} />);
   const content = screen.getByTestId("markdown-editor").querySelector(".cm-content") as HTMLElement;
   const view = EditorView.findFromDOM(content);
   if (!view) throw new Error("editor view not found");
@@ -77,7 +77,27 @@ describe("MarkdownEditor inline link", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it("does not intercept Ctrl+click when the target is not openable", () => {
+  it("hands relative document links to onOpenLink instead of the browser", () => {
+    // 相对路径链接不再放行给编辑器内置光标处理：外层（App）会按当前
+    // 文档所在目录解析成绝对路径后作为外部文件打开。
+    const onOpenLink = vi.fn();
+    const { content } = setup(`- [本地文档](./note.md)\n\n末尾`, { onOpenLink });
+    const link = content.querySelector(".cm-live-link") as HTMLElement;
+
+    const event = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      ctrlKey: true,
+    });
+    link.dispatchEvent(event);
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(onOpenLink).toHaveBeenCalledWith("./note.md");
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("does not intercept Ctrl+click when there is no onOpenLink handler", () => {
     const { content } = setup(`- [本地文档](./note.md)\n\n末尾`);
     const link = content.querySelector(".cm-live-link") as HTMLElement;
 
@@ -89,9 +109,46 @@ describe("MarkdownEditor inline link", () => {
     });
     link.dispatchEvent(event);
 
-    // 相对路径交给编辑器自己处理（普通光标操作），不唤起系统浏览器。
-    // 我们没拦 → 事件继续走到内置处理器并被它 preventDefault。
+    // 没有可用的打开通道：链接按普通文本处理（光标落点），不唤起浏览器。
     expect(openUrl).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("jumps to the matching heading on Ctrl+click of an in-page anchor", () => {
+    const { content, view } = setup(
+      ["# 第一节", "", "正文", "", "[跳转](#第二节)", "", "## 第二节", "", "目标内容"].join("\n"),
+    );
+    const link = content.querySelector(".cm-live-link") as HTMLElement;
+
+    const event = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      ctrlKey: true,
+    });
+    link.dispatchEvent(event);
+
+    // 光标应落到「## 第二节」标题行内（大纲树点击之外的另一条锚点路径）。
+    const line = view.state.doc.lineAt(view.state.selection.main.head);
+    expect(line.text).toBe("## 第二节");
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("consumes an in-page anchor click even when no heading matches", () => {
+    const { content } = setup(
+      ["# 第一节", "", "[跳转](#不存在)", "", "末尾"].join("\n"),
+    );
+    const link = content.querySelector(".cm-live-link") as HTMLElement;
+
+    const event = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      ctrlKey: true,
+    });
+    link.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(openUrl).not.toHaveBeenCalled();
   });
 });
