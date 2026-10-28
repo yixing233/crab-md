@@ -400,6 +400,11 @@ impl DocumentService {
 
         // 登记失败不该让「打开」失败：用户要的是看到内容，元数据是次要的。
         // 所以这里忽略写库错误（真出错时列表少一条，比打不开文件轻得多）。
+        //
+        // 两张表各管一事，缺一不可：
+        // - `external_files`：标签页重启恢复的依据（App 按 `ext:` 路径核对记录）；
+        // - `opened_files`：侧栏文件列表 / 置顶 / 会话位置 / 全文检索的统一登记表。
+        //   只写前者的话，文件关联打开的文件能开标签却永远进不了左侧文件树。
         {
             let st = self.lock()?;
             let _ = external_files::upsert(
@@ -409,6 +414,15 @@ impl DocumentService {
                 meta.len() as i64,
                 &modified_at,
                 &now,
+            );
+            let _ = opened_files::upsert_and_index(
+                &st.conn,
+                path,
+                &name,
+                meta.len() as i64,
+                &modified_at,
+                &now,
+                Some(&content),
             );
         }
 
@@ -489,6 +503,26 @@ impl DocumentService {
                     &now,
                 )?;
             }
+            // 统一登记表同步刷新：大小/时间戳要跟上，全文索引也要换成新正文，
+            // 否则搜索会命中保存前的旧内容。从未打开过就补登记（与上面一致）。
+            let unified = opened_files::touch(
+                &st.conn,
+                path,
+                meta.len() as i64,
+                &modified_at,
+                Some(content),
+            )?;
+            if unified == 0 {
+                opened_files::upsert_and_index(
+                    &st.conn,
+                    path,
+                    &name,
+                    meta.len() as i64,
+                    &modified_at,
+                    &workspace::now_iso8601(),
+                    Some(content),
+                )?;
+            }
         }
 
         Ok(crate::model::ExternalFilePayload {
@@ -504,9 +538,11 @@ impl DocumentService {
     ///
     /// **只删记录，不动磁盘上的文件** —— 用户想要的往往是「别让它占着我的
     /// 列表」，而不是删掉他的文档。幂等：没记录过也算成功。
+    /// 统一登记表里那条同样清掉，否则文件树里还留着同名条目。
     pub fn forget_external(&self, path: &str) -> AppResult<()> {
         let st = self.lock()?;
         external_files::remove(&st.conn, path)?;
+        opened_files::remove(&st.conn, path)?;
         Ok(())
     }
 
@@ -521,7 +557,6 @@ impl DocumentService {
         }
         Ok(p.to_path_buf())
     }
-
     // =========================================================================
     // 统一纯磁盘文件模型（编辑器/阅读器架构：软件不存文件，一切皆磁盘文件）
     // =========================================================================
@@ -661,9 +696,13 @@ impl DocumentService {
     }
 
     /// 从数据库历史与全文索引中移除记录（**绝对不删除磁盘物理文件**）。
+    ///
+    /// 新旧两张登记表都清：同一条目可能只在旧 `external_files` 表里
+    /// （历史版本记录的），只清 `opened_files` 会让「从历史移除」看似无效。
     pub fn remove_recent_file(&self, path: &str) -> AppResult<()> {
         let st = self.lock()?;
         opened_files::remove(&st.conn, path)?;
+        external_files::remove(&st.conn, path)?;
         Ok(())
     }
 
@@ -675,6 +714,7 @@ impl DocumentService {
         }
         let st = self.lock()?;
         opened_files::remove(&st.conn, path)?;
+        external_files::remove(&st.conn, path)?;
         Ok(())
     }
 
@@ -706,33 +746,41 @@ impl DocumentService {
             }
         }
 
-        // 没匹配到历史记录：这个条目是旧工作区文档 —— 列表把它以文档 id
-        // 充当路径展示（见 Sidebar 的合并逻辑），而它从未进过 opened_files
-        // 历史表，直接 UPDATE 匹配 0 行，置顶就静默无效。这里解析出真实
-        // 磁盘路径补记一条历史（与用户打开过它一次等效），标题沿用文档表
-        // 的 title，不让 UUID 文件名漏进界面。
-        let (note, title) = {
+        // 没匹配到历史记录：条目来自两个来源之一 ——
+        // - 旧工作区文档：列表以文档 id 充当路径展示（见 Sidebar 的合并逻辑），
+        //   它从未进过 opened_files 历史表，直接 UPDATE 匹配 0 行；
+        // - 旧版本登记的外部文件：手里只有真实磁盘路径，同样不在历史表里
+        //   （现在打开时会双写登记，但旧记录要等下一次打开才补上）。
+        // 两者都按「用户打开过它一次」补记一条历史再置顶，不让置顶静默无效。
+        let (record_path, title) = {
             let st = self.lock()?;
-            let note = workspace::note_path(&st.root, path)?;
-            let title = docs::get(&st.conn, path)?
-                .map(|d| d.title)
-                .unwrap_or_else(|| external_file_name(&note));
-            (note, title)
+            match workspace::note_path(&st.root, path) {
+                // 工作区文档：解析出真实磁盘路径，标题沿用文档表的 title，
+                // 不让 UUID 文件名漏进界面。
+                Ok(note) => {
+                    let title = docs::get(&st.conn, path)?
+                        .map(|d| d.title)
+                        .unwrap_or_else(|| external_file_name(&note));
+                    (note, title)
+                }
+                // 不是 UUID：这就是外部文件的磁盘路径本身。
+                Err(_) => (PathBuf::from(path), external_file_name(Path::new(path))),
+            }
         };
 
-        let meta = std::fs::metadata(&note)?;
+        let meta = std::fs::metadata(&record_path)?;
         let modified_at = external_file_modified_at(&meta);
         let st = self.lock()?;
         opened_files::upsert_and_index(
             &st.conn,
-            &note.to_string_lossy(),
+            &record_path.to_string_lossy(),
             &title,
             meta.len() as i64,
             &modified_at,
             &workspace::now_iso8601(),
             None,
         )?;
-        opened_files::set_pinned(&st.conn, &note.to_string_lossy(), pinned)?;
+        opened_files::set_pinned(&st.conn, &record_path.to_string_lossy(), pinned)?;
         Ok(())
     }
 }
@@ -891,6 +939,83 @@ pub fn forget_external_file(
     path: String,
 ) -> AppResult<()> {
     svc.forget_external(&path)
+}
+
+// =========================================================================
+// 文档内引用的本地资产（相对路径图片预览 / 笔记互链跳转）
+// =========================================================================
+
+/// 预览本地图片允许的扩展名（小写比较）。
+const LOCAL_IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "ico",
+];
+
+/// 笔记互链允许的文档扩展名（与文件关联白名单一致）。
+const LOCAL_DOCUMENT_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
+
+/// 解析文档内部引用的本地路径。
+///
+/// 相对引用（`./imgs/x.png`、`../shared/y.md`）基于**文档所在目录**；
+/// 绝对引用由 `Path::join` 语义直接生效（绝对路径会整体替换基目录）。
+/// 不做 canonicalize：是否存在的判断交给调用方按需进行。
+fn resolve_local_reference(document_path: &str, reference: &str) -> AppResult<PathBuf> {
+    let reference = reference.trim();
+    if reference.is_empty() {
+        return Err(AppError::InvalidInput("empty local reference".into()));
+    }
+    let base = Path::new(document_path)
+        .parent()
+        .ok_or_else(|| AppError::InvalidInput(format!("document path has no parent: {document_path}")))?;
+    Ok(base.join(reference))
+}
+
+fn local_extension(path: &Path) -> Option<String> {
+    path.extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+}
+
+/// 读取文档引用的本地图片字节（预览相对路径图片用）。
+///
+/// 安全边界：只放行图片扩展名与传输体积上限，纯只读 —— 借这条命令
+/// 既写不了盘，也读不到任意扩展名的文件。
+#[tauri::command]
+pub fn read_local_asset(document_path: String, reference: String) -> AppResult<Vec<u8>> {
+    let path = resolve_local_reference(&document_path, &reference)?;
+    if !path.is_file() {
+        return Err(AppError::NotFound(path.to_string_lossy().into_owned()));
+    }
+    let ext = local_extension(&path).unwrap_or_default();
+    if !LOCAL_IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(AppError::InvalidInput(format!("not an image asset: {ext}")));
+    }
+    let meta = std::fs::metadata(&path)?;
+    check_transfer_size(meta.len())?;
+    Ok(std::fs::read(path)?)
+}
+
+/// 解析文档内部链接指向的本地 Markdown/文本文件，返回规范绝对路径。
+///
+/// canonicalize 清理 `..` 段与盘符大小写 —— 返回值进「最近文件」登记表时，
+/// `path_key` 才与正常打开同一文件的记录一致。Windows 的 canonicalize
+/// 带 `\\?\` 前缀，必须剥掉，否则同一文件会出现两种拼写的记录。
+#[tauri::command]
+pub fn resolve_local_link(document_path: String, reference: String) -> AppResult<String> {
+    let path = resolve_local_reference(&document_path, &reference)?;
+    if !path.is_file() {
+        return Err(AppError::NotFound(path.to_string_lossy().into_owned()));
+    }
+    let ext = local_extension(&path).unwrap_or_default();
+    if !LOCAL_DOCUMENT_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(AppError::InvalidInput(format!(
+            "not a supported document: {ext}"
+        )));
+    }
+    let canonical = path.canonicalize()?;
+    let mut text = canonical.to_string_lossy().into_owned();
+    if let Some(stripped) = text.strip_prefix(r"\\?\") {
+        text = stripped.to_string();
+    }
+    Ok(text)
 }
 
 // ---- 在系统文件管理器中定位文件（右键菜单「打开文件所在位置」）----
@@ -1168,6 +1293,23 @@ mod tests {
         assert!(!recent[0].record.pinned);
     }
 
+    #[test]
+    fn pinning_a_legacy_external_path_creates_its_history_record() {
+        // 旧版本只登记在 external_files 里的条目：手里是磁盘路径而不是文档 id，
+        // 置顶同样不得静默无效（合并进文件树之后用户点得到它）。
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "legacy.md", "x");
+        let path = file.to_string_lossy().into_owned();
+
+        svc.set_file_pinned(&path, true).unwrap();
+
+        let recent = svc.list_recent_files().unwrap();
+        assert_eq!(recent.len(), 1);
+        assert!(recent[0].record.pinned);
+        assert_eq!(recent[0].record.path, path);
+        assert_eq!(recent[0].record.name, "legacy.md");
+    }
     #[test]
     fn create_rejects_blank_title() {
         let (_d, svc) = svc();
@@ -1862,6 +2004,177 @@ mod tests {
         svc.read_external(&path).unwrap();
         svc.read_external(&path).unwrap();
         assert_eq!(svc.list_external().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_external_open_also_enters_the_unified_history() {
+        // 用户报告的核心问题：文件关联打开的文件必须出现在左侧文件树。
+        // 文件树读的是 opened_files 统一登记表 —— 打开时必须双写。
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "关联打开.md", "独一无二的关键词");
+        let path = file.to_string_lossy().into_owned();
+
+        svc.read_external(&path).unwrap();
+
+        let recent = svc.list_recent_files().unwrap();
+        assert_eq!(recent.len(), 1, "external open must register in opened_files");
+        assert_eq!(recent[0].record.path, path);
+        assert_eq!(recent[0].record.name, "关联打开.md");
+        assert!(recent[0].exists);
+
+        // 正文同时进全文索引，与 open_file 的行为一致。
+        let hits = svc.search_disk_files("独一无二").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, path);
+    }
+
+    #[test]
+    fn saving_an_external_file_refreshes_the_unified_history() {
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "save.md", "旧内容");
+        let path = file.to_string_lossy().into_owned();
+        svc.read_external(&path).unwrap();
+
+        svc.save_external(&path, "全新的正文").unwrap();
+
+        let recent = svc.list_recent_files().unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].record.size, "全新的正文".len() as i64);
+        // 全文索引换成新正文后，旧内容不再命中。
+        assert!(svc.search_disk_files("旧内容").unwrap().is_empty());
+    }
+
+    #[test]
+    fn removing_from_history_clears_both_registries() {
+        // 侧栏「从历史记录中移除」只清 opened_files 的话，
+        // 只登记在旧外部清单里的条目会永远删不掉。
+        let (_d, svc) = svc();
+        let outside = outside();
+        let file = external_file(&outside, "remove-me.md", "x");
+        let path = file.to_string_lossy().into_owned();
+        svc.read_external(&path).unwrap();
+
+        svc.remove_recent_file(&path).unwrap();
+
+        assert!(svc.list_recent_files().unwrap().is_empty());
+        assert!(svc.list_external().unwrap().is_empty());
+    }
+
+    // ---- 文档内引用的本地资产（相对路径图片 / 笔记互链）----
+
+    #[test]
+    fn reading_a_local_asset_resolves_relative_to_the_document() {
+        let base = tempfile::tempdir().unwrap();
+        let imgs = base.path().join("images");
+        std::fs::create_dir(&imgs).unwrap();
+        let img = imgs.join("pic.png");
+        std::fs::write(&img, b"\x89PNG bytes").unwrap();
+        let doc = base.path().join("note.md");
+        std::fs::write(&doc, "").unwrap();
+        let doc_path = doc.to_string_lossy().into_owned();
+
+        let bytes = read_local_asset(doc_path.clone(), "./images/pic.png".into()).unwrap();
+        assert_eq!(bytes, b"\x89PNG bytes".to_vec());
+
+        // `../` 与不带 `./` 前缀的引用同样基于文档目录。
+        let other = base.path().join("other.jpg");
+        std::fs::write(&other, b"jpeg").unwrap();
+        assert_eq!(
+            read_local_asset(doc_path, "other.jpg".into()).unwrap(),
+            b"jpeg".to_vec()
+        );
+    }
+
+    #[test]
+    fn an_absolute_asset_reference_wins_over_the_document_directory() {
+        let base = tempfile::tempdir().unwrap();
+        let doc = base.path().join("note.md");
+        std::fs::write(&doc, "").unwrap();
+
+        let elsewhere = tempfile::tempdir().unwrap();
+        let img = elsewhere.path().join("abs.png");
+        std::fs::write(&img, b"abs").unwrap();
+
+        let bytes = read_local_asset(
+            doc.to_string_lossy().into_owned(),
+            img.to_string_lossy().into_owned(),
+        )
+        .unwrap();
+        assert_eq!(bytes, b"abs".to_vec());
+    }
+
+    #[test]
+    fn a_local_asset_refuse_non_images_and_missing_files() {
+        let base = tempfile::tempdir().unwrap();
+        let doc = base.path().join("note.md");
+        std::fs::write(&doc, "").unwrap();
+        let secret = base.path().join("secret.md");
+        std::fs::write(&secret, "text").unwrap();
+        let doc_path = doc.to_string_lossy().into_owned();
+
+        // 只放行图片扩展名：这条命令不能变成「读任意文件」。
+        let err = read_local_asset(doc_path.clone(), "secret.md".into()).unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+
+        let err = read_local_asset(doc_path.clone(), "images/missing.png".into()).unwrap_err();
+        assert_eq!(err.code(), "NOT_FOUND");
+
+        let err = read_local_asset(doc_path, "   ".into()).unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+    }
+
+    #[test]
+    fn a_local_asset_refuses_oversized_files() {
+        let base = tempfile::tempdir().unwrap();
+        let doc = base.path().join("note.md");
+        std::fs::write(&doc, "").unwrap();
+        let huge = base.path().join("huge.png");
+        // 稀疏文件：不真写 10MB，只把长度撑过上限。
+        std::fs::File::create(&huge)
+            .unwrap()
+            .set_len(workspace::MAX_TRANSFER_BYTES + 1)
+            .unwrap();
+
+        let err = read_local_asset(
+            doc.to_string_lossy().into_owned(),
+            huge.to_string_lossy().into_owned(),
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
+    }
+
+    #[test]
+    fn resolving_a_local_link_returns_a_clean_absolute_path() {
+        let base = tempfile::tempdir().unwrap();
+        let doc = base.path().join("note.md");
+        std::fs::write(&doc, "").unwrap();
+        let sibling = base.path().join("其他笔记.md");
+        std::fs::write(&sibling, "# 下一节").unwrap();
+        let doc_path = doc.to_string_lossy().into_owned();
+
+        let resolved = resolve_local_link(doc_path, "其他笔记.md".into()).unwrap();
+        let expected = sibling.canonicalize().unwrap().to_string_lossy().into_owned();
+        let expected = expected.strip_prefix(r"\\?\").unwrap_or(&expected).to_string();
+        assert_eq!(Path::new(&resolved), Path::new(&expected));
+        assert!(!resolved.starts_with(r"\\?\"), "canonicalize 的 UNC 前缀必须剥掉");
+    }
+
+    #[test]
+    fn resolving_a_local_link_rejects_missing_and_non_documents() {
+        let base = tempfile::tempdir().unwrap();
+        let doc = base.path().join("note.md");
+        std::fs::write(&doc, "").unwrap();
+        let img = base.path().join("pic.png");
+        std::fs::write(&img, b"png").unwrap();
+        let doc_path = doc.to_string_lossy().into_owned();
+
+        let err = resolve_local_link(doc_path.clone(), "missing.md".into()).unwrap_err();
+        assert_eq!(err.code(), "NOT_FOUND");
+
+        let err = resolve_local_link(doc_path.clone(), "pic.png".into()).unwrap_err();
+        assert_eq!(err.code(), "INVALID_INPUT");
     }
 
     #[test]

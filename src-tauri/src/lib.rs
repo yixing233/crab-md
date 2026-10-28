@@ -196,6 +196,9 @@ pub fn run() {
             commands::documents::save_external_file,
             commands::documents::list_external_files,
             commands::documents::forget_external_file,
+            // 文档内引用的本地资产（相对路径图片 / 笔记互链）
+            commands::documents::read_local_asset,
+            commands::documents::resolve_local_link,
             commands::documents::reveal_document,
             commands::documents::reveal_external_file,
             // 统一纯磁盘文件命令

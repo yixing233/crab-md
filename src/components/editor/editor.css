@@ -1671,3 +1671,187 @@ button.cm-button.cm-search-close:focus-visible,
 .cm-live-block-math-widget::-webkit-scrollbar-thumb:hover {
   background-color: var(--text-muted);
 }
+
+/* ===========================================================================
+   YAML front matter 元信息表（Obsidian / Jekyll 等导出文件的文件头）
+   设计意图：安静 —— 一眼可辨是元信息而不是正文，也不抢正文的视觉权重。
+   =========================================================================== */
+.markdown-preview .front-matter {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  font-size: 0.86em;
+}
+
+.markdown-preview .front-matter table {
+  width: 100%;
+  margin: 0;
+  border: none;
+}
+
+.markdown-preview .front-matter th,
+.markdown-preview .front-matter td {
+  border: none;
+  padding: 2px 12px 2px 0;
+  text-align: left;
+  vertical-align: top;
+  background: none;
+}
+
+.markdown-preview .front-matter th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.markdown-preview .front-matter th::after {
+  content: ":";
+}
+
+.markdown-preview .front-matter td {
+  color: var(--text-primary);
+}
+
+/* ===========================================================================
+   Mermaid 解析失败提示：保留源码的同时明说「是语法问题」，不再静默。
+   =========================================================================== */
+.markdown-preview .mermaid-diagram[data-mermaid-state="error"]::before {
+  content: "Mermaid 图表解析失败，已保留源码 — 修正语法后自动重新渲染";
+  display: block;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px dashed var(--border-default);
+  color: var(--warning, #d97706);
+  font-size: var(--text-sm);
+}
+
+/* ===========================================================================
+   长代码块折叠（仅预览 env 开启；打印时强制展开，见文件尾 @media print）
+   =========================================================================== */
+.markdown-preview .code-block[data-collapsed="true"] pre {
+  max-height: 420px;
+  overflow: hidden;
+  /* 底部渐隐提示「下面还有」，避免被误以为代码就这么长。 */
+  mask-image: linear-gradient(to bottom, black 82%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 82%, transparent 100%);
+}
+
+.markdown-preview .code-block__expand {
+  width: 100%;
+  padding: var(--space-2) 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.markdown-preview .code-block__expand:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+/* ===========================================================================
+   图片灯箱（Lightbox 经 portal 挂到 body，类名不带 .markdown-preview 前缀）
+   =========================================================================== */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #000 82%, transparent);
+  cursor: zoom-out;
+}
+
+.lightbox__image {
+  max-width: 92vw;
+  max-height: 86vh;
+  object-fit: contain;
+  cursor: grab;
+  /* 缩放/平移由内联 transform 控制；拖动时关掉平滑，跟手。 */
+  transition: transform 0.12s ease-out;
+  user-select: none;
+}
+
+.lightbox__image:active {
+  cursor: grabbing;
+  transition: none;
+}
+
+.lightbox__caption {
+  margin: var(--space-3) 0 0;
+  max-width: 80vw;
+  color: var(--text-muted, #aaa);
+  font-size: var(--text-sm);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lightbox__close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, #fff 25%, transparent);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, #fff 8%, transparent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.lightbox__close:hover {
+  background: color-mix(in srgb, #fff 18%, transparent);
+}
+
+.lightbox__zoom {
+  position: absolute;
+  bottom: var(--space-4);
+  right: var(--space-4);
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, #fff 12%, transparent);
+  color: #fff;
+  font-size: var(--text-xs);
+}
+
+/* ===========================================================================
+   Wiki 链接（编辑器即时渲染与预览共用同一个视觉：与行内链接同款）
+   =========================================================================== */
+.markdown-preview a.wiki-link {
+  text-decoration-style: dotted;
+}
+
+/* ===========================================================================
+   写作模式：当前段落聚焦（其余行变暗，活跃段落由装饰提亮）
+   =========================================================================== */
+.cm-content.cm-writing-dim .cm-line {
+  opacity: 0.42;
+  transition: opacity 0.25s ease;
+}
+
+.cm-content.cm-writing-dim .cm-line.cm-para-focus {
+  opacity: 1;
+}
+
+/* 打印/PDF：折叠的代码块必须完整输出，展开按钮没有纸面意义。 */
+@media print {
+  .markdown-preview .code-block pre {
+    max-height: none !important;
+    mask-image: none !important;
+    -webkit-mask-image: none !important;
+  }
+  .markdown-preview .code-block__expand {
+    display: none !important;
+  }
+}

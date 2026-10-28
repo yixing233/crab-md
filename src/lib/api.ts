@@ -120,6 +120,29 @@ export const api = {
   revealExternalFile: (path: string) =>
     call<void>("reveal_external_file", { path }),
 
+  // ---- 文档内引用的本地资产（相对路径图片 / 笔记互链） ----
+
+  /**
+   * 读取文档所在目录下引用的本地图片字节（预览相对路径图片）。
+   *
+   * Rust 侧只放行图片扩展名与体积上限，纯只读 —— 文档里写什么相对
+   * 路径都不会变成「读任意文件」的口子。
+   */
+  readLocalAsset: async (
+    documentPath: string,
+    reference: string,
+  ): Promise<AttachmentBytes> => {
+    const data = await call<number[] | Uint8Array>("read_local_asset", {
+      documentPath,
+      reference,
+    });
+    return data instanceof Uint8Array ? data : new Uint8Array(data);
+  },
+
+  /** 解析文档内链接指向的本地 Markdown/文本文件，返回规范绝对路径。 */
+  resolveLocalLink: (documentPath: string, reference: string) =>
+    call<string>("resolve_local_link", { documentPath, reference }),
+
   // =========================================================================
   // 统一磁盘文件模型（编辑器/阅读器架构：软件不存文件，一切皆磁盘文件）
   // =========================================================================
