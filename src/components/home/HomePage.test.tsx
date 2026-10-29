@@ -174,10 +174,15 @@ describe("HomePage 文件操作入口", () => {
     });
   }
 
+  /** 列表里的第一行（antd Table 的行）。 */
+  function firstRow(): HTMLElement {
+    return document.querySelector(".ant-table-tbody tr") as HTMLElement;
+  }
+
   /** 点某一行的「更多」按钮，返回菜单项。 */
   async function openMenu() {
-    const row = document.querySelector(".home-note-row") as HTMLElement;
-    await userEvent.click(row.querySelector(".home-note-row__more") as HTMLElement);
+    const more = firstRow().querySelector(".home-note-row__more") as HTMLElement;
+    await userEvent.click(more);
     return Array.from(
       document.querySelectorAll("button[role='menuitem']"),
     ) as HTMLButtonElement[];
@@ -228,10 +233,10 @@ describe("HomePage 文件操作入口", () => {
     renderWithDisk({
       recentFiles: [{ ...diskFile("E:\\notes\\gone.md", "gone.md"), exists: false }],
     });
-    const row = document.querySelector(".home-note-row") as HTMLElement;
 
-    expect(row).toHaveAttribute("data-missing");
+    expect(firstRow()).toHaveClass("home-file-table__row--missing");
     expect(screen.getByText("gone.md")).toBeInTheDocument();
+    expect(screen.getByLabelText("文件不存在")).toBeInTheDocument();
   });
 
   it("offers 删除笔记 (not a no-op history removal) for a workspace document", async () => {
@@ -241,8 +246,9 @@ describe("HomePage 文件操作入口", () => {
       onRemoveFromHistory: vi.fn(),
       onDeleteFromDisk: vi.fn(),
     });
-    const row = document.querySelector(".home-note-row") as HTMLElement;
-    await userEvent.click(row.querySelector(".home-note-row__more") as HTMLElement);
+    await userEvent.click(
+      firstRow().querySelector(".home-note-row__more") as HTMLElement,
+    );
     const items = Array.from(
       document.querySelectorAll("button[role='menuitem']"),
     ) as HTMLButtonElement[];
@@ -265,8 +271,7 @@ describe("HomePage 文件操作入口", () => {
 
   it("opens the menu on right click too", async () => {
     renderWithDisk();
-    const row = document.querySelector(".home-note-row") as HTMLElement;
-    await userEvent.pointer({ target: row, keys: "[MouseRight]" });
+    await userEvent.pointer({ target: firstRow(), keys: "[MouseRight]" });
 
     expect(
       screen.getByRole("menuitem", { name: /置顶文档/ }),
@@ -274,10 +279,10 @@ describe("HomePage 文件操作入口", () => {
   });
 });
 
-describe("HomePage 工作区笔记显示完整磁盘路径", () => {
-  it("shows the real notes path instead of a bare slash", () => {
-    // 软件自建的笔记也落在磁盘上（<数据目录>/notes/<uuid>.md），
-    // 列表里只显示「/」等于没告诉用户文件在哪。
+describe("HomePage 列表不显示路径", () => {
+  it("keeps long paths out of the list, where they only crowd it", () => {
+    // 列表里重复七遍 C:\Users\Administrator\... 不帮助用户做选择；
+    // 完整路径在「文件详情」里看。这里守住「列表不再显示路径」这一点。
     renderHomePage({
       documents: [
         {
@@ -295,17 +300,17 @@ describe("HomePage 工作区笔记显示完整磁盘路径", () => {
       workspacePath: "C:\\Users\\Administrator\\AppData\\Roaming\\dev.crabmd.app\\workspace",
     });
 
-    expect(
-      screen.getByText(
-        "C:\\Users\\Administrator\\AppData\\Roaming\\dev.crabmd.app\\workspace\\notes\\01a0e60f-e597-74e4-b74d-65164fdb3cdf.md",
-      ),
-    ).toBeInTheDocument();
-    // 不再退化成裸的「/」。
-    expect(screen.queryByText("/")).not.toBeInTheDocument();
+    expect(screen.getByText("开题笔记.md")).toBeInTheDocument();
+    // 只有列表内部不该出现路径；右栏的「存储目录」卡片本来就要显示工作区根。
+    const table = document.querySelector(".home-file-table") as HTMLElement;
+    expect(table.textContent).not.toContain("dev.crabmd.app");
   });
 
-  it("falls back to / when the workspace root is unknown", () => {
-    renderHomePage({ workspacePath: null });
-    expect(screen.getByText("/")).toBeInTheDocument();
+  it("shows name, size and modified time as columns", () => {
+    renderHomePage({ documents: [], recentFiles: [diskFile("E:\\notes\\a.md", "a.md")] });
+
+    expect(screen.getByRole("columnheader", { name: "名称" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "大小" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "修改时间" })).toBeInTheDocument();
   });
 });

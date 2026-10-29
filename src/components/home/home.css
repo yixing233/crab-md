@@ -205,38 +205,6 @@
 }
 
 /* 文档列表项设计（规整、信息充实、交互灵动） */
-.home-notes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  /* 底部留白放进滚动区，页面级 padding 不再垫底 */
-  padding-bottom: 8px;
-}
-
-.home-note-row {
-  /* 五列固定：图标 / 名称与路径 / 大小 / 日期 / 操作。
-     用网格而不是 flex：flex 下每列宽度随内容伸缩，行与行的大小区间
-     就对不齐（原始需求里的「东一个西一个」）。 */
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 64px auto auto;
-  align-items: center;
-  column-gap: 12px;
-  padding: 12px 14px;
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  box-sizing: border-box;
-  transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease;
-}
-
-.home-note-row:hover {
-  background-color: var(--bg-surface-hover);
-  border-color: var(--border-strong);
-}
 
 /* 图标直接放着，不套方框：方框是给的「卡片感」，在这一行里只是噪音，
    还把图标本身压小了一圈（32px 里装 16px 的图）。 */
@@ -589,4 +557,111 @@
   font-size: 12px;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   文件列表（antd Table 适配）
+   ---------------------------------------------------------------------------
+   列表只放「看名字就能决定下一步」的信息：名称、大小、修改时间。
+   完整路径收进详情面板 —— 一屏重复七遍 C:\Users\Administrator\... 只是噪音。 */
+
+.home-file-table .ant-table {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.home-file-table .ant-table-thead > tr > th {
+  padding: 8px 14px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  background-color: var(--bg-app);
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* antd 默认在表头单元格之间画竖线，与这套扁平风格不合。 */
+.home-file-table .ant-table-thead > tr > th::before {
+  display: none;
+}
+
+.home-file-table .ant-table-tbody > tr > td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.home-file-table .ant-table-tbody > tr:last-child > td {
+  border-bottom: none;
+}
+
+.home-file-table .ant-table-tbody > tr {
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.home-file-table .ant-table-tbody > tr:hover > td {
+  background-color: var(--bg-surface-hover);
+}
+
+.home-file-table .ant-table-tbody > tr:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+/* 名称列：图标 + 标题 + 置顶/失效标记，全部在一行内对齐。 */
+.home-file-table__name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.home-file-table__title {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 文件已不在磁盘上：标题弱化加删除线，但仍留在列表里 ——
+   用户得看见「这条失效了」才能自己清理。 */
+.home-file-table__row--missing .home-file-table__title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.home-file-table__meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 表头排序箭头与标题同排、且只在悬停或激活时出现：
+   antd 默认把箭头放在单元格右侧，宽列下会飘到很远的地方，看着像脱离了列。 */
+.home-file-table .ant-table-column-sorters {
+  gap: 4px;
+}
+
+.home-file-table .ant-table-column-sorter {
+  opacity: 0;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.home-file-table .ant-table-thead > tr > th:hover .ant-table-column-sorter,
+.home-file-table .ant-table-column-sorter-up.active,
+.home-file-table .ant-table-column-sorter-down.active {
+  opacity: 1;
+}
+
+/* 数值列右对齐，标签也靠右，与数字尾巴对齐。 */
+.home-file-table .ant-table-thead > tr > th.ant-table-cell.ant-table-column-has-sorters {
+  justify-content: flex-end;
+}
+
+.home-file-table .ant-table-thead > tr > th.ant-table-column-has-sorters > div {
+  justify-content: flex-end;
 }

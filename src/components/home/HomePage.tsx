@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Input } from "antd";
+import { Input, Table } from "antd";
 import {
   ArrowRight,
   Clock,
@@ -87,6 +87,19 @@ function workspaceNotePath(workspaceRoot: string | null | undefined, id: string)
   return `${root}${sep}notes${sep}${id}.md`;
 }
 
+
+/**
+ * 列表里显示的文件名：补上 .md 后缀。
+ *
+ * 工作区文档的 title 是「笔记名」不带后缀，磁盘文件带。列表要能横向
+ * 比较就得统一 —— 但不要改文档本身的标题，那只是显示层的事。
+ */
+function fileDisplayName(title: string): string {
+  if (title.toLowerCase().endsWith(".txt") || title.toLowerCase().endsWith(".md")) {
+    return title;
+  }
+  return `${title}.md`;
+}
 
 /** 渲染带 FTS 关键词高亮标记的匹配正文片段。 */
 function renderSnippet(snippet: string) {
@@ -401,71 +414,105 @@ export function HomePage({
                 })}
               </div>
             ) : (
-              /* 常态文件列表：完整展示，不做条数截断（页面本身可滚动） */
-              <div className="home-notes-list">
-                {displayedDocs.map((doc) => {
-                  const displayName = doc.title.toLowerCase().endsWith(".txt")
-                    ? doc.title
-                    : doc.title.endsWith(".md")
-                      ? doc.title
-                      : `${doc.title}.md`;
-                  const handleSelect = () => {
+              /* 常态文件列表：用 antd Table。
+                 列表里只放「看名字就能决定下一步」的信息：名称、大小、
+                 修改时间。完整路径收进详情面板 —— 一屏之内重复七遍
+                 C:\Users\Administrator\... 只是噪音，不帮助选择。 */
+              <Table<HomeFileItem>
+                className="home-file-table"
+                dataSource={displayedDocs}
+                rowKey="id"
+                size="middle"
+                pagination={false}
+                showSorterTooltip={false}
+                onRow={(doc) => ({
+                  onClick: () => {
                     if (doc.isPath && onOpenPath) onOpenPath(doc.id);
                     else onOpenDocument(doc.id);
-                  };
-                  return (
-                    <div
-                      key={doc.id}
-                      className="home-note-row"
-                      role="button"
-                      tabIndex={0}
-                      data-missing={!doc.exists || undefined}
-                      onClick={handleSelect}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        openMenu(doc, e.clientX, e.clientY);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          handleSelect();
-                        }
-                        // Shift+F10 与菜单键：键盘用户也能打开操作菜单。
-                        if (e.key === "F10" && e.shiftKey) {
-                          e.preventDefault();
-                          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                          openMenu(doc, r.left + 24, r.bottom - 8);
-                        }
-                      }}
-                    >
-                      {/* 网格列：图标 / 文件名与路径 / 大小 / 日期 / 操作。
-                          各列宽度固定，行与行之间才对得齐 —— 之前大小与日期
-                          挤在标题下面、宽度随内容伸缩，右半边是参差的。 */}
-                      <div className="home-note-row__icon-wrap">
-                        <FileIcon filename={displayName} size={22} />
-                      </div>
-                      <div className="home-note-row__info">
-                        <span className="home-note-row__title" title={displayName}>
-                          {displayName}
+                  },
+                  onContextMenu: (e) => {
+                    e.preventDefault();
+                    openMenu(doc, e.clientX, e.clientY);
+                  },
+                  // 行本身可点开，也要能被 Tab 到、用键盘打开。
+                  tabIndex: 0,
+                  onKeyDown: (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      if (doc.isPath && onOpenPath) onOpenPath(doc.id);
+                      else onOpenDocument(doc.id);
+                    }
+                    // Shift+F10 与菜单键：键盘用户也能打开操作菜单。
+                    if (e.key === "F10" && e.shiftKey) {
+                      e.preventDefault();
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      openMenu(doc, r.left + 24, r.bottom - 8);
+                    }
+                  },
+                })}
+                rowClassName={(doc) => (doc.exists ? "" : "home-file-table__row--missing")}
+                columns={[
+                  {
+                    title: zh.details.name,
+                    dataIndex: "title",
+                    key: "name",
+                    ellipsis: true,
+                    // 名称不排序：用户找文件靠搜索与修改时间，按字典序排
+                    // 只会把「刚改过的」打散（默认顺序就是它）。
+                    render: (_: unknown, doc) => {
+                      const displayName = fileDisplayName(doc.title);
+                      return (
+                        <span className="home-file-table__name">
+                          <FileIcon filename={displayName} size={18} />
+                          <span className="home-file-table__title" title={displayName}>
+                            {displayName}
+                          </span>
                           {doc.pinned && (
                             <Pin size={11} className="home-note-row__pinned" aria-label="已置顶" />
                           )}
+                          {!doc.exists && (
+                            <Tooltip content="文件已从磁盘移动或删除">
+                              <TriangleAlert
+                                size={13}
+                                className="home-note-row__missing"
+                                aria-label="文件不存在"
+                              />
+                            </Tooltip>
+                          )}
                         </span>
-                        <span
-                          className="home-note-row__path"
-                          title={doc.displayPath}
-                        >
-                          {doc.displayPath}
-                        </span>
-                      </div>
-                      <span className="home-note-row__size">{formatBytes(doc.size)}</span>
-                      <div className="home-note-row__right">
-                        {!doc.exists && (
-                          <Tooltip content="文件已从磁盘移动或删除">
-                            <TriangleAlert size={13} className="home-note-row__missing" aria-label="文件不存在" />
-                          </Tooltip>
-                        )}
-                        <span className="home-note-row__date">{formatDate(doc.updatedAt)}</span>
+                      );
+                    },
+                  },
+                  {
+                    title: zh.details.size,
+                    dataIndex: "size",
+                    key: "size",
+                    width: 96,
+                    align: "right",
+                    sorter: (a, b) => a.size - b.size,
+                    render: (size: number) => (
+                      <span className="home-file-table__meta">{formatBytes(size)}</span>
+                    ),
+                  },
+                  {
+                    title: zh.details.modified,
+                    dataIndex: "updatedAt",
+                    key: "updatedAt",
+                    width: 132,
+                    align: "right",
+                    sorter: (a, b) =>
+                      new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime(),
+                    render: (updatedAt: string) => (
+                      <span className="home-file-table__meta">{formatDate(updatedAt)}</span>
+                    ),
+                  },
+                  {
+                    // 操作列紧贴最右：与列表其它列同一套网格，不会左右跳动。
+                    key: "actions",
+                    width: 44,
+                    render: (_: unknown, doc) => {
+                      const displayName = fileDisplayName(doc.title);
+                      return (
                         <Tooltip content={zh.fileTree.moreActions}>
                           <Button
                             variant="ghost"
@@ -483,11 +530,11 @@ export function HomePage({
                             <MoreHorizontal size={14} aria-hidden />
                           </Button>
                         </Tooltip>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    },
+                  },
+                ]}
+              />
             )}
           </section>
 
