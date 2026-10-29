@@ -192,6 +192,14 @@ export const api = {
     call<void>("set_file_pinned", { path, pinned }),
 
   /** 在系统文件资源管理器中定位任意磁盘文件。 */
+  /** 重命名磁盘文件（同目录改文件名）。返回新记录。 */
+  renameFile: (path: string, newName: string) =>
+    call<FileRecord>("rename_file", { path, newName }),
+
+  /** 另存为副本（同目录新文件）。返回副本记录。 */
+  duplicateFile: (path: string, newName: string) =>
+    call<FileRecord>("duplicate_file", { path, newName }),
+
   revealFile: (path: string) => call<void>("reveal_file", { path }),
 
   // ---- 附件 ----

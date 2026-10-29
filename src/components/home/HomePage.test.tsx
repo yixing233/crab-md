@@ -157,3 +157,109 @@ describe("HomePage", () => {
     expect(screen.getByText("14 篇文档")).toBeInTheDocument();
   });
 });
+
+describe("HomePage 文件操作入口", () => {
+  function renderWithDisk(over: Partial<HomePageProps> = {}) {
+    return renderHomePage({
+      documents: [],
+      recentFiles: [diskFile("E:\\notes\\a.md", "a.md")],
+      onTogglePin: vi.fn(),
+      onDuplicateFile: vi.fn(),
+      onRenameFile: vi.fn(),
+      onRevealFile: vi.fn(),
+      onRemoveFromHistory: vi.fn(),
+      onDeleteFromDisk: vi.fn(),
+      onDeleteDocument: vi.fn(),
+      ...over,
+    });
+  }
+
+  /** 点某一行的「更多」按钮，返回菜单项。 */
+  async function openMenu() {
+    const row = document.querySelector(".home-note-row") as HTMLElement;
+    await userEvent.click(row.querySelector(".home-note-row__more") as HTMLElement);
+    return Array.from(
+      document.querySelectorAll("button[role='menuitem']"),
+    ) as HTMLButtonElement[];
+  }
+
+  it("offers the full file menu on a disk file row", async () => {
+    // 主页此前只能「点开看」，重命名/副本/置顶/定位/删除一个都没有。
+    renderWithDisk();
+    const labels = (await openMenu()).map((i) => i.textContent ?? "");
+
+    expect(labels.some((l) => l.includes("置顶文档"))).toBe(true);
+    expect(labels.some((l) => l.includes("另存为副本"))).toBe(true);
+    expect(labels.some((l) => l.includes("重命名"))).toBe(true);
+    expect(labels.some((l) => l.includes("打开文件所在位置"))).toBe(true);
+    expect(labels.some((l) => l.includes("从历史记录中移除"))).toBe(true);
+    expect(labels.some((l) => l.includes("从磁盘彻底删除"))).toBe(true);
+  });
+
+  it("routes each menu action to its handler with the disk path", async () => {
+    const props = renderWithDisk();
+    let items = await openMenu();
+    await userEvent.click(items.find((i) => i.textContent?.includes("置顶文档"))!);
+    expect(props.onTogglePin).toHaveBeenCalledWith("E:\\notes\\a.md", true);
+
+    items = await openMenu();
+    await userEvent.click(items.find((i) => i.textContent?.includes("重命名"))!);
+    expect(props.onRenameFile).toHaveBeenCalledWith("E:\\notes\\a.md", "a.md");
+
+    items = await openMenu();
+    await userEvent.click(items.find((i) => i.textContent?.includes("另存为副本"))!);
+    expect(props.onDuplicateFile).toHaveBeenCalledWith("E:\\notes\\a.md", "a.md");
+  });
+
+  it("keeps delete-from-disk usable for a file that vanished", async () => {
+    // 失效条目的唯一出路就是它；禁用等于「失效了却删不掉」。
+    renderWithDisk({
+      recentFiles: [{ ...diskFile("E:\\notes\\gone.md", "gone.md"), exists: false }],
+    });
+    const items = await openMenu();
+    const del = items.find((i) => i.textContent?.includes("从磁盘彻底删除"));
+
+    expect(del).toBeDefined();
+    expect(del!.disabled).toBe(false);
+    expect(screen.getByLabelText("文件不存在")).toBeInTheDocument();
+  });
+
+  it("marks a vanished file instead of hiding it", () => {
+    renderWithDisk({
+      recentFiles: [{ ...diskFile("E:\\notes\\gone.md", "gone.md"), exists: false }],
+    });
+    const row = document.querySelector(".home-note-row") as HTMLElement;
+
+    expect(row).toHaveAttribute("data-missing");
+    expect(screen.getByText("gone.md")).toBeInTheDocument();
+  });
+
+  it("offers 删除笔记 (not a no-op history removal) for a workspace document", async () => {
+    // 文档条目的 path 是文档 id：拿它删历史表永远匹配 0 行。
+    renderHomePage({
+      onDeleteDocument: vi.fn(),
+      onRemoveFromHistory: vi.fn(),
+      onDeleteFromDisk: vi.fn(),
+    });
+    const row = document.querySelector(".home-note-row") as HTMLElement;
+    await userEvent.click(row.querySelector(".home-note-row__more") as HTMLElement);
+    const items = Array.from(
+      document.querySelectorAll("button[role='menuitem']"),
+    ) as HTMLButtonElement[];
+    const labels = items.map((i) => i.textContent ?? "");
+
+    expect(labels.some((l) => l.includes("从历史记录中移除"))).toBe(false);
+    const del = items.find((i) => i.textContent?.includes("删除笔记"));
+    expect(del).toBeDefined();
+  });
+
+  it("opens the menu on right click too", async () => {
+    renderWithDisk();
+    const row = document.querySelector(".home-note-row") as HTMLElement;
+    await userEvent.pointer({ target: row, keys: "[MouseRight]" });
+
+    expect(
+      screen.getByRole("menuitem", { name: /置顶文档/ }),
+    ).toBeInTheDocument();
+  });
+});

@@ -9,13 +9,19 @@ import {
   FileText,
   HardDrive,
   Keyboard,
+  MoreHorizontal,
+  Pin,
   Search,
   Settings,
+  TriangleAlert,
 } from "lucide-react";
 import type { DocumentSummary, ExternalFileView, RecentFileView, SearchHit } from "../../types/document";
 import { pathKey } from "../../lib/externalFiles";
+import { buildFileActions } from "../../lib/fileActions";
 import { api } from "../../lib/api";
 import { Button } from "../ui/Button";
+import { ContextMenu } from "../ui/ContextMenu";
+import { Tooltip } from "../ui/Tooltip";
 import { FileIcon } from "../ui/FileIcon";
 import { zh } from "../../lib/i18n";
 import "./home.css";
@@ -33,6 +39,18 @@ export interface HomePageProps {
   workspacePath?: string | null;
   /** 全文检索函数；默认使用后端 api.searchDocuments。 */
   onSearchFullText?: (query: string) => Promise<SearchHit[]>;
+
+  // ---- 文件操作（与侧栏文件树同一套，见 lib/fileActions） ----
+  //
+  // 主页此前只能「点开看」：重命名、另存副本、置顶、定位、删除一概没有，
+  // 用户要改一个文件的任何属性都得先切到侧栏或编辑器里再找一遍。
+  onTogglePin?: (path: string, pinned: boolean) => void;
+  onDuplicateFile?: (path: string, title: string) => void;
+  onRenameFile?: (path: string, title: string) => void;
+  onRevealFile?: (path: string, name: string) => void;
+  onRemoveFromHistory?: (path: string) => void;
+  onDeleteFromDisk?: (path: string) => void;
+  onDeleteDocument?: (id: string, title: string) => void;
 }
 
 /** 主页文件列表条目：磁盘文件用路径当 id，工作区文档用文档 id。 */
@@ -43,6 +61,11 @@ interface HomeFileItem {
   updatedAt: string;
   size: number;
   isPath: boolean;
+  /** 磁盘上是否还存在；工作区文档恒为 true。 */
+  exists: boolean;
+  pinned: boolean;
+  /** 列表里显示的路径。工作区文档的 path 是文档 id，不能直接拿来展示。 */
+  displayPath: string;
 }
 
 function formatDate(iso: string): string {
@@ -99,10 +122,19 @@ export function HomePage({
   onNewDocument,
   onOpenFile,
   onOpenSettings,
+  onTogglePin,
+  onDuplicateFile,
+  onRenameFile,
+  onRevealFile,
+  onRemoveFromHistory,
+  onDeleteFromDisk,
+  onDeleteDocument,
   workspacePath,
   onSearchFullText,
 }: HomePageProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  // 右键/更多按钮打开的操作菜单；null 表示关闭。
+  const [menu, setMenu] = useState<{ item: HomeFileItem; x: number; y: number } | null>(null);
   const [searchResults, setSearchResults] = useState<SearchHit[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -115,7 +147,15 @@ export function HomePage({
     const items: HomeFileItem[] = [];
     const seen = new Set<string>();
 
-    const pushDiskFile = (f: { path: string; name: string; size: number; openedAt: string }) => {
+    const pushDiskFile = (f: {
+      path: string;
+      name: string;
+      size: number;
+      openedAt: string;
+      pinned?: boolean;
+      /** 统一历史的 exists 与旧清单的 missing 是同一件事的两种写法。 */
+      exists: boolean;
+    }) => {
       items.push({
         id: f.path,
         title: f.name,
@@ -123,6 +163,9 @@ export function HomePage({
         updatedAt: f.openedAt,
         size: f.size,
         isPath: true,
+        exists: f.exists,
+        pinned: f.pinned ?? false,
+        displayPath: f.path,
       });
       seen.add(pathKey(f.path));
       seen.add(f.name.toLowerCase());
@@ -130,7 +173,9 @@ export function HomePage({
 
     for (const f of recentFiles ?? []) pushDiskFile(f);
     for (const f of externalFiles ?? []) {
-      if (!seen.has(pathKey(f.path))) pushDiskFile(f);
+      if (!seen.has(pathKey(f.path))) {
+        pushDiskFile({ ...f, exists: !f.missing });
+      }
     }
 
     for (const d of documents) {
@@ -140,10 +185,13 @@ export function HomePage({
       items.push({
         id: d.id,
         title: d.title,
-        path: d.virtualPath && d.virtualPath !== "/" ? d.virtualPath : "/",
+        path: d.id,
         updatedAt: d.updatedAt,
         size: d.size,
         isPath: false,
+        exists: true,
+        pinned: false,
+        displayPath: d.virtualPath && d.virtualPath !== "/" ? d.virtualPath : "/",
       });
       seen.add(idKey);
     }
@@ -193,6 +241,30 @@ export function HomePage({
   }, [searchQuery, displayedDocs, onSearchFullText]);
 
   const isSearchActive = searchQuery.trim().length > 0;
+
+  /** 打开某一行的操作菜单（右键，或右侧「更多」按钮）。 */
+  const openMenu = (item: HomeFileItem, x: number, y: number) => setMenu({ item, x, y });
+
+  /** 这一行当前可用的操作。与侧栏文件树共用同一套规则（lib/fileActions）。 */
+  const menuItems = menu
+    ? buildFileActions(
+        {
+          path: menu.item.path,
+          name: menu.item.title,
+          exists: menu.item.exists,
+          pinned: menu.item.pinned,
+        },
+        {
+        onTogglePin: (path, pinned) => onTogglePin?.(path, pinned),
+        onDuplicate: (path, title) => onDuplicateFile?.(path, title),
+        onRename: (path, title) => onRenameFile?.(path, title),
+        onReveal: (path, name) => onRevealFile?.(path, name),
+        onRemoveFromHistory: (path) => onRemoveFromHistory?.(path),
+        onDeleteFromDisk: (path) => onDeleteFromDisk?.(path),
+        onDeleteDocument: (id, title) => onDeleteDocument?.(id, title),
+        },
+      )
+    : [];
 
   return (
     <div className="home-page" role="region" aria-label="工作区主页">
@@ -353,11 +425,22 @@ export function HomePage({
                       className="home-note-row"
                       role="button"
                       tabIndex={0}
+                      data-missing={!doc.exists || undefined}
                       onClick={handleSelect}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openMenu(doc, e.clientX, e.clientY);
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
                           handleSelect();
+                        }
+                        // Shift+F10 与菜单键：键盘用户也能打开操作菜单。
+                        if (e.key === "F10" && e.shiftKey) {
+                          e.preventDefault();
+                          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          openMenu(doc, r.left + 24, r.bottom - 8);
                         }
                       }}
                     >
@@ -370,16 +453,45 @@ export function HomePage({
                             {displayName}
                           </span>
                           <div className="home-note-row__meta">
-                            <span className="home-note-row__path">{doc.path}</span>
+                            <span className="home-note-row__path">{doc.displayPath}</span>
                             <span className="home-note-row__dot">·</span>
                             <span className="home-note-row__size">{formatBytes(doc.size)}</span>
+                            {doc.pinned && (
+                              <>
+                                <span className="home-note-row__dot">·</span>
+                                <span className="home-note-row__pinned">
+                                  <Pin size={11} aria-hidden /> 已置顶
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
 
                       <div className="home-note-row__right">
+                        {!doc.exists && (
+                          <Tooltip content="文件已从磁盘移动或删除">
+                            <TriangleAlert size={13} className="home-note-row__missing" aria-label="文件不存在" />
+                          </Tooltip>
+                        )}
                         <span className="home-note-row__date">{formatDate(doc.updatedAt)}</span>
-                        <ArrowRight size={14} className="home-note-row__arrow" aria-hidden />
+                        <Tooltip content={zh.fileTree.moreActions}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            iconOnly
+                            className="home-note-row__more"
+                            aria-label={`${displayName} ${zh.fileTree.moreActions}`}
+                            onClick={(e) => {
+                              // 别把点击冒泡成「打开文件」。
+                              e.stopPropagation();
+                              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                              openMenu(doc, r.left, r.bottom + 2);
+                            }}
+                          >
+                            <MoreHorizontal size={14} aria-hidden />
+                          </Button>
+                        </Tooltip>
                       </div>
                     </div>
                   );
@@ -489,6 +601,15 @@ export function HomePage({
           </div>
         </div>
       </div>
+
+      <ContextMenu
+        open={menu !== null}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        items={menuItems}
+        onClose={() => setMenu(null)}
+        ariaLabel={menu ? `${menu.item.title} 的操作` : undefined}
+      />
     </div>
   );
 }

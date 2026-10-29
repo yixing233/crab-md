@@ -718,6 +718,133 @@ impl DocumentService {
         Ok(())
     }
 
+    /// 重命名磁盘文件：同目录内改文件名，记录跟着走。
+    ///
+    /// 只改文件名（同目录），不跨目录移动 —— 跨目录是「移动」，语义不同，
+    /// 也会让用户在别的笔记里写的相对链接失效。目标已存在时拒绝而不是覆盖。
+    ///
+    /// 登记表用「删旧 + 写新」而不是改主键：path_key 是主键，改主键等于
+    /// 换一条记录，置顶与阅读位置跟着新文件走才符合直觉（文件还是那一个）。
+    pub fn rename_disk_file(&self, path: &str, new_name: &str) -> AppResult<FileRecord> {
+        let new_name = new_name.trim();
+        if new_name.is_empty() {
+            return Err(AppError::InvalidInput("name must not be empty".into()));
+        }
+        // 分隔符会让它变成「移动到别处」，与这个方法的名字不符。
+        if new_name.contains(['/', '\\']) {
+            return Err(AppError::InvalidInput(
+                "name must not contain path separators".into(),
+            ));
+        }
+
+        let old = PathBuf::from(path);
+        let parent = old
+            .parent()
+            .ok_or_else(|| AppError::InvalidInput(format!("path has no parent: {path}")))?;
+        let target = parent.join(new_name);
+        if opened_files::path_key(&target.to_string_lossy()) == opened_files::path_key(path) {
+            // 名字没变（仅大小写可能不同）：也要真的落盘，Windows 上这是有效操作。
+        } else if target.exists() {
+            return Err(AppError::AlreadyExists(format!(
+                "target already exists: {}",
+                target.to_string_lossy()
+            )));
+        }
+        if !old.is_file() {
+            return Err(AppError::NotFound(path.to_string()));
+        }
+
+        std::fs::rename(&old, &target)?;
+
+        // 旧记录里记着置顶与阅读位置，搬过去而不是丢掉。
+        let previous = {
+            let st = self.lock()?;
+            let prev = opened_files::get(&st.conn, path)?;
+            opened_files::remove(&st.conn, path)?;
+            external_files::remove(&st.conn, path)?;
+            prev
+        };
+
+        let meta = std::fs::metadata(&target)?;
+        let new_path = target.to_string_lossy().into_owned();
+        let name = external_file_name(&target);
+        let modified_at = external_file_modified_at(&meta);
+        let opened_at = workspace::now_iso8601();
+        let body = std::fs::read_to_string(&target).ok();
+
+        let st = self.lock()?;
+        opened_files::upsert_and_index(
+            &st.conn,
+            &new_path,
+            &name,
+            meta.len() as i64,
+            &modified_at,
+            &opened_at,
+            body.as_deref(),
+        )?;
+        // 旧的外部清单也重新登记一份，保持两张表口径一致。
+        external_files::upsert(
+            &st.conn,
+            &new_path,
+            &name,
+            meta.len() as i64,
+            &modified_at,
+            &opened_at,
+        )?;
+        if let Some(prev) = previous {
+            opened_files::set_pinned(&st.conn, &new_path, prev.pinned)?;
+            opened_files::update_session(
+                &st.conn,
+                &new_path,
+                prev.cursor_line,
+                prev.cursor_col,
+                prev.scroll_ratio,
+            )?;
+        }
+        opened_files::get(&st.conn, &new_path)?
+            .ok_or_else(|| AppError::NotFound(new_path.clone()))
+    }
+
+    /// 另存为副本：复制成一个新文件（同目录，名字由调用方给）。
+    ///
+    /// 与工作区文档的「另存副本」语义一致：原文件不动，副本独立存在。
+    pub fn duplicate_disk_file(&self, path: &str, new_name: &str) -> AppResult<FileRecord> {
+        let source = Path::new(path);
+        if !source.is_file() {
+            return Err(AppError::NotFound(path.to_string()));
+        }
+        let new_name = new_name.trim();
+        if new_name.is_empty() {
+            return Err(AppError::InvalidInput("name must not be empty".into()));
+        }
+        if new_name.contains(['/', '\\']) {
+            return Err(AppError::InvalidInput(
+                "name must not contain path separators".into(),
+            ));
+        }
+        let parent = source
+            .parent()
+            .ok_or_else(|| AppError::InvalidInput(format!("path has no parent: {path}")))?;
+        let target = parent.join(new_name);
+        if opened_files::path_key(&target.to_string_lossy()) == opened_files::path_key(path) {
+            return Err(AppError::InvalidInput(
+                "copy must have a different name".into(),
+            ));
+        }
+        if target.exists() {
+            return Err(AppError::AlreadyExists(format!(
+                "target already exists: {}",
+                target.to_string_lossy()
+            )));
+        }
+
+        std::fs::copy(source, &target)?;
+        let meta = std::fs::metadata(&target)?;
+        check_transfer_size(meta.len())?;
+        let new_path = target.to_string_lossy().into_owned();
+        self.save_disk_file(&new_path, &std::fs::read_to_string(&target)?)
+    }
+
     /// 全文检索所有已打开过的文件。
     pub fn search_disk_files(&self, query: &str) -> AppResult<Vec<FileSearchResult>> {
         let st = self.lock()?;
@@ -1134,6 +1261,24 @@ pub fn set_file_pinned(
     pinned: bool,
 ) -> AppResult<()> {
     svc.set_file_pinned(&path, pinned)
+}
+
+#[tauri::command]
+pub fn rename_file(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+    new_name: String,
+) -> AppResult<crate::model::FileRecord> {
+    svc.rename_disk_file(&path, &new_name)
+}
+
+#[tauri::command]
+pub fn duplicate_file(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+    new_name: String,
+) -> AppResult<crate::model::FileRecord> {
+    svc.duplicate_disk_file(&path, &new_name)
 }
 
 #[tauri::command]
@@ -2307,6 +2452,75 @@ mod tests {
 
         svc.switch_workspace(d.path().to_path_buf()).unwrap();
         assert_eq!(svc.list_external().unwrap().len(), 1, "switching back restores it");
+    }
+
+    #[test]
+    fn renaming_a_disk_file_moves_it_and_keeps_the_record() {
+        let (d, svc) = svc();
+        let path = d.path().join("旧名.md");
+        std::fs::write(&path, "内容").unwrap();
+        svc.save_disk_file(&path.to_string_lossy(), "内容").unwrap();
+        svc.set_file_pinned(&path.to_string_lossy(), true).unwrap();
+
+        let target = d.path().join("新名.md");
+        let rec = svc
+            .rename_disk_file(&path.to_string_lossy(), "新名.md")
+            .unwrap();
+
+        assert_eq!(rec.path, target.to_string_lossy());
+        assert_eq!(rec.name, "新名.md");
+        assert!(!path.exists(), "old file must be gone");
+        assert!(target.exists(), "new file must exist");
+        // 置顶是用户对「这个文件」的意志，改名不该丢掉。
+        assert!(rec.pinned, "pinned state follows the file");
+
+        let list = svc.list_recent_files().unwrap();
+        assert_eq!(list.len(), 1, "one record, not two");
+        assert_eq!(list[0].record.path, target.to_string_lossy());
+    }
+
+    #[test]
+    fn renaming_refuses_to_clobber_an_existing_file() {
+        let (d, svc) = svc();
+        let a = d.path().join("a.md");
+        let b = d.path().join("b.md");
+        std::fs::write(&a, "A").unwrap();
+        std::fs::write(&b, "B").unwrap();
+
+        let err = svc.rename_disk_file(&a.to_string_lossy(), "b.md").unwrap_err();
+        assert!(
+            matches!(err, AppError::AlreadyExists(_)),
+            "must refuse instead of silently overwriting: {err:?}"
+        );
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "B", "b untouched");
+    }
+
+    #[test]
+    fn renaming_rejects_a_name_with_path_separators() {
+        // 含分隔符就变成「移动到别处」，与重命名的语义不符（也会让相对链接断掉）。
+        let (d, svc) = svc();
+        let path = d.path().join("a.md");
+        std::fs::write(&path, "A").unwrap();
+        assert!(svc
+            .rename_disk_file(&path.to_string_lossy(), "sub/b.md")
+            .is_err());
+    }
+
+    #[test]
+    fn duplicating_a_disk_file_leaves_the_original_alone() {
+        let (d, svc) = svc();
+        let path = d.path().join("a.md");
+        std::fs::write(&path, "原文").unwrap();
+
+        let copy = svc
+            .duplicate_disk_file(&path.to_string_lossy(), "a (副本).md")
+            .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "原文");
+        assert_eq!(std::fs::read_to_string(&copy.path).unwrap(), "原文");
+        assert_ne!(copy.path, path.to_string_lossy());
+        // 副本也要进历史，否则用户复制完在列表里找不到它。
+        assert_eq!(svc.list_recent_files().unwrap().len(), 1);
     }
 
     #[test]

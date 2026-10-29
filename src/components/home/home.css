@@ -316,6 +316,45 @@
   color: var(--accent-solid);
 }
 
+/* 「更多」操作入口：与侧栏文件树同样的悬浮显隐规则。
+   平时让位给日期，鼠标进入行或键盘聚焦时才出现，避免一排按钮压过内容。 */
+.home-note-row__more {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  color: var(--text-muted);
+  transition: opacity var(--duration-fast) ease,
+              background-color var(--duration-fast) ease,
+              color var(--duration-fast) ease;
+}
+
+.home-note-row:hover .home-note-row__more,
+.home-note-row__more:focus-visible,
+.home-note-row__more[aria-expanded="true"] {
+  opacity: 1;
+}
+
+/* 文件已不在磁盘上：标题弱化加删除线，但仍要留在列表里 ——
+   用户得看见「这条失效了」才能自己清理（与侧栏同一套语义）。 */
+.home-note-row[data-missing] .home-note-row__title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.home-note-row__missing {
+  flex-shrink: 0;
+  color: var(--danger);
+}
+
+.home-note-row__pinned {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent-solid);
+}
+
 /* 空状态 */
 .home-empty {
   display: flex;

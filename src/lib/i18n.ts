@@ -483,6 +483,8 @@ export const zh = {
     saved: "已保存",
     saveFailed: "保存失败，内容仍保留在编辑器中",
     renamed: "已重命名",
+    /** 重命名失败：磁盘文件可能被占用，或目标文件名已存在。 */
+    renameFailed: "重命名失败，文件名可能已存在或被占用",
     deleted: "已删除",
     duplicated: "已另存为副本",
     duplicateFailed: "另存失败，原文未受影响",

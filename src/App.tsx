@@ -20,6 +20,7 @@ import {
   type ClosePromptType,
 } from "./components/workspace/CloseDocumentModal";
 import { clearRecoveryDraft } from "./lib/recovery";
+import { duplicateDiskName, isDiskPath } from "./lib/fileActions";
 import { Splitter } from "./components/workspace/Splitter";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { AboutDialog } from "./components/settings/AboutDialog";
@@ -214,6 +215,8 @@ export default function App() {
   const removeRecentFile = useWorkspaceStore((s) => s.removeRecentFile);
   const deleteDiskFile = useWorkspaceStore((s) => s.deleteDiskFile);
   const setFilePinned = useWorkspaceStore((s) => s.setFilePinned);
+  const renameDiskFile = useWorkspaceStore((s) => s.renameDiskFile);
+  const duplicateDiskFile = useWorkspaceStore((s) => s.duplicateDiskFile);
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
   // 侧栏当前面板：大纲 / 文件，两者互斥（顶部标签页切换）。持久化。
@@ -324,6 +327,14 @@ export default function App() {
     updateStatus.kind === "available" ? updateStatus.version : null;
   // 待删除的文档；非空时显示确认对话框（UI §14.4 要求破坏性操作先确认）。
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
+  // 重命名输入框；path 是磁盘路径或文档 id，由 isDiskPath 分流。
+  const [pendingRename, setPendingRename] = useState<{ path: string; current: string } | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+
+  // 打开重命名对话框时把当前名字填进去（顺带清掉上一次的残留输入）。
+  useEffect(() => {
+    if (pendingRename) setRenameDraft(pendingRename.current);
+  }, [pendingRename]);
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
     readStoredPreference(typeof localStorage === "undefined" ? null : localStorage.getItem(THEME_STORAGE_KEY)),
   );
@@ -1224,6 +1235,118 @@ export default function App() {
   );
 
   /**
+   * 按「路径」重命名：磁盘文件与工作区文档是两种完全不同的后端命令。
+   *
+   * 主页/侧栏的列表把两者混在一起，UI 只拿到一个字符串，所以分流必须在
+   * 这里做一次 —— 传错分支会是个静默死操作（文档 id 当成磁盘路径，
+   * 或者反过来说某个 UUID 是一份文档）。
+   */
+  const handleRenamePath = useCallback(
+    async (path: string, _title: string) => {
+      // 磁盘文件要改的是「文件名」，得让用户输入新名字（并回写磁盘）；
+      // 工作区文档改的是标题，同样需要输入框。
+      setPendingRename({
+        path,
+        current: isDiskPath(path) ? baseName(path) : _title,
+      });
+    },
+    [],
+  );
+
+  /** 按路径另存副本：工作区文档走文档副本，磁盘文件由后端复制成新文件。 */
+  const handleDuplicatePath = useCallback(
+    async (path: string, title?: string) => {
+      if (!isDiskPath(path)) {
+        // 标题必须由调用方给：文档条目的 path 是 UUID，拿它当标题会得到
+        // 「<uuid> 副本」。没有标题时退到库里查到的标题。
+        const docTitle =
+          title ??
+          useWorkspaceStore.getState().documents.find((d) => d.id === path)?.title ??
+          baseName(path);
+        await handleDuplicate(path, docTitle);
+        return;
+      }
+      const name = duplicateDiskName(baseName(path));
+      const created = await duplicateDiskFile(path, name);
+      setToast({
+        message: created ? zh.toast.duplicated : zh.toast.duplicateFailed,
+        tone: created ? "success" : "error",
+      });
+    },
+    [handleDuplicate, duplicateDiskFile],
+  );
+
+  /** 按路径在文件管理器里定位。 */
+  const handleRevealPath = useCallback(async (path: string) => {
+    try {
+      if (isDiskPath(path)) {
+        await api.revealFile(path);
+      } else {
+        await api.revealDocument(path);
+      }
+    } catch {
+      setToast({ message: zh.toast.revealFailed(baseName(path)), tone: "error" });
+    }
+  }, []);
+
+  /**
+   * 重命名磁盘文件：改名成功后把开着的标签与活动文档一起搬到新路径。
+   *
+   * 不搬的话标签 id（`ext:<旧路径>`）就指向一个不存在的文件，
+   * 用户点开只会收到「打开失败」——刚改完名就坏了。
+   */
+  const handleRenameDiskFile = useCallback(
+    async (path: string, newName: string) => {
+      const created = await renameDiskFile(path, newName);
+      if (!created) {
+        setToast({ message: zh.toast.renameFailed, tone: "error" });
+        return;
+      }
+
+      const oldTabId = externalTabId(path);
+      const newTabId = externalTabId(created);
+      setOpenTabIds((prev) => prev.map((id) => (id === oldTabId ? newTabId : id)));
+      if (useWorkspaceStore.getState().activeId === oldTabId) {
+        useWorkspaceStore.setState({ activeId: newTabId });
+      }
+      setToast({ message: zh.toast.renamed, tone: "success" });
+    },
+    [renameDiskFile],
+  );
+
+  /**
+   * 执行重命名（输入框确认后）。
+   *
+   * 磁盘文件走改名命令（真的改磁盘上的文件名），工作区文档走改标题。
+   * 两者都要求先 flush 当前编辑：改名会让开着的标签指向新路径，
+   * 未保存的内容必须先落到旧路径，否则会丢。
+   */
+  const handleConfirmRename = useCallback(async () => {
+    const target = pendingRename;
+    const next = renameDraft.trim();
+    setPendingRename(null);
+    if (!target || !next || next === target.current) return;
+
+    if (!(await useWorkspaceStore.getState().flushActive())) {
+      setToast({ message: zh.toast.saveFailed, tone: "error" });
+      return;
+    }
+
+    if (!isDiskPath(target.path)) {
+      await renameDocument(target.path, next);
+      if (useWorkspaceStore.getState().error) {
+        setToast({ message: zh.toast.renameFailed, tone: "error" });
+      } else {
+        setToast({ message: zh.toast.renamed, tone: "success" });
+      }
+      return;
+    }
+
+    // 磁盘文件：只允许改文件名，保留原扩展名由 Rust 校验，这里不做加工。
+    await handleRenameDiskFile(target.path, next);
+  }, [pendingRename, renameDraft, renameDocument, handleRenameDiskFile]);
+
+  /**
    * 从「历史记录」移除一条**磁盘文件**记录（不删磁盘文件）。
    *
    * 必须给反馈：清掉一条记录后列表通常只是少了一行，用户很可能正在盯着
@@ -1708,8 +1831,10 @@ export default function App() {
           onChangeTab={setSidebarTab}
           onSelect={(id) => void handleOpenDocument(id)}
           onCreate={handleNewDocument}
-          onRename={(id, title) => void renameDocument(id, title)}
-          onDuplicate={(id, title) => void handleDuplicate(id, title)}
+          // 这张列表里既有磁盘文件（path 是绝对路径）也有工作区文档（path 是
+          // 文档 id），必须按条目类型分流，不能一律当文档改标题。
+          onRename={(id, title) => void handleRenamePath(id, title)}
+          onDuplicate={(id, title) => void handleDuplicatePath(id, title)}
           onExport={(id, title) => void handleExport(id, title)}
           onReveal={(id, title) => void handleReveal(id, title)}
           onOpenFile={() => void handleOpenFile()}
@@ -1897,6 +2022,14 @@ export default function App() {
               onNewDocument={handleNewDocument}
               onOpenFile={() => void handleOpenFile()}
               onOpenSettings={() => setSettingsOpen(true)}
+              // 文件操作：与侧栏同一套（lib/fileActions），按条目类型自动分流。
+              onTogglePin={(path, pinned) => void setFilePinned(path, pinned)}
+              onDuplicateFile={(path) => void handleDuplicatePath(path)}
+              onRenameFile={(path, title) => void handleRenamePath(path, title)}
+              onRevealFile={(path) => void handleRevealPath(path)}
+              onRemoveFromHistory={(path) => void handleRemoveRecentFile(path)}
+              onDeleteFromDisk={(path) => void handleDeleteDiskFile(path)}
+              onDeleteDocument={(id, title) => setPendingDelete({ id, title })}
               workspacePath={useWorkspaceStore.getState().settings?.effectiveWorkspaceRoot}
             />
           )}
@@ -1916,6 +2049,32 @@ export default function App() {
             ? zh.recovery.conflictBody(recoveryCandidate.title)
             : zh.recovery.body(recoveryCandidate.title)
           : null}
+      </Dialog>
+
+      <Dialog
+        open={pendingRename !== null}
+        title={isDiskPath(pendingRename?.path ?? "") ? "重命名文件" : "重命名笔记"}
+        confirmLabel="重命名"
+        cancelLabel={zh.dialog.cancel}
+        onCancel={() => setPendingRename(null)}
+        onConfirm={() => void handleConfirmRename()}
+      >
+        <label className="ui-dialog__field">
+          <span className="ui-dialog__field-label">名称</span>
+          <input
+            className="ui-dialog__input"
+            // 默认选中扩展名之前的部分：改名通常只想改主名。
+            autoFocus
+            value={renameDraft}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleConfirmRename();
+              }
+            }}
+          />
+        </label>
       </Dialog>
 
       <Dialog

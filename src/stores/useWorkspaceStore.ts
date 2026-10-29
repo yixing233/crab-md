@@ -121,6 +121,14 @@ export interface WorkspaceState {
   deleteDiskFile: (path: string) => Promise<boolean>;
   /** 置顶/取消置顶某个历史文件。 */
   setFilePinned: (path: string, pinned: boolean) => Promise<void>;
+  /**
+   * 重命名磁盘文件（同目录改文件名）。返回新路径，失败返回 null。
+   *
+   * 改名后标签页 id 也跟着换 —— 否则一个开着的标签会指向已不存在的路径。
+   */
+  renameDiskFile: (path: string, newName: string) => Promise<string | null>;
+  /** 另存为副本；成功返回副本路径（不自动打开，列表里能看到即可）。 */
+  duplicateDiskFile: (path: string, newName: string) => Promise<string | null>;
   /** 保存阅读/编辑位置会话状态。 */
   updateFileSession: (
     path: string,
@@ -502,6 +510,35 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (raw) {
       const code = toAppError(raw).code;
       logFailure({ op: "setFilePinned", code }, raw);
+    }
+  },
+
+  renameDiskFile: async (path: string, newName: string) => {
+    set({ error: null });
+    try {
+      const record = await api.renameFile(path, newName);
+      // 两份清单都要刷：改名后 path_key 变了，旧记录已删、新记录已写。
+      await Promise.all([get().loadRecentFiles(), get().loadExternalFiles()]);
+      return record.path;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "renameDiskFile", code }, raw);
+      set({ error: code });
+      return null;
+    }
+  },
+
+  duplicateDiskFile: async (path: string, newName: string) => {
+    set({ error: null });
+    try {
+      const record = await api.duplicateFile(path, newName);
+      await Promise.all([get().loadRecentFiles(), get().loadExternalFiles()]);
+      return record.path;
+    } catch (raw) {
+      const code = toAppError(raw).code;
+      logFailure({ op: "duplicateDiskFile", code }, raw);
+      set({ error: code });
+      return null;
     }
   },
 

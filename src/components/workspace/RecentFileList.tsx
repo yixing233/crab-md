@@ -2,11 +2,12 @@ import { useCallback, useState } from "react";
 import { MoreHorizontal, Pin, TriangleAlert } from "lucide-react";
 import type { RecentFileView } from "../../types/document";
 import { isDiskPath, samePath } from "../../lib/externalFiles";
+import { buildFileActions } from "../../lib/fileActions";
 import { zh } from "../../lib/i18n";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { Tooltip } from "../ui/Tooltip";
-import { ContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
+import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
 import { FileIcon } from "../ui/FileIcon";
 import { Dialog } from "../ui/Dialog";
 import "./workspace.css";
@@ -60,67 +61,17 @@ export function RecentFileList({
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const menuItems = useCallback(
-    (file: RecentFileView): ContextMenuItem[] => {
-      const items: ContextMenuItem[] = [
-        {
-          id: "pin",
-          label: file.pinned ? "取消置顶" : "置顶文档",
-          onSelect: () => onTogglePin(file.path, !file.pinned),
-        },
-        {
-          id: "duplicate",
-          label: zh.fileTree.duplicate,
-          onSelect: () => {
-            onDuplicate?.(file.path, file.name);
-          },
-        },
-        {
-          id: "rename",
-          label: zh.fileTree.rename,
-          shortcut: "F2",
-          onSelect: () => onRename?.(file.path, file.name),
-        },
-        {
-          id: "reveal",
-          label: zh.fileTree.revealInExplorer,
-          disabled: !file.exists,
-          onSelect: () => onReveal(file.path, file.name),
-        },
-      ];
-
-      // 工作区文档：path 是文档 id，不是磁盘路径。
-      //
-      // 这类条目**没有**「历史记录」可言 —— 它来自 documents 表，所以
-      // 「从历史记录中移除」拿文档 id 去删 opened_files/external_files 永远
-      // 匹配 0 行：点了没反应、也不报错（用户看到的正是「删除没反应」）。
-      // 对它唯一有意义的动作是删掉这条笔记本身，走文档删除确认框。
-      if (!isDiskPath(file.path)) {
-        items.push({
-          id: "delete-document",
-          label: "删除笔记",
-          danger: true,
-          onSelect: () => onDeleteDocument?.(file.path, file.name),
-        });
-        return items;
-      }
-
-      items.push(
-        {
-          id: "remove-history",
-          label: "从历史记录中移除",
-          onSelect: () => setPendingDelete({ file, mode: "history" }),
-        },
-        {
-          // 文件已不在磁盘上时同样要能点：磁盘那步是空操作，但记录必须清掉，
-          // 否则「文件失效了却删不掉」——禁用按钮看着就像删除失效。
-          id: "delete-disk",
-          label: "从磁盘彻底删除",
-          danger: true,
-          onSelect: () => setPendingDelete({ file, mode: "disk" }),
-        },
-      );
-      return items;
-    },
+    (file: RecentFileView): ContextMenuEntry[] =>
+      buildFileActions(file, {
+        onTogglePin,
+        onDuplicate: (path, title) => onDuplicate?.(path, title),
+        onRename: (path, title) => onRename?.(path, title),
+        onReveal,
+        // 破坏性动作先弹确认框，确认后才真的调后端。
+        onRemoveFromHistory: () => setPendingDelete({ file, mode: "history" }),
+        onDeleteFromDisk: () => setPendingDelete({ file, mode: "disk" }),
+        onDeleteDocument: (id, title) => onDeleteDocument?.(id, title),
+      }),
     [onTogglePin, onReveal, onDuplicate, onRename, onDeleteDocument],
   );
 
