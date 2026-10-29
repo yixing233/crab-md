@@ -302,9 +302,8 @@
 
 .ui-menu__item {
   display: flex;
-  gap: var(--space-4);
+  gap: var(--space-3);
   align-items: center;
-  justify-content: space-between;
   width: 100%;
   padding: var(--space-2) var(--space-3);
   font-family: inherit;
@@ -315,6 +314,32 @@
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+
+/* 图标槽固定宽度：条目有没有图标时文字都从同一条竖线开始，
+   否则菜单里会出现参差的左边界。 */
+.ui-menu__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+/* 危险项（删除一类）图标也跟着变色，不能只剩文字是红的。 */
+.ui-menu__item[data-danger] .ui-menu__icon {
+  color: inherit;
+}
+
+/* 标签占满中间，快捷键/勾选靠右。 */
+.ui-menu__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ui-menu__item:hover:not(:disabled) { background: var(--bg-surface-hover); }
@@ -347,8 +372,14 @@
 .ui-menu__item[data-danger]:hover { background: var(--danger-soft); }
 
 .ui-menu__shortcut {
+  flex: 0 0 auto;
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+.ui-menu__check {
+  flex: 0 0 auto;
+  color: var(--accent-solid);
 }
 
 /* ---------------------------------------------------------------------------

@@ -263,3 +263,39 @@ describe("HomePage 文件操作入口", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("HomePage 工作区笔记显示完整磁盘路径", () => {
+  it("shows the real notes path instead of a bare slash", () => {
+    // 软件自建的笔记也落在磁盘上（<数据目录>/notes/<uuid>.md），
+    // 列表里只显示「/」等于没告诉用户文件在哪。
+    renderHomePage({
+      documents: [
+        {
+          id: "01a0e60f-e597-74e4-b74d-65164fdb3cdf",
+          title: "开题笔记",
+          virtualPath: "/",
+          revision: 1,
+          contentHash: "sha256:x",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-02T00:00:00Z",
+          size: 170,
+        },
+      ],
+      recentFiles: [],
+      workspacePath: "C:\\Users\\Administrator\\AppData\\Roaming\\dev.crabmd.app\\workspace",
+    });
+
+    expect(
+      screen.getByText(
+        "C:\\Users\\Administrator\\AppData\\Roaming\\dev.crabmd.app\\workspace\\notes\\01a0e60f-e597-74e4-b74d-65164fdb3cdf.md",
+      ),
+    ).toBeInTheDocument();
+    // 不再退化成裸的「/」。
+    expect(screen.queryByText("/")).not.toBeInTheDocument();
+  });
+
+  it("falls back to / when the workspace root is unknown", () => {
+    renderHomePage({ workspacePath: null });
+    expect(screen.getByText("/")).toBeInTheDocument();
+  });
+});

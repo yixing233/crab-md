@@ -217,9 +217,13 @@
 }
 
 .home-note-row {
-  display: flex;
+  /* 五列固定：图标 / 名称与路径 / 大小 / 日期 / 操作。
+     用网格而不是 flex：flex 下每列宽度随内容伸缩，行与行的大小区间
+     就对不齐（原始需求里的「东一个西一个」）。 */
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 64px auto auto;
   align-items: center;
-  justify-content: space-between;
+  column-gap: 12px;
   padding: 12px 14px;
   background-color: var(--bg-surface);
   border: 1px solid var(--border-default);
@@ -234,23 +238,15 @@
   border-color: var(--border-strong);
 }
 
-.home-note-row__left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  flex: 1;
-}
-
+/* 图标直接放着，不套方框：方框是给的「卡片感」，在这一行里只是噪音，
+   还把图标本身压小了一圈（32px 里装 16px 的图）。 */
+/* 图标直接放着，不套方框：方框在这一行里只是噪音，还把图标压小了一圈。
+   固定宽度保证文件名左边界对齐（有无图标时都从同一条竖线开始）。 */
 .home-note-row__icon-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  background-color: var(--bg-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  width: 22px;
   color: var(--accent-solid);
   flex-shrink: 0;
 }
@@ -260,7 +256,6 @@
   flex-direction: column;
   gap: 3px;
   min-width: 0;
-  flex: 1;
 }
 
 .home-note-row__title {
@@ -274,18 +269,31 @@
 
 .home-note-row__meta {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
+  min-width: 0;
   font-size: 11px;
   color: var(--text-muted);
 }
 
+/* 路径占满剩余宽度后单行省略：内容是真的磁盘路径（软件自建笔记同样是
+   <数据目录>\notes\<uuid>.md，不再是占位的「/」），但长路径不换行 ——
+   换行会把每行高度撑乱。完整值挂在 title 上，悬停可见。 */
 .home-note-row__path {
+  min-width: 0;
   font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 140px;
+}
+
+/* 大小独占一列并右对齐：数字位数不同，左对齐会让小数点参差。 */
+.home-note-row__size {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .home-note-row__dot {
@@ -295,14 +303,17 @@
 .home-note-row__right {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-  padding-left: 12px;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .home-note-row__date {
+  min-width: 74px;
   font-size: var(--text-xs);
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .home-note-row__arrow {
@@ -349,10 +360,9 @@
 }
 
 .home-note-row__pinned {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  margin-left: 5px;
   color: var(--accent-solid);
+  vertical-align: -1px;
 }
 
 /* 空状态 */

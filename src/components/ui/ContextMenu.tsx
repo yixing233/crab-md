@@ -18,6 +18,13 @@ export interface ContextMenuItem {
   danger?: boolean;
   /** 快捷键提示，右对齐显示。 */
   shortcut?: string;
+  /**
+   * 条目左侧的小图标。
+   *
+   * 用「已渲染的元素」而不是组件类型：调用方可以直接写 <Trash2 size={14}/>，
+   * 不必为了传一个 props 到这里而多做一层包装。
+   */
+  icon?: ReactNode;
   /** 用指定字体栈渲染 label，供字体选择菜单预览字体。 */
   fontFamily?: string;
   /** 设置时使用 menuitemradio 语义并显示选中标记。 */
@@ -232,6 +239,11 @@ function MenuPanel({
         onClose();
       }}
     >
+      {item.icon && (
+        <span className="ui-menu__icon" aria-hidden>
+          {item.icon}
+        </span>
+      )}
       <span
         className="ui-menu__label"
         style={item.fontFamily ? { fontFamily: item.fontFamily } : undefined}

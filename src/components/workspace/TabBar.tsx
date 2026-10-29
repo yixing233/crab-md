@@ -1,5 +1,13 @@
 import { useState, type MouseEvent } from "react";
-import { Home, Plus, X } from "lucide-react";
+import {
+  CopyPlus,
+  ExternalLink,
+  FileOutput,
+  Home,
+  Plus,
+  SquarePen,
+  X,
+} from "lucide-react";
 import { Tooltip } from "../ui/Tooltip";
 import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
 import { InlineEdit } from "../ui/InlineEdit";
@@ -83,6 +91,7 @@ export function TabBar({
             id: "rename",
             label: zh.fileTree.rename,
             shortcut: "F2",
+            icon: <SquarePen size={14} />,
             onSelect: () => {
               setRenamingId(targetTab.id);
             },
@@ -90,16 +99,19 @@ export function TabBar({
           {
             id: "duplicate",
             label: zh.fileTree.duplicate,
+            icon: <CopyPlus size={14} />,
             onSelect: () => onDuplicateTab?.(targetTab.id, targetTab.title),
           },
           {
             id: "export",
             label: zh.fileTree.exportDoc,
+            icon: <FileOutput size={14} />,
             onSelect: () => onExportTab?.(targetTab.id, targetTab.title),
           },
           {
             id: "reveal",
             label: zh.fileTree.revealInExplorer,
+            icon: <ExternalLink size={14} />,
             onSelect: () => onRevealTab?.(targetTab.id, targetTab.title),
           },
           { id: "action-sep", separator: true },
@@ -107,6 +119,7 @@ export function TabBar({
             id: "close-submenu",
             label: "关闭标签页",
             shortcut: "Ctrl+W",
+            icon: <X size={14} />,
             onSelect: () => onCloseTab(targetTab.id),
             submenu: [
               {

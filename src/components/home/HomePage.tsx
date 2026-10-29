@@ -68,6 +68,22 @@ interface HomeFileItem {
   displayPath: string;
 }
 
+/**
+ * 工作区笔记在磁盘上的真实路径。
+ *
+ * 软件自建的笔记也存在磁盘上（`<数据目录>/notes/<uuid>.md`），只是文件名
+ * 是 UUID。列表里必须显示完整路径 —— 用户要找的就是「这个文件在哪」，
+ * 显示 `/` 等于什么都没说。
+ *
+ * `notes` 这一段必须与 Rust 的 `workspace::NOTES_DIR` 保持一致。
+ */
+function workspaceNotePath(workspaceRoot: string | null | undefined, id: string): string {
+  if (!workspaceRoot) return "/";
+  const sep = workspaceRoot.includes("\\") ? "\\" : "/";
+  const root = workspaceRoot.replace(/[\\/]+$/, "");
+  return `${root}${sep}notes${sep}${id}.md`;
+}
+
 function formatDate(iso: string): string {
   try {
     const d = new Date(iso);
@@ -191,7 +207,7 @@ export function HomePage({
         isPath: false,
         exists: true,
         pinned: false,
-        displayPath: d.virtualPath && d.virtualPath !== "/" ? d.virtualPath : "/",
+        displayPath: workspaceNotePath(workspacePath, d.id),
       });
       seen.add(idKey);
     }
@@ -201,7 +217,7 @@ export function HomePage({
       return Number.isNaN(t) ? 0 : t;
     };
     return items.sort((a, b) => ts(b.updatedAt) - ts(a.updatedAt));
-  }, [recentFiles, externalFiles, documents]);
+  }, [recentFiles, externalFiles, documents, workspacePath]);
 
   // 全文搜索执行与防抖
   useEffect(() => {
@@ -352,7 +368,7 @@ export function HomePage({
                     : hit.title.endsWith(".md")
                       ? hit.title
                       : `${hit.title}.md`;
-                  const folder = doc?.path && doc.path !== "/" ? doc.path : "/";
+                  const folder = doc?.displayPath ?? "/";
                   const handleSelect = () => {
                     if (doc?.isPath && onOpenPath) onOpenPath(hit.id);
                     else onOpenDocument(hit.id);
@@ -371,35 +387,31 @@ export function HomePage({
                         }
                       }}
                     >
-                      <div className="home-note-row__left">
-                        <div className="home-note-row__icon-wrap">
-                          <FileIcon filename={displayName} size={16} />
-                        </div>
-                        <div className="home-note-row__info">
-                          <span className="home-note-row__title" title={displayName}>
-                            {displayName}
-                          </span>
-                          {/* 正文搜索高亮匹配片段 */}
-                          {hit.snippet && (
-                            <p className="home-note-row__snippet">
-                              {renderSnippet(hit.snippet)}
-                            </p>
-                          )}
-                          <div className="home-note-row__meta">
-                            <span className="home-note-row__path">{folder}</span>
-                            {doc && (
-                              <>
-                                <span className="home-note-row__dot">·</span>
-                                <span className="home-note-row__size">{formatBytes(doc.size)}</span>
-                                <span className="home-note-row__dot">·</span>
-                                <span>{formatDate(doc.updatedAt)}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
+                      {/* 与常态行同一套网格列，否则搜索态的行会被挤进一格。 */}
+                      <div className="home-note-row__icon-wrap">
+                        <FileIcon filename={displayName} size={22} />
                       </div>
-
+                      <div className="home-note-row__info">
+                        <span className="home-note-row__title" title={displayName}>
+                          {displayName}
+                        </span>
+                        {/* 正文搜索高亮匹配片段 */}
+                        {hit.snippet && (
+                          <p className="home-note-row__snippet">
+                            {renderSnippet(hit.snippet)}
+                          </p>
+                        )}
+                        <span className="home-note-row__path" title={folder}>
+                          {folder}
+                        </span>
+                      </div>
+                      <span className="home-note-row__size">
+                        {doc ? formatBytes(doc.size) : ""}
+                      </span>
                       <div className="home-note-row__right">
+                        {doc && (
+                          <span className="home-note-row__date">{formatDate(doc.updatedAt)}</span>
+                        )}
                         <ArrowRight size={14} className="home-note-row__arrow" aria-hidden />
                       </div>
                     </div>
@@ -444,30 +456,27 @@ export function HomePage({
                         }
                       }}
                     >
-                      <div className="home-note-row__left">
-                        <div className="home-note-row__icon-wrap">
-                          <FileIcon filename={displayName} size={16} />
-                        </div>
-                        <div className="home-note-row__info">
-                          <span className="home-note-row__title" title={displayName}>
-                            {displayName}
-                          </span>
-                          <div className="home-note-row__meta">
-                            <span className="home-note-row__path">{doc.displayPath}</span>
-                            <span className="home-note-row__dot">·</span>
-                            <span className="home-note-row__size">{formatBytes(doc.size)}</span>
-                            {doc.pinned && (
-                              <>
-                                <span className="home-note-row__dot">·</span>
-                                <span className="home-note-row__pinned">
-                                  <Pin size={11} aria-hidden /> 已置顶
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
+                      {/* 网格列：图标 / 文件名与路径 / 大小 / 日期 / 操作。
+                          各列宽度固定，行与行之间才对得齐 —— 之前大小与日期
+                          挤在标题下面、宽度随内容伸缩，右半边是参差的。 */}
+                      <div className="home-note-row__icon-wrap">
+                        <FileIcon filename={displayName} size={22} />
                       </div>
-
+                      <div className="home-note-row__info">
+                        <span className="home-note-row__title" title={displayName}>
+                          {displayName}
+                          {doc.pinned && (
+                            <Pin size={11} className="home-note-row__pinned" aria-label="已置顶" />
+                          )}
+                        </span>
+                        <span
+                          className="home-note-row__path"
+                          title={doc.displayPath}
+                        >
+                          {doc.displayPath}
+                        </span>
+                      </div>
+                      <span className="home-note-row__size">{formatBytes(doc.size)}</span>
                       <div className="home-note-row__right">
                         {!doc.exists && (
                           <Tooltip content="文件已从磁盘移动或删除">

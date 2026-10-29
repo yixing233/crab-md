@@ -215,6 +215,10 @@ export default function App() {
   const removeRecentFile = useWorkspaceStore((s) => s.removeRecentFile);
   const deleteDiskFile = useWorkspaceStore((s) => s.deleteDiskFile);
   const setFilePinned = useWorkspaceStore((s) => s.setFilePinned);
+  // 必须订阅而不是 getState() 一次性读：settings 是异步加载的，
+  // 首帧读到 null 之后不会自己再渲染，路径就永远停在占位值上。
+  const settings = useWorkspaceStore((s) => s.settings);
+  const loadSettings = useWorkspaceStore((s) => s.loadSettings);
   const renameDiskFile = useWorkspaceStore((s) => s.renameDiskFile);
   const duplicateDiskFile = useWorkspaceStore((s) => s.duplicateDiskFile);
 
@@ -1449,7 +1453,14 @@ export default function App() {
     let cancelled = false;
 
     void (async () => {
-      await Promise.all([loadDocuments(), loadExternalFiles(), loadRecentFiles()]);
+      // 设置也要在启动时读：主页要拿数据根目录拼出笔记的完整磁盘路径，
+      // 之前只在设置页里加载，主页永远读到 null，路径只能显示占位值。
+      await Promise.all([
+        loadDocuments(),
+        loadExternalFiles(),
+        loadRecentFiles(),
+        loadSettings(),
+      ]);
       if (cancelled) return;
 
       try {
@@ -1467,7 +1478,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [handleOpenPath, loadDocuments, loadExternalFiles, loadRecentFiles]);
+  }, [handleOpenPath, loadDocuments, loadExternalFiles, loadRecentFiles, loadSettings]);
 
   /**
    * 单实例跨进程打开文件监听：
@@ -2030,7 +2041,7 @@ export default function App() {
               onRemoveFromHistory={(path) => void handleRemoveRecentFile(path)}
               onDeleteFromDisk={(path) => void handleDeleteDiskFile(path)}
               onDeleteDocument={(id, title) => setPendingDelete({ id, title })}
-              workspacePath={useWorkspaceStore.getState().settings?.effectiveWorkspaceRoot}
+              workspacePath={settings?.effectiveWorkspaceRoot}
             />
           )}
         </main>
