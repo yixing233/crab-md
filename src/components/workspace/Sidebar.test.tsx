@@ -191,3 +191,66 @@ describe("Sidebar unified recent files", () => {
     expect(props.onOpenExternal).toHaveBeenCalledWith("E:\\docs\\b.md");
   });
 });
+
+/** 打开某一行的右键菜单，返回菜单项（含禁用状态）。 */
+async function openRowMenu(rowIndex = 0) {
+  const row = document.querySelectorAll(".recent-file-row")[rowIndex] as HTMLElement;
+  await userEvent.click(row.querySelector(".recent-file-more") as HTMLElement);
+  return Array.from(
+    document.querySelectorAll("button[role='menuitem']"),
+  ) as HTMLButtonElement[];
+}
+
+describe("Sidebar missing / workspace rows can actually be removed", () => {
+  it("keeps 「从磁盘彻底删除」 enabled for a file that already vanished", async () => {
+    // 文件不在了，磁盘那步是空操作 —— 但记录必须能清掉。
+    // 原先这个按钮被禁用，用户看到的就是「失效了却删不掉」。
+    renderSidebar({
+      tab: "notes",
+      recentFiles: [file("E:\\notes\\gone.md", "gone.md", false)],
+    });
+
+    const items = await openRowMenu();
+    const del = items.find((i) => i.textContent?.includes("从磁盘彻底删除"));
+
+    expect(del).toBeDefined();
+    expect(del!.disabled).toBe(false);
+  });
+
+  it("offers 「删除笔记」 instead of a no-op history action for a workspace document", async () => {
+    // 工作区文档的 path 是文档 id：拿它去删历史表永远匹配 0 行。
+    const props = renderSidebar({
+      tab: "notes",
+      recentFiles: [],
+      documents: [
+        {
+          id: "01a0e60f-e597-74e4-b74d-65164fdb3cdf",
+          title: "测试",
+          virtualPath: "/",
+          revision: 1,
+          contentHash: "sha256:x",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+          size: 170,
+        },
+      ],
+    });
+
+    const items = await openRowMenu();
+    const labels = items.map((i) => i.textContent ?? "");
+    expect(labels.some((l) => l.includes("从历史记录中移除"))).toBe(false);
+
+    const del = items.find((i) => i.textContent?.includes("删除笔记"));
+    expect(del).toBeDefined();
+    await userEvent.click(del!);
+
+    // 直接上报给外层：删除确认框由 App 持有（Sidebar 不自己弹）。
+    expect(props.onRequestDelete).toHaveBeenCalledWith(
+      "01a0e60f-e597-74e4-b74d-65164fdb3cdf",
+      "测试",
+    );
+    // 关键：绝不能再落到历史表删除（那条路径对文档 id 永远匹配 0 行）。
+    expect(props.onRemoveRecentFile).not.toHaveBeenCalled();
+    expect(props.onDeleteDiskFile).not.toHaveBeenCalled();
+  });
+});

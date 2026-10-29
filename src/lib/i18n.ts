@@ -495,6 +495,8 @@ export const zh = {
     /** 外部文件从列表移除（只删记录，不动磁盘文件）。 */
     removedFromList: "已从列表中移除",
     removeFromListFailed: "移除失败，列表未改动",
+    /** 彻底删除磁盘文件失败：文件可能被占用、只读或被其他程序打开。 */
+    deleteFailed: "删除失败，文件可能被占用或没有权限",
     /** 定位成功不开 toast（文件管理器已经把窗口摆到眼前，再弹一条只会碍事），
      *  失败则必须说出来：文件可能已被移动或删除。 */
     revealFailed: (title: string) =>

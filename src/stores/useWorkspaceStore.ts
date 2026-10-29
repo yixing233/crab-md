@@ -462,7 +462,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ error: null });
     try {
       await api.removeFromHistory(path);
-      await get().loadRecentFiles();
+      // 两张登记表都要重拉。Rust 侧同时清了 opened_files 与 external_files，
+      // 但界面合并的列表来自**两份内存副本**：只刷 recentFiles 的话，
+      // externalFiles 里那条旧记录会把刚删掉的条目原样合并回来 ——
+      // 用户看到的就是「点了移除，条目还在」（而且没有任何报错）。
+      await Promise.all([get().loadRecentFiles(), get().loadExternalFiles()]);
       return true;
     } catch (raw) {
       const code = toAppError(raw).code;
@@ -480,7 +484,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (activeId === `ext:${path}`) {
         set({ activeId: null, activeContent: "", dirty: false, externalBaseline: null });
       }
-      await get().loadRecentFiles();
+      // 同 removeRecentFile：两份清单是一起合并展示的，只刷一份会留下残影。
+      await Promise.all([get().loadRecentFiles(), get().loadExternalFiles()]);
       return true;
     } catch (raw) {
       const code = toAppError(raw).code;

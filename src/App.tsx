@@ -1224,6 +1224,52 @@ export default function App() {
   );
 
   /**
+   * 从「历史记录」移除一条**磁盘文件**记录（不删磁盘文件）。
+   *
+   * 必须给反馈：清掉一条记录后列表通常只是少了一行，用户很可能正在盯着
+   * 别处，没有 toast 就只能靠"没变化"猜结果 —— 这正是上一版"点了没反应"
+   * 的观感来源。
+   */
+  const handleRemoveRecentFile = useCallback(
+    async (path: string) => {
+      // 先关标签再移除记录：记录一没，标签就成了一条打不开的死项。
+      // 关闭走 handleCloseTab（有未保存改动时它会弹确认，不会静默丢内容）；
+      // 顺序反了的话，清理 effect 会在用户还没确认时就把标签摘掉。
+      const tabId = externalTabId(path);
+      if (openTabIds.includes(tabId)) {
+        await handleCloseTab(tabId);
+        // 关闭被「未保存改动」确认框拦下了：用户还没决定，此时不能移除记录，
+        // 否则清理 effect 会在用户确认前就把标签摘掉，等于静默丢内容。
+        // 判据取 store 的实时值（openTabIds 是本次渲染的旧快照）。
+        if (useWorkspaceStore.getState().activeId === tabId) return;
+      }
+      const ok = await removeRecentFile(path);
+      setToast({
+        message: ok ? zh.toast.removedFromList : zh.toast.removeFromListFailed,
+        tone: ok ? "success" : "error",
+      });
+    },
+    [openTabIds, handleCloseTab, removeRecentFile],
+  );
+
+  /**
+   * 从磁盘彻底删除一个文件（记录一并清掉）。
+   *
+   * 文件已经不在了也照样走完：磁盘那步是空操作，但记录必须清掉 ——
+   * 否则失效条目永远留在列表里，用户怎么点都删不掉。
+   */
+  const handleDeleteDiskFile = useCallback(
+    async (path: string) => {
+      const ok = await deleteDiskFile(path);
+      setToast({
+        message: ok ? zh.toast.deleted : zh.toast.deleteFailed,
+        tone: ok ? "success" : "error",
+      });
+    },
+    [deleteDiskFile],
+  );
+
+  /**
    * 打开指定路径的外部文件：保留原始磁盘位置原位查看/编辑，
    * 绝不把正文复制进工作区（用户要求库里只存路径/名称）。
    *
@@ -1677,8 +1723,8 @@ export default function App() {
             void handleReveal(externalTabId(path), baseName(path))
           }
           onForgetExternal={(path) => void handleForgetExternal(path)}
-          onRemoveRecentFile={(path) => void removeRecentFile(path)}
-          onDeleteDiskFile={(path) => void deleteDiskFile(path)}
+          onRemoveRecentFile={(path) => void handleRemoveRecentFile(path)}
+          onDeleteDiskFile={(path) => void handleDeleteDiskFile(path)}
           onTogglePin={(path, pinned) => void setFilePinned(path, pinned)}
           width={sidebarWidth}
           collapsed={!sidebarVisible || onHomePage}

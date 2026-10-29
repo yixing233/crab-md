@@ -13,6 +13,9 @@ const resetWorkspaceRootApi = vi.fn();
 const listExternalFiles = vi.fn();
 const forgetExternalFile = vi.fn();
 const saveExternalFile = vi.fn();
+const listRecentFiles = vi.fn();
+const removeFromHistory = vi.fn();
+const deleteFileOnDisk = vi.fn();
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -29,6 +32,9 @@ vi.mock("../lib/api", () => ({
     listExternalFiles: (...a: unknown[]) => listExternalFiles(...a),
     forgetExternalFile: (...a: unknown[]) => forgetExternalFile(...a),
     saveExternalFile: (...a: unknown[]) => saveExternalFile(...a),
+    listRecentFiles: (...a: unknown[]) => listRecentFiles(...a),
+    removeFromHistory: (...a: unknown[]) => removeFromHistory(...a),
+    deleteFileOnDisk: (...a: unknown[]) => deleteFileOnDisk(...a),
   },
   toAppError: (raw: unknown) =>
     raw && typeof raw === "object" && "code" in raw
@@ -703,6 +709,35 @@ describe("external files", () => {
 
     expect(ok).toBe(false);
     expect(useWorkspaceStore.getState().error).toBe("DB_ERROR");
+  });
+
+  it("refreshes both catalogs when a record is removed from history", async () => {
+    // 侧栏/主页的列表是 recentFiles + externalFiles 按路径合并出来的。
+    // 只刷 recentFiles 会让 externalFiles 里的旧记录把刚删掉的条目合并回来，
+    // 表现就是「点了从历史移除，条目还在，也没有报错」。
+    removeFromHistory.mockResolvedValue(undefined);
+    listRecentFiles.mockResolvedValue([]);
+    listExternalFiles.mockResolvedValue([]);
+
+    const ok = await useWorkspaceStore.getState().removeRecentFile(PATH);
+
+    expect(ok).toBe(true);
+    expect(removeFromHistory).toHaveBeenCalledWith(PATH);
+    expect(listRecentFiles).toHaveBeenCalled();
+    expect(listExternalFiles).toHaveBeenCalled();
+  });
+
+  it("refreshes both catalogs when a file is deleted from disk", async () => {
+    deleteFileOnDisk.mockResolvedValue(undefined);
+    listRecentFiles.mockResolvedValue([]);
+    listExternalFiles.mockResolvedValue([]);
+
+    const ok = await useWorkspaceStore.getState().deleteDiskFile(PATH);
+
+    expect(ok).toBe(true);
+    expect(deleteFileOnDisk).toHaveBeenCalledWith(PATH);
+    expect(listRecentFiles).toHaveBeenCalled();
+    expect(listExternalFiles).toHaveBeenCalled();
   });
 
   it("clears the external catalog when the workspace changes", async () => {

@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { MoreHorizontal, Pin, TriangleAlert } from "lucide-react";
 import type { RecentFileView } from "../../types/document";
-import { samePath } from "../../lib/externalFiles";
+import { isDiskPath, samePath } from "../../lib/externalFiles";
 import { zh } from "../../lib/i18n";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
@@ -22,6 +22,13 @@ export interface RecentFileListProps {
   onReveal: (path: string, name: string) => void;
   onRemoveFromHistory: (path: string) => void;
   onDeleteFromDisk: (path: string) => void;
+  /**
+   * 删除工作区笔记本身（path 是文档 id，不是磁盘路径）。
+   *
+   * 与 onRemoveFromHistory 是两件事：后者只操作磁盘文件的历史登记表，
+   * 传文档 id 进去永远匹配 0 行。
+   */
+  onDeleteDocument?: (id: string, title: string) => void;
   onTogglePin: (path: string, pinned: boolean) => void;
 }
 
@@ -44,6 +51,7 @@ export function RecentFileList({
   onReveal,
   onRemoveFromHistory,
   onDeleteFromDisk,
+  onDeleteDocument,
   onTogglePin,
 }: RecentFileListProps) {
   const [menu, setMenu] = useState<{ file: RecentFileView; x: number; y: number } | null>(null);
@@ -52,45 +60,68 @@ export function RecentFileList({
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const menuItems = useCallback(
-    (file: RecentFileView): ContextMenuItem[] => [
-      {
-        id: "pin",
-        label: file.pinned ? "取消置顶" : "置顶文档",
-        onSelect: () => onTogglePin(file.path, !file.pinned),
-      },
-      {
-        id: "duplicate",
-        label: zh.fileTree.duplicate,
-        onSelect: () => {
-          onDuplicate?.(file.path, file.name);
+    (file: RecentFileView): ContextMenuItem[] => {
+      const items: ContextMenuItem[] = [
+        {
+          id: "pin",
+          label: file.pinned ? "取消置顶" : "置顶文档",
+          onSelect: () => onTogglePin(file.path, !file.pinned),
         },
-      },
-      {
-        id: "rename",
-        label: zh.fileTree.rename,
-        shortcut: "F2",
-        onSelect: () => onRename?.(file.path, file.name),
-      },
-      {
-        id: "reveal",
-        label: zh.fileTree.revealInExplorer,
-        disabled: !file.exists,
-        onSelect: () => onReveal(file.path, file.name),
-      },
-      {
-        id: "remove-history",
-        label: "从历史记录中移除",
-        onSelect: () => setPendingDelete({ file, mode: "history" }),
-      },
-      {
-        id: "delete-disk",
-        label: "从磁盘彻底删除",
-        danger: true,
-        disabled: !file.exists,
-        onSelect: () => setPendingDelete({ file, mode: "disk" }),
-      },
-    ],
-    [onTogglePin, onReveal, onDuplicate, onRename],
+        {
+          id: "duplicate",
+          label: zh.fileTree.duplicate,
+          onSelect: () => {
+            onDuplicate?.(file.path, file.name);
+          },
+        },
+        {
+          id: "rename",
+          label: zh.fileTree.rename,
+          shortcut: "F2",
+          onSelect: () => onRename?.(file.path, file.name),
+        },
+        {
+          id: "reveal",
+          label: zh.fileTree.revealInExplorer,
+          disabled: !file.exists,
+          onSelect: () => onReveal(file.path, file.name),
+        },
+      ];
+
+      // 工作区文档：path 是文档 id，不是磁盘路径。
+      //
+      // 这类条目**没有**「历史记录」可言 —— 它来自 documents 表，所以
+      // 「从历史记录中移除」拿文档 id 去删 opened_files/external_files 永远
+      // 匹配 0 行：点了没反应、也不报错（用户看到的正是「删除没反应」）。
+      // 对它唯一有意义的动作是删掉这条笔记本身，走文档删除确认框。
+      if (!isDiskPath(file.path)) {
+        items.push({
+          id: "delete-document",
+          label: "删除笔记",
+          danger: true,
+          onSelect: () => onDeleteDocument?.(file.path, file.name),
+        });
+        return items;
+      }
+
+      items.push(
+        {
+          id: "remove-history",
+          label: "从历史记录中移除",
+          onSelect: () => setPendingDelete({ file, mode: "history" }),
+        },
+        {
+          // 文件已不在磁盘上时同样要能点：磁盘那步是空操作，但记录必须清掉，
+          // 否则「文件失效了却删不掉」——禁用按钮看着就像删除失效。
+          id: "delete-disk",
+          label: "从磁盘彻底删除",
+          danger: true,
+          onSelect: () => setPendingDelete({ file, mode: "disk" }),
+        },
+      );
+      return items;
+    },
+    [onTogglePin, onReveal, onDuplicate, onRename, onDeleteDocument],
   );
 
   if (files.length === 0) {
@@ -146,7 +177,7 @@ export function RecentFileList({
                   <Pin size={11} className="recent-file-pin" aria-label="已置顶" />
                 )}
 
-                {!file.exists && (
+                {isDiskPath(file.path) && !file.exists && (
                   <Tooltip content="文件已从磁盘移动或删除">
                     <TriangleAlert size={13} className="recent-file-missing" aria-label="文件不存在" />
                   </Tooltip>
@@ -201,7 +232,9 @@ export function RecentFileList({
       >
         <p>
           {pendingDelete?.mode === "disk"
-            ? `确定要从磁盘彻底删除文件「${pendingDelete.file.name}」吗？此操作无法撤销。`
+            ? pendingDelete.file.exists
+              ? `确定要从磁盘彻底删除文件「${pendingDelete.file.name}」吗？此操作无法撤销。`
+              : `「${pendingDelete.file.name}」已不在磁盘上，这一步只会清掉它的历史记录。`
             : `确定要将「${pendingDelete?.file.name}」从历史记录中移除吗？磁盘上的物理文件不会被删除。`}
         </p>
       </Dialog>

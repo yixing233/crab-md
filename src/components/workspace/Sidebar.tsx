@@ -6,7 +6,7 @@ import { OutlineTree } from "../editor/OutlineTree";
 import { Button } from "../ui/Button";
 import { Tooltip } from "../ui/Tooltip";
 import type { DocumentSummary, ExternalFileView, RecentFileView } from "../../types/document";
-import { pathKey } from "../../lib/externalFiles";
+import { isDiskPath, pathKey } from "../../lib/externalFiles";
 import { zh } from "../../lib/i18n";
 import "./workspace.css";
 
@@ -186,7 +186,7 @@ export function Sidebar({
             files={displayedFiles}
             activePath={activePath}
             onOpen={(path) => {
-              if (onOpenExternal && (path.includes("/") || path.includes("\\") || path.startsWith("ext:"))) {
+              if (onOpenExternal && isDiskPath(path)) {
                 onOpenExternal(path);
               } else {
                 onSelect(path);
@@ -197,23 +197,23 @@ export function Sidebar({
             onDuplicate={onDuplicate}
             onRename={onRename}
             onReveal={(path, name) => {
-              if (onRevealExternal && (path.includes("/") || path.includes("\\") || path.startsWith("ext:"))) {
+              if (onRevealExternal && isDiskPath(path)) {
                 onRevealExternal(path);
               } else {
                 onReveal(path, name);
               }
             }}
             onRemoveFromHistory={(path) => {
+              // 只对磁盘路径有意义：文档 id 在历史表里永远匹配 0 行。
+              if (!isDiskPath(path)) return;
               if (onRemoveRecentFile) onRemoveRecentFile(path);
               else if (onForgetExternal) onForgetExternal(path);
             }}
             onDeleteFromDisk={(path) => {
-              if (onDeleteDiskFile && (path.includes("/") || path.includes("\\") || path.startsWith("ext:"))) {
-                onDeleteDiskFile(path);
-              } else {
-                onRequestDelete(path, "");
-              }
+              if (onDeleteDiskFile && isDiskPath(path)) onDeleteDiskFile(path);
+              else onRequestDelete(path, "");
             }}
+            onDeleteDocument={(id, title) => onRequestDelete(id, title)}
             onTogglePin={(path, pinned) => {
               if (onTogglePin) onTogglePin(path, pinned);
             }}

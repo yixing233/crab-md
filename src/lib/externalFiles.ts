@@ -75,3 +75,18 @@ export function pathKey(path: string): string {
 export function samePath(a: string, b: string): boolean {
   return pathKey(a) === pathKey(b);
 }
+
+/**
+ * 路径是否可能是磁盘上的真实文件（而不是工作区文档 id）。
+ *
+ * 侧栏与主页把「工作区文档」和「磁盘文件」合并进同一张列表：前者的
+ * `path` 字段装的其实是文档 id（UUID），后者才是绝对路径。凡是拿 path
+ * 去调「历史记录」「删除磁盘文件」这类**以磁盘路径为键**的命令之前，
+ * 都必须先过这一关 —— 否则命令匹配 0 行、静默成功、界面毫无变化。
+ *
+ * 判据与 Sidebar / HomePage 原本各自写的那份一致（含分隔符就当成路径），
+ * 集中到这里是为了让「谁需要分流」只有一处定义。
+ */
+export function isDiskPath(path: string): boolean {
+  return path.includes("/") || path.includes("\\") || path.startsWith(EXTERNAL_TAB_PREFIX);
+}
