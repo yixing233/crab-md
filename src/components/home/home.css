@@ -10,13 +10,19 @@
   font-family: var(--font-ui);
   display: flex;
   justify-content: center;
-  padding: 32px 40px;
+  /* 左右留白收窄：这是一张文件表格，不是阅读型文章。宽屏下把 40px
+     边距改小，列表能多吃进约 80px，长文件名少截一截。 */
+  /* 顶部留白保持呼吸感，左右只留 16px：这是一张文件表格，
+     宽屏下把边距让给内容，长文件名能少截一截。 */
+  padding: 28px 16px;
   box-sizing: border-box;
 }
 
 .home-page__container {
   width: 100%;
-  max-width: 1040px;
+  /* 1040px 的限宽是为正文阅读定的；文件列表没有行长问题，
+     继续卡在 1040 只会在宽屏上白扔两边的空间。 */
+  max-width: 1440px;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -25,7 +31,9 @@
 
 .home-main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
+  /* 右栏固定 300px：它是辅助信息（快捷操作、快捷键、目录），
+     不该和主列表争宽。 */
+  grid-template-columns: minmax(0, 1fr) 300px;
   /* 行高必须占满网格容器（而不是按内容 auto 撑开）：否则两栏取自然
      高度、超出容器被外层 hidden 裁掉，列表永远不触发内部滚动。 */
   grid-template-rows: minmax(0, 1fr);
@@ -34,7 +42,9 @@
   min-height: 0;
 }
 
-@media (max-width: 860px) {
+/* 单列阈值提到 1100px：再窄主列就只剩 ~600px，表格三列挤在一起，
+   不如让侧栏挪到下方。 */
+@media (max-width: 1100px) {
   .home-main-grid {
     grid-template-columns: 1fr;
     /* 单列下按内容自然堆叠（行高 auto），页面整体可滚。 */
@@ -664,4 +674,22 @@
 
 .home-file-table .ant-table-thead > tr > th.ant-table-column-has-sorters > div {
   justify-content: flex-end;
+}
+
+/* 表格必须能收缩到网格列宽以内。
+   antd Table 的内容宽度默认按内容走，长文件名 / 固定列宽会把它撑破，
+   进而把整条网格推宽、右侧栏被挤出视口（窗口截图里右栏消失就是这个）。
+   min-width: 0 让它在网格里成为一个可压缩的轨道。 */
+.home-file-table {
+  min-width: 0;
+}
+
+.home-file-table .ant-table-container {
+  min-width: 0;
+}
+
+/* 名称列吃掉剩余宽度，长名字靠省略号收尾，而不是把表格撑开。 */
+.home-file-table .ant-table-tbody > tr > td:first-child,
+.home-file-table .ant-table-thead > tr > th:first-child {
+  min-width: 0;
 }

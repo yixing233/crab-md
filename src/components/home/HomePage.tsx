@@ -424,6 +424,9 @@ export function HomePage({
                 rowKey="id"
                 size="middle"
                 pagination={false}
+                // 固定表格布局：auto 布局下长文件名会把表格撑得比容器还宽，
+                // 连带把右侧栏挤出视口（网格列被内容撑破）。
+                tableLayout="fixed"
                 showSorterTooltip={false}
                 onRow={(doc) => ({
                   onClick: () => {
