@@ -253,6 +253,16 @@ describe("HomePage 文件操作入口", () => {
     expect(del).toBeDefined();
   });
 
+  it("offers 文件详情 as the first menu item", async () => {
+    // 只读操作放最前：想「看看这是什么」的用户不必先绕过一堆改动命令。
+    const props = renderWithDisk({ onShowDetails: vi.fn() });
+    const items = await openMenu();
+
+    expect(items[0].textContent).toContain("文件详情");
+    await userEvent.click(items[0]);
+    expect(props.onShowDetails).toHaveBeenCalledWith("E:\\notes\\a.md");
+  });
+
   it("opens the menu on right click too", async () => {
     renderWithDisk();
     const row = document.querySelector(".home-note-row") as HTMLElement;

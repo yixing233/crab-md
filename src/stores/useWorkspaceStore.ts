@@ -14,6 +14,7 @@ import type {
   AppSettingsView,
   DocumentSummary,
   ExternalFileView,
+  FileDetails,
   OpenFilePayload,
   RecentFileView,
 } from "../types/document";
@@ -129,6 +130,12 @@ export interface WorkspaceState {
   renameDiskFile: (path: string, newName: string) => Promise<string | null>;
   /** 另存为副本；成功返回副本路径（不自动打开，列表里能看到即可）。 */
   duplicateDiskFile: (path: string, newName: string) => Promise<string | null>;
+  /**
+   * 读取某个条目的详情快照（磁盘路径或工作区文档 id 都接受）。
+   * 失败返回 null —— 详情读不出来不该往全局 error 上抛，
+   * 面板自己会显示失败态，编辑器也不该因此报错。
+   */
+  loadFileDetails: (path: string) => Promise<FileDetails | null>;
   /** 保存阅读/编辑位置会话状态。 */
   updateFileSession: (
     path: string,
@@ -510,6 +517,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (raw) {
       const code = toAppError(raw).code;
       logFailure({ op: "setFilePinned", code }, raw);
+    }
+  },
+
+  loadFileDetails: async (path: string) => {
+    try {
+      return await api.fileDetails(path);
+    } catch (raw) {
+      logFailure({ op: "fileDetails", code: toAppError(raw).code }, raw);
+      return null;
     }
   },
 

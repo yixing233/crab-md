@@ -27,6 +27,27 @@ export interface RecentFileView {
   exists: boolean;
 }
 
+/**
+ * 文件详情快照（与 Rust `FileDetails` 对应）。
+ *
+ * `path` 是**磁盘上的真实路径**——工作区文档也是（`<数据目录>/notes/<uuid>.md`），
+ * 不是文档 id：详情面板回答的第一个问题就是「这个文件在哪」。
+ */
+export interface FileDetails {
+  path: string;
+  name: string;
+  /** 工作区文档才有；磁盘文件的标识就是路径本身。 */
+  documentId: string | null;
+  size: number;
+  createdAt: string | null;
+  modifiedAt: string | null;
+  openedAt: string | null;
+  pinned: boolean;
+  exists: boolean;
+  /** 正文，用于字数统计。文件不存在、非文本或过大时为 null。 */
+  text: string | null;
+}
+
 /** 打开文件的返回载荷：正文 + 文件记录。 */
 export interface OpenFilePayload extends FileRecord {
   content: string;

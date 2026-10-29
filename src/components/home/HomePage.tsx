@@ -18,6 +18,7 @@ import {
 import type { DocumentSummary, ExternalFileView, RecentFileView, SearchHit } from "../../types/document";
 import { pathKey } from "../../lib/externalFiles";
 import { buildFileActions } from "../../lib/fileActions";
+import { formatBytes, formatDate } from "../../lib/format";
 import { api } from "../../lib/api";
 import { Button } from "../ui/Button";
 import { ContextMenu } from "../ui/ContextMenu";
@@ -51,6 +52,8 @@ export interface HomePageProps {
   onRemoveFromHistory?: (path: string) => void;
   onDeleteFromDisk?: (path: string) => void;
   onDeleteDocument?: (id: string, title: string) => void;
+  /** 打开「文件详情」面板（只读）。 */
+  onShowDetails?: (path: string) => void;
 }
 
 /** 主页文件列表条目：磁盘文件用路径当 id，工作区文档用文档 id。 */
@@ -84,29 +87,6 @@ function workspaceNotePath(workspaceRoot: string | null | undefined, id: string)
   return `${root}${sep}notes${sep}${id}.md`;
 }
 
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    const now = new Date();
-    const isToday =
-      d.getDate() === now.getDate() &&
-      d.getMonth() === now.getMonth() &&
-      d.getFullYear() === now.getFullYear();
-
-    const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    if (isToday) return `今天 ${timeStr}`;
-    return `${d.toLocaleDateString([], { month: "2-digit", day: "2-digit" })} ${timeStr}`;
-  } catch {
-    return iso;
-  }
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(1)} KB`;
-}
 
 /** 渲染带 FTS 关键词高亮标记的匹配正文片段。 */
 function renderSnippet(snippet: string) {
@@ -145,6 +125,7 @@ export function HomePage({
   onRemoveFromHistory,
   onDeleteFromDisk,
   onDeleteDocument,
+  onShowDetails,
   workspacePath,
   onSearchFullText,
 }: HomePageProps) {
@@ -278,6 +259,7 @@ export function HomePage({
         onRemoveFromHistory: (path) => onRemoveFromHistory?.(path),
         onDeleteFromDisk: (path) => onDeleteFromDisk?.(path),
         onDeleteDocument: (id, title) => onDeleteDocument?.(id, title),
+          onShowDetails,
         },
       )
     : [];

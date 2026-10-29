@@ -15,6 +15,7 @@ import { Breadcrumb } from "./components/workspace/Breadcrumb";
 import { TabBar } from "./components/workspace/TabBar";
 import { HomePage } from "./components/home/HomePage";
 import { CommandPalette } from "./components/workspace/CommandPalette";
+import { FileDetailsPanel } from "./components/workspace/FileDetailsPanel";
 import {
   CloseDocumentModal,
   type ClosePromptType,
@@ -334,6 +335,8 @@ export default function App() {
   // 重命名输入框；path 是磁盘路径或文档 id，由 isDiskPath 分流。
   const [pendingRename, setPendingRename] = useState<{ path: string; current: string } | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  // 文件详情面板要看的条目；null 表示关闭。
+  const [detailsPath, setDetailsPath] = useState<string | null>(null);
 
   // 打开重命名对话框时把当前名字填进去（顺带清掉上一次的残留输入）。
   useEffect(() => {
@@ -1848,6 +1851,7 @@ export default function App() {
           onDuplicate={(id, title) => void handleDuplicatePath(id, title)}
           onExport={(id, title) => void handleExport(id, title)}
           onReveal={(id, title) => void handleReveal(id, title)}
+          onShowDetails={setDetailsPath}
           onOpenFile={() => void handleOpenFile()}
           onRequestDelete={(id, title) => setPendingDelete({ id, title })}
           externalFiles={externalCatalog}
@@ -2041,6 +2045,7 @@ export default function App() {
               onRemoveFromHistory={(path) => void handleRemoveRecentFile(path)}
               onDeleteFromDisk={(path) => void handleDeleteDiskFile(path)}
               onDeleteDocument={(id, title) => setPendingDelete({ id, title })}
+              onShowDetails={setDetailsPath}
               workspacePath={settings?.effectiveWorkspaceRoot}
             />
           )}
@@ -2061,6 +2066,8 @@ export default function App() {
             : zh.recovery.body(recoveryCandidate.title)
           : null}
       </Dialog>
+
+      <FileDetailsPanel path={detailsPath} onClose={() => setDetailsPath(null)} />
 
       <Dialog
         open={pendingRename !== null}

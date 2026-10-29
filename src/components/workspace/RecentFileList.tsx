@@ -30,6 +30,8 @@ export interface RecentFileListProps {
    * 传文档 id 进去永远匹配 0 行。
    */
   onDeleteDocument?: (id: string, title: string) => void;
+  /** 打开「文件详情」面板（只读）。 */
+  onShowDetails?: (path: string) => void;
   onTogglePin: (path: string, pinned: boolean) => void;
 }
 
@@ -53,6 +55,7 @@ export function RecentFileList({
   onRemoveFromHistory,
   onDeleteFromDisk,
   onDeleteDocument,
+  onShowDetails,
   onTogglePin,
 }: RecentFileListProps) {
   const [menu, setMenu] = useState<{ file: RecentFileView; x: number; y: number } | null>(null);
@@ -71,8 +74,9 @@ export function RecentFileList({
         onRemoveFromHistory: () => setPendingDelete({ file, mode: "history" }),
         onDeleteFromDisk: () => setPendingDelete({ file, mode: "disk" }),
         onDeleteDocument: (id, title) => onDeleteDocument?.(id, title),
+        onShowDetails,
       }),
-    [onTogglePin, onReveal, onDuplicate, onRename, onDeleteDocument],
+    [onTogglePin, onReveal, onDuplicate, onRename, onDeleteDocument, onShowDetails],
   );
 
   if (files.length === 0) {

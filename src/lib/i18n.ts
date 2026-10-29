@@ -142,6 +142,28 @@ export const zh = {
     moreActions: "更多操作",
   },
 
+  /** 「文件详情」面板的文案。 */
+  details: {
+    title: "文件详情",
+    loadFailed: "无法读取这个文件的详情。文件可能已被移动或删除。",
+    loading: "正在读取…",
+    name: "名称",
+    path: "位置",
+    size: "大小",
+    created: "创建时间",
+    modified: "修改时间",
+    opened: "最近打开",
+    pinned: "已置顶",
+    status: "状态",
+    missing: "文件已不在磁盘上",
+    words: "字数",
+    characters: "字符数",
+    readingTime: "预计阅读",
+    readingMinutes: (min: number) => (min > 0 ? `约 ${min} 分钟` : "—"),
+    /** 侧栏文件列表与主页列表里的菜单项。 */
+    menuLabel: "文件详情",
+  },
+
   dialog: {
     deleteTitle: "删除笔记",
     /** 删除是不可逆的数据丢失，文案要明确点出对象（UI §16）。 */

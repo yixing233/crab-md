@@ -1,8 +1,8 @@
 use crate::db::{self, documents as docs, external_files, opened_files, search};
 use crate::error::{AppError, AppResult};
 use crate::model::{
-    CreateDocumentRequest, DocumentPayload, DocumentSummary, FileRecord, FileSearchResult,
-    OpenFilePayload,
+    CreateDocumentRequest, DocumentPayload, DocumentSummary, FileDetails, FileRecord,
+    FileSearchResult, OpenFilePayload,
 };
 use crate::settings;
 use crate::workspace;
@@ -718,6 +718,97 @@ impl DocumentService {
         Ok(())
     }
 
+    /// 取一个条目的详情快照。
+    ///
+    /// `path` 既可能是磁盘绝对路径，也可能是工作区文档 id —— 界面上的列表是
+    /// 三路数据合并出来的，两种条目混在一起，调用方手上只有一个字符串。
+    /// 分流规则与前端 `isDiskPath` 一致：**含分隔符或 `ext:` 前缀的是路径**。
+    ///
+    /// 正文只在「是文本且不太大」时才读：详情面板要显示字数，而把 10MB
+    /// 二进制文件整个读进内存只为数一下字数，代价与收益完全不成比例。
+    pub fn file_details(&self, path: &str) -> AppResult<crate::model::FileDetails> {
+        if is_disk_path(path) {
+            return self.disk_file_details(path);
+        }
+
+        // 工作区文档：id 校验 + 元数据 + 真实磁盘路径。
+        let st = self.lock()?;
+        let _ = workspace::note_path(&st.root, path)?;
+        let summary =
+            docs::get(&st.conn, path)?.ok_or_else(|| AppError::NotFound(path.to_string()))?;
+        let note = workspace::note_path(&st.root, path)?;
+        let exists = note.is_file();
+        let record = opened_files::get(&st.conn, path).ok().flatten();
+
+        let text = if exists {
+            std::fs::metadata(&note)
+                .map(|m| m.len() <= DETAIL_TEXT_LIMIT)
+                .unwrap_or(false)
+                .then(|| workspace::read_note(&st.root, path).ok())
+                .flatten()
+        } else {
+            None
+        };
+
+        Ok(crate::model::FileDetails {
+            path: note.to_string_lossy().into_owned(),
+            name: summary.title.clone(),
+            document_id: Some(summary.id.clone()),
+            size: summary.size,
+            // 文档表的创建时间就是这篇笔记的出生时间；文件系统时间只是拷贝时刻。
+            created_at: Some(summary.created_at.clone()),
+            modified_at: Some(summary.updated_at.clone()),
+            opened_at: record.as_ref().map(|r| r.opened_at.clone()),
+            pinned: record.map(|r| r.pinned).unwrap_or(false),
+            exists,
+            text,
+        })
+    }
+
+    /// 磁盘文件的详情快照。
+    fn disk_file_details(&self, path: &str) -> AppResult<crate::model::FileDetails> {
+        let p = Path::new(path);
+        let meta = std::fs::metadata(p).ok();
+        // 历史记录可能先于文件消失：条目还在列表里，盘上已经没了。
+        let record = {
+            let st = self.lock()?;
+            opened_files::get(&st.conn, path).ok().flatten()
+        };
+
+        let text = match &meta {
+            Some(m) if m.is_file() && m.len() <= DETAIL_TEXT_LIMIT => {
+                std::fs::read_to_string(p).ok()
+            }
+            _ => None,
+        };
+
+        Ok(crate::model::FileDetails {
+            path: record
+                .as_ref()
+                .map(|r| r.path.clone())
+                .unwrap_or_else(|| path.to_string()),
+            name: record
+                .as_ref()
+                .map(|r| r.name.clone())
+                .unwrap_or_else(|| external_file_name(p)),
+            document_id: None,
+            size: meta
+                .as_ref()
+                .map(|m| m.len() as i64)
+                .or_else(|| record.as_ref().map(|r| r.size))
+                .unwrap_or(0),
+            created_at: meta.as_ref().and_then(file_created_at),
+            modified_at: meta
+                .as_ref()
+                .map(external_file_modified_at)
+                .or_else(|| record.as_ref().map(|r| r.modified_at.clone())),
+            opened_at: record.as_ref().map(|r| r.opened_at.clone()),
+            pinned: record.as_ref().map(|r| r.pinned).unwrap_or(false),
+            exists: meta.as_ref().map(|m| m.is_file()).unwrap_or(false),
+            text,
+        })
+    }
+
     /// 重命名磁盘文件：同目录内改文件名，记录跟着走。
     ///
     /// 只改文件名（同目录），不跨目录移动 —— 跨目录是「移动」，语义不同，
@@ -913,6 +1004,28 @@ impl DocumentService {
 }
 
 /// 外部文件的显示名（取文件名；极端情况下路径以分隔符结尾）。
+/// 详情面板最多读取的正文字节数。
+///
+/// 只要有正文就能数字数，而字数统计只对「人读得完的文本」有意义。
+/// 超过这个量级的文件，读进来的代价（内存与卡顿）远超一个数字的价值。
+const DETAIL_TEXT_LIMIT: u64 = 2 * 1024 * 1024;
+
+/// 这个字符串是磁盘路径，还是工作区文档 id。
+///
+/// 与前端 `isDiskPath`（`lib/externalFiles.ts`）同一套规则：
+/// 含分隔符、或者是 `ext:` 标签页 id 的，都是路径。两边不一致的话，
+/// 同一个条目会在「能改名」和「改不了名」之间来回横跳。
+fn is_disk_path(raw: &str) -> bool {
+    raw.contains('/') || raw.contains('\\') || raw.starts_with("ext:")
+}
+
+/// 文件的创建时间（RFC 3339）。文件系统给不出时返回 None。
+fn file_created_at(meta: &std::fs::Metadata) -> Option<String> {
+    meta.created()
+        .ok()
+        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+}
+
 fn external_file_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -1261,6 +1374,14 @@ pub fn set_file_pinned(
     pinned: bool,
 ) -> AppResult<()> {
     svc.set_file_pinned(&path, pinned)
+}
+
+#[tauri::command]
+pub fn file_details(
+    svc: tauri::State<'_, DocumentService>,
+    path: String,
+) -> AppResult<FileDetails> {
+    svc.file_details(&path)
 }
 
 #[tauri::command]
@@ -2452,6 +2573,64 @@ mod tests {
 
         svc.switch_workspace(d.path().to_path_buf()).unwrap();
         assert_eq!(svc.list_external().unwrap().len(), 1, "switching back restores it");
+    }
+
+    #[test]
+    fn details_of_a_disk_file_report_real_metadata() {
+        let (d, svc) = svc();
+        let path = d.path().join("详情.md");
+        std::fs::write(&path, "# 标题\n\n四个中文字 and three words").unwrap();
+        svc.save_disk_file(&path.to_string_lossy(), "# 标题\n\n四个中文字 and three words")
+            .unwrap();
+
+        let details = svc.file_details(&path.to_string_lossy()).unwrap();
+
+        assert_eq!(details.path, path.to_string_lossy());
+        assert_eq!(details.name, "详情.md");
+        assert!(details.exists, "file is on disk");
+        assert_eq!(details.size, details.text.as_ref().unwrap().len() as i64);
+        // 正文要读回来，界面才有东西可数字数。
+        assert!(details.text.is_some());
+        assert!(details.document_id.is_none(), "disk files have no document id");
+        assert!(details.modified_at.is_some());
+    }
+
+    #[test]
+    fn details_of_a_vanished_file_still_answer() {
+        // 失效条目正是最需要看详情的时候（它到底指哪儿、还剩什么记录）。
+        let (d, svc) = svc();
+        let path = d.path().join("gone.md");
+        std::fs::write(&path, "内容").unwrap();
+        svc.save_disk_file(&path.to_string_lossy(), "内容").unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        let details = svc.file_details(&path.to_string_lossy()).unwrap();
+
+        assert!(!details.exists, "must report it is gone");
+        assert!(details.text.is_none(), "no body to read");
+        // 历史记录里的名字与大小仍然给得出来，面板不至于一片空白。
+        assert_eq!(details.name, "gone.md");
+        assert_eq!(details.size, 6);
+    }
+
+    #[test]
+    fn details_of_a_workspace_note_resolve_the_real_path() {
+        // 详情面板要回答「文件在哪」，所以这里给的必须是磁盘路径而不是文档 id。
+        let (_d, svc) = svc();
+        let doc = svc.create("笔记", "/").unwrap();
+
+        let details = svc.file_details(&doc.id).unwrap();
+
+        assert_eq!(details.document_id.as_deref(), Some(doc.id.as_str()));
+        assert_eq!(details.name, "笔记");
+        assert!(details.path.ends_with(".md"), "path is the note file: {}", details.path);
+        assert!(
+            details.path.contains(&format!("{}.md", doc.id)),
+            "note files are named by id: {}",
+            details.path
+        );
+        assert!(details.path.contains("notes"));
+        assert!(details.exists);
     }
 
     #[test]

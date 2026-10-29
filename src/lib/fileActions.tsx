@@ -9,6 +9,7 @@
 import {
   CopyPlus,
   FolderOpen,
+  Info,
   ListMinus,
   Pin,
   PinOff,
@@ -45,6 +46,8 @@ export interface FileActionHandlers {
   onDeleteFromDisk: (path: string) => void;
   /** 删除工作区笔记本身（仅文档条目有意义）。 */
   onDeleteDocument: (path: string, title: string) => void;
+  /** 打开详情面板（只读，两类条目都适用）。 */
+  onShowDetails?: (path: string) => void;
 }
 
 /**
@@ -62,6 +65,18 @@ export function buildFileActions(
   const disk = isDiskPath(file.path);
 
   const items: ContextMenuEntry[] = [
+    // 只读操作放最前：想「看看这是什么」的用户不用先绕过一堆改动命令。
+    ...(handlers.onShowDetails
+      ? [
+          {
+            id: "details",
+            label: zh.details.menuLabel,
+            shortcut: "Alt+Enter",
+            icon: <Info size={ICON_SIZE} />,
+            onSelect: () => handlers.onShowDetails?.(file.path),
+          } satisfies ContextMenuEntry,
+        ]
+      : []),
     {
       id: "pin",
       label: file.pinned ? "取消置顶" : "置顶文档",

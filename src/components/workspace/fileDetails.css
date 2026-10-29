@@ -1,0 +1,51 @@
+/* 「文件详情」面板（UI §13 原语之上的专用布局） */
+
+.file-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.file-details__label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.file-details__value {
+  margin: 0;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 路径：等宽字体，且**允许折行**——详细面板里没有别的信息在抢位置，
+   折行比省略号更有用（用户就是来确认完整路径的）。 */
+.file-details__value[data-mono] {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.file-details__value[data-wrap] {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: normal;
+}
+
+.file-details__value[data-tone="danger"] {
+  color: var(--danger);
+}
+
+.file-details__error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+.file-details__loading {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

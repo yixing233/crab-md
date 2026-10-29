@@ -65,6 +65,33 @@ pub struct FileRecord {
     pub scroll_ratio: f64,
 }
 
+/// 文件详情快照（「文件详情」对话框的数据源）。
+///
+/// 这些字段本来散在三处：磁盘元数据、`opened_files` 历史表、`documents` 表。
+/// 界面要一次看全，所以由 Rust 合成一份只读快照，而不是让前端拼三份数据 ——
+/// 拼出来的东西迟早会在某一处漏字段（比如只读历史表就看不到文档的创建时间）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDetails {
+    /// 磁盘文件是绝对路径；工作区文档是它在磁盘上的真实路径
+    /// （`<数据目录>/notes/<uuid>.md`），不是文档 id —— 用户要的是「文件在哪」。
+    pub path: String,
+    pub name: String,
+    /// 工作区文档才有（磁盘文件的 id 就是路径本身）。
+    pub document_id: Option<String>,
+    pub size: i64,
+    /// 磁盘文件的创建时间（文件系统给不出时为 None）。
+    pub created_at: Option<String>,
+    pub modified_at: Option<String>,
+    /// 最近一次在本应用里打开的时间。
+    pub opened_at: Option<String>,
+    pub pinned: bool,
+    /// 磁盘上是否还存在（工作区文档恒为 true）。
+    pub exists: bool,
+    /// 正文；用于前端做字数统计（读不到时为 None：文件不存在、非文本、过大）。
+    pub text: Option<String>,
+}
+
 /// 打开文件的返回载荷：正文 + 文件记录。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -25,6 +25,8 @@ export interface SidebarProps {
   onExport: (id: string, title: string) => void;
   /** 在系统文件管理器里定位该笔记的磁盘文件。 */
   onReveal: (id: string, title: string) => void;
+  /** 打开「文件详情」面板（只读）。 */
+  onShowDetails?: (path: string) => void;
   /** 从磁盘打开文本或 Markdown。 */
   onOpenFile: () => void;
   onRequestDelete: (id: string, title: string) => void;
@@ -67,6 +69,7 @@ export function Sidebar({
   onDuplicate,
   onExport: _onExport,
   onReveal,
+  onShowDetails,
   onOpenFile,
   onRequestDelete,
   externalFiles = [],
@@ -213,6 +216,7 @@ export function Sidebar({
               if (onDeleteDiskFile && isDiskPath(path)) onDeleteDiskFile(path);
               else onRequestDelete(path, "");
             }}
+            onShowDetails={onShowDetails}
             onDeleteDocument={(id, title) => onRequestDelete(id, title)}
             onTogglePin={(path, pinned) => {
               if (onTogglePin) onTogglePin(path, pinned);

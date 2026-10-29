@@ -212,6 +212,7 @@ pub fn run() {
             commands::documents::update_file_session,
             commands::documents::set_file_pinned,
             commands::documents::reveal_file,
+            commands::documents::file_details,
             commands::documents::rename_file,
             commands::documents::duplicate_file,
             opened_files,
