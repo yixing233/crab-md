@@ -63,6 +63,30 @@ export function getAntdTheme(resolvedTheme: ResolvedTheme, accent: AccentColor =
   return {
     algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
     token: baseTokens,
+    components: {
+      /**
+       * Table 的配色对齐应用自己的设计令牌。
+       *
+       * antd 默认表格是纯白容器 + 白表头，与主页的灰底（`--bg-app`）并排时
+       * 明显是两块不同材质。这里把容器设为透明（露出页面底色）、表头压深一档，
+       * 表头文字用次级灰 —— 与手写列表时期的观感一致。
+       *
+       * 取值用 CSS 变量而不是硬编码色值：明暗主题与强调色切换由变量驱动，
+       * 这里跟着走就行，不必维护第二份配色表。
+       */
+      Table: {
+        // 这里必须用**具体色值**：antd 会对这些颜色做运算（派生 hover、
+        // 分隔线等），`var(--x)` 参与不了计算，会被静默丢掉并回退默认白底。
+        // 明暗两套在下面的分支里各配一次，与 theme-light/dark.css 同源。
+        headerBg: isDark ? "#1c1c1f" : "#f5f5f6",
+        headerColor: isDark ? "#8a8a8a" : "#6b6b6b",
+        headerSplitColor: "transparent",
+        colorBgContainer: "transparent",
+        rowHoverBg: isDark ? "#2c2c30" : "#ececee",
+        borderColor: isDark ? "#303034" : "#e8e8ea",
+        headerBorderRadius: 0,
+      },
+    },
   };
 }
 

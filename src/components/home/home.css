@@ -575,8 +575,9 @@
    列表只放「看名字就能决定下一步」的信息：名称、大小、修改时间。
    完整路径收进详情面板 —— 一屏重复七遍 C:\Users\Administrator\... 只是噪音。 */
 
+/* 外框只负责边框与圆角；底色/分隔线交给 antd 令牌（见 HomePage 的
+   Table styles），否则运行时会与组件库注入的样式打架。 */
 .home-file-table .ant-table {
-  background-color: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -585,20 +586,11 @@
 .home-file-table .ant-table-thead > tr > th {
   padding: 8px 14px;
   font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--text-muted);
-  background-color: var(--bg-app);
-  border-bottom: 1px solid var(--border-default);
 }
 
 /* antd 默认在表头单元格之间画竖线，与这套扁平风格不合。 */
-.home-file-table .ant-table-thead > tr > th::before {
-  display: none;
-}
-
 .home-file-table .ant-table-tbody > tr > td {
   padding: 9px 14px;
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .home-file-table .ant-table-tbody > tr:last-child > td {
@@ -630,7 +622,9 @@
 .home-file-table__title {
   overflow: hidden;
   font-size: var(--text-sm);
-  font-weight: 600;
+  /* 常规字重：表格里靠位置与大小区分层级，不需要加粗来「强调」文件名 ——
+     一整列都加粗等于没有强调，只让整张表显得笨重。 */
+  font-weight: 400;
   color: var(--text-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
