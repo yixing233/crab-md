@@ -85,6 +85,13 @@ export function getAntdTheme(resolvedTheme: ResolvedTheme, accent: AccentColor =
         rowHoverBg: isDark ? "#2c2c30" : "#ececee",
         borderColor: isDark ? "#303034" : "#e8e8ea",
         headerBorderRadius: 0,
+        // 排序列的三个态必须显式给：antd 用
+        // `new FastColor(colorFillContent).onBackground(colorBgContainer)` 算它们，
+        // 而我们把 colorBgContainer 设成了 transparent —— 透明色再叠一层
+        // 就得到黑色，表头一悬停整块变黑。
+        headerSortHoverBg: isDark ? "#26262a" : "#ececee",
+        headerSortActiveBg: isDark ? "#26262a" : "#ececee",
+        bodySortBg: "transparent",
       },
     },
   };
